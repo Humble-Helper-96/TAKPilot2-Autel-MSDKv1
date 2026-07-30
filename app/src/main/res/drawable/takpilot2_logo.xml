@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder logo: the original takpilot2_logo bitmap was not included in the
+     source zip. Drop the real PNG into res/drawable-nodpi/takpilot2_logo.png and
+     delete this file to restore the original artwork. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp" android:height="100dp"
+    android:viewportWidth="100" android:viewportHeight="100">
+    <path android:fillColor="#1A1B1E"
+        android:pathData="M50,2 L95,25 L95,75 L50,98 L5,75 L5,25 Z"/>
+    <path android:strokeColor="#4CAF50" android:strokeWidth="3" android:fillColor="#00000000"
+        android:pathData="M50,2 L95,25 L95,75 L50,98 L5,75 L5,25 Z"/>
+    <path android:fillColor="#4CAF50"
+        android:pathData="M50,22 L62,58 L50,50 L38,58 Z"/>
+    <path android:strokeColor="#4CAF50" android:strokeWidth="2.5" android:fillColor="#00000000"
+        android:pathData="M30,66 L70,66 M35,74 L65,74"/>
+</vector>

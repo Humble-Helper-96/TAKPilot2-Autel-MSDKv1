@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TAKPilot2-Autel flight screen.
+
+     Fullscreen live video (AutelCodecView is added to videoContainer in code — it isn't a
+     stock inflatable view), HUD strips top + bottom, control buttons on the right, and an
+     osmdroid TAK map bottom-left that toggles between mini and (near) fullscreen. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:keepScreenOn="true">
+
+    <!-- Live video (AutelCodecView injected here) -->
+    <FrameLayout
+        android:id="@+id/videoContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- TAK map: mini by default; tap the expand button to grow -->
+    <org.osmdroid.views.MapView
+        android:id="@+id/flightMap"
+        android:layout_width="300dp"
+        android:layout_height="200dp"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="8dp" />
+
+    <!-- Top HUD strip -->
+    <TextView
+        android:id="@+id/hudTop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#66000000"
+        android:padding="6dp"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:gravity="center_horizontal"
+        android:text="—" />
+
+    <!-- Bottom HUD strip (telemetry) -->
+    <TextView
+        android:id="@+id/hudBottom"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#66000000"
+        android:padding="6dp"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:typeface="monospace"
+        android:gravity="center_horizontal"
+        android:text="ALT — | SPD — | HDG — | BAT — | SAT —" />
+
+    <!-- Right-side control column -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical">
+
+        <Button
+            android:id="@+id/btnBack"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:background="#88222222"
+            android:textColor="#FFFFFF"
+            android:text="◄ Home" />
+
+        <Button
+            android:id="@+id/btnVideo"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#88222222"
+            android:textColor="#FFFFFF"
+            android:text="▶ Video" />
+
+        <Button
+            android:id="@+id/btnDropPin"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#88222222"
+            android:textColor="#FFFFFF"
+            android:text="📍 Drop Pin" />
+
+        <Button
+            android:id="@+id/btnLookPin"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#88222222"
+            android:textColor="#FFFFFF"
+            android:text="🎯 Pin @ Cam" />
+
+        <Button
+            android:id="@+id/btnMapSize"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#88222222"
+            android:textColor="#FFFFFF"
+            android:text="🗺 Map ＋" />
+    </LinearLayout>
+</FrameLayout>
