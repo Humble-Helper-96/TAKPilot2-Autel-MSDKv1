@@ -16,96 +16,329 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- TAK map: mini by default; tap the expand button to grow -->
-    <org.osmdroid.views.MapView
-        android:id="@+id/flightMap"
-        android:layout_width="300dp"
-        android:layout_height="200dp"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="8dp" />
-
-    <!-- Top HUD strip -->
-    <TextView
-        android:id="@+id/hudTop"
+    <!-- Centre reticle over the video: sighting reference, and its ring carries the
+         marker-accuracy cue driven by gimbal pitch. Matches the DJI blueprint. -->
+    <com.autel.sdksample.tak.CrosshairView
+        android:id="@+id/flightCrosshair"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:background="#66000000"
-        android:padding="6dp"
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:gravity="center_horizontal"
-        android:text="—" />
+        android:layout_height="match_parent" />
 
-    <!-- Bottom HUD strip (telemetry) -->
+    <!-- Shown until the aircraft connects. DJI hides its equivalent on the first decoded
+         frame; AutelCodecView is an opaque SDK widget with no frame callback, so aircraft
+         connection is the closest honest proxy available — see updateHud(). -->
     <TextView
-        android:id="@+id/hudBottom"
+        android:id="@+id/flightNoVideoCover"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="#66000000"
-        android:padding="6dp"
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
-        android:typeface="monospace"
-        android:gravity="center_horizontal"
-        android:text="ALT — | SPD — | HDG — | BAT — | SAT —" />
+        android:layout_height="match_parent"
+        android:background="#1A1A1A"
+        android:gravity="center"
+        android:text="Waiting for aircraft…"
+        android:textColor="#666666"
+        android:textSize="16sp"
+        android:visibility="visible" />
 
-    <!-- Right-side control column -->
+    <!-- Instrument toolbar: TAK status, battery, GPS, RTH — same instrument cluster as the
+         current DJI flight screen's toolbar, ported 2026-07-30. Signal-strength bars are
+         deliberately NOT here yet: the Autel SDK's signal data (EvoDsp/SignalInfo) is raw
+         RF metrics (RSRP/SNR/gain), not a 0-100% figure, and deriving one needs bench
+         calibration against real hardware (Phase 4) — showing a fabricated number would be
+         worse than not showing one. -->
     <LinearLayout
+        android:id="@+id/flightToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_gravity="top"
+        android:background="@drawable/bg_toolbar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp">
+
+        <ImageButton
+            android:id="@+id/flightBackButton"
+            android:layout_width="40dp"
+            android:layout_height="34dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back to Home"
+            android:padding="2dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_menu" />
+
+        <View android:layout_width="6dp" android:layout_height="1dp" />
+
+        <FrameLayout
+            android:id="@+id/toolbarTakButton"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="14dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="TAK server connection">
+
+            <ImageView
+                android:id="@+id/toolbarTakIcon"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="TAK server connection"
+                android:src="@drawable/ic_tak_logo" />
+
+            <ImageView
+                android:id="@+id/toolbarTakDot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="bottom|start"
+                android:src="@drawable/bg_status_dot" />
+
+        </FrameLayout>
+
+        <com.autel.sdksample.tak.BatteryGaugeView
+            android:id="@+id/toolbarBattery"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="14dp"
+            android:contentDescription="Battery" />
+
+        <com.autel.sdksample.tak.SignalBarsView
+            android:id="@+id/toolbarSignal"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:contentDescription="RC signal strength" />
+
+        <TextView
+            android:id="@+id/toolbarSignalText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="14dp"
+            android:alpha="0.4"
+            android:text="—%"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/toolbarGpsIcon"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:contentDescription="GPS satellites"
+            android:src="@drawable/ic_gps" />
+
+        <TextView
+            android:id="@+id/toolbarGps"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="14dp"
+            android:text="—"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/flightRthButton"
+            android:layout_width="40dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="12dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Return to home"
+            android:padding="1dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_rth" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
+             the most-used action on this screen and a pilot reaching for it is usually also
+             flying, so it has to be hittable without aiming. Same sizing/placement as DJI. -->
+        <ImageButton
+            android:id="@+id/flightDropPinButton"
+            android:layout_width="56dp"
+            android:layout_height="46dp"
+            android:layout_marginEnd="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Drop a TAK marker at the camera crosshair"
+            android:padding="1dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_drop_pin" />
+
+        <!-- Tap toggles the AR overlay; long-press opens AR options. -->
+        <TextView
+            android:id="@+id/flightArButton"
+            android:layout_width="36dp"
+            android:layout_height="26dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Toggle AR marker overlay"
+            android:gravity="center"
+            android:text="AR"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/flightShootPhotoButton"
+            android:layout_width="40dp"
+            android:layout_height="34dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Take photo (saves to aircraft SD card)"
+            android:padding="4dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_camera_shutter" />
+
+        <TextView
+            android:id="@+id/flightZoomButton"
+            android:layout_width="36dp"
+            android:layout_height="26dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Toggle camera zoom (1x/2x)"
+            android:gravity="center"
+            android:text="1X"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/flightResyncButton"
+            android:layout_width="40dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="8dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Video re-sync"
+            android:padding="0dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_resync" />
+
+        <com.autel.sdksample.tak.LiveToggleView
+            android:id="@+id/flightStreamButton"
+            android:layout_width="82dp"
+            android:layout_height="34dp"
+            android:layout_marginHorizontal="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Start/stop the RTSP video stream to TAK" />
+
+        <com.autel.sdksample.tak.RecordToggleView
+            android:id="@+id/flightRecordButton"
+            android:layout_width="74dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Start/stop recording to the aircraft SD card" />
+
+    </LinearLayout>
+
+    <!-- Transient notice ("Home Point Set", etc.) — upper-left over the video, below the
+         toolbar. Hidden by default; shown + auto-hidden in code. Same as DJI's fpvNotice. -->
+    <TextView
+        android:id="@+id/fpvNotice"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="8dp"
-        android:orientation="vertical">
+        android:layout_gravity="top|start"
+        android:layout_marginTop="64dp"
+        android:layout_marginStart="16dp"
+        android:shadowColor="#CC000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3"
+        android:text=""
+        android:textColor="#4CAF50"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
-        <Button
-            android:id="@+id/btnBack"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="120dp"
-            android:layout_height="wrap_content"
-            android:background="#88222222"
-            android:textColor="#FFFFFF"
-            android:text="◄ Home" />
+    <!-- RIGHT-HAND HUD COLUMN, mirroring the DJI blueprint: telemetry readout, gimbal look
+         angle, FAA ceiling, then the locked mini-map — all in ONE container with a weighted
+         spacer, so they can't grow into each other at any screen size (the failure mode DJI
+         hit when these were independently anchored). Replaces v1.2's full-width top/bottom
+         HUD strips. -->
+    <LinearLayout
+        android:id="@+id/flightHudColumn"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:orientation="vertical"
+        android:paddingTop="60dp"
+        android:paddingBottom="12dp"
+        android:paddingEnd="14dp">
 
-        <Button
-            android:id="@+id/btnVideo"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="120dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="#88222222"
-            android:textColor="#FFFFFF"
-            android:text="▶ Video" />
+        <!-- EV compensation slider biasing the auto-exposure, with the live ISO/shutter the
+             camera chose beneath it. Width is the MAP's width, not a number of its own: the map
+             is the widest thing in this column, so matching it makes the exposure block, the
+             readouts and the map read as one right-hand instrument stack. -->
+        <com.autel.sdksample.tak.EvSliderView
+            android:id="@+id/evSlider"
+            android:layout_width="@dimen/flight_map_size"
+            android:layout_height="24dp" />
 
-        <Button
-            android:id="@+id/btnDropPin"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="120dp"
+        <LinearLayout
+            android:layout_width="@dimen/flight_map_size"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="#88222222"
-            android:textColor="#FFFFFF"
-            android:text="📍 Drop Pin" />
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/btnLookPin"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="120dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="#88222222"
-            android:textColor="#FFFFFF"
-            android:text="🎯 Pin @ Cam" />
+            <TextView style="@style/hudText" android:layout_width="0dp"
+                android:layout_weight="1" android:gravity="start" android:text="-2" />
 
-        <Button
-            android:id="@+id/btnMapSize"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="120dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="#88222222"
-            android:textColor="#FFFFFF"
-            android:text="🗺 Map ＋" />
+            <TextView style="@style/hudText" android:layout_width="0dp"
+                android:layout_weight="1" android:gravity="center"
+                android:letterSpacing="0.08" android:text="EV" android:textColor="#9AC4FF" />
+
+            <TextView style="@style/hudText" android:layout_width="0dp"
+                android:layout_weight="1" android:gravity="end" android:text="+2" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/exposureReadout"
+            style="@style/hudText"
+            android:layout_width="@dimen/flight_map_size"
+            android:gravity="center"
+            android:text="ISO —   —" />
+
+        <!-- Absorbs leftover height so the readouts stay pinned above the map. -->
+        <View
+            android:layout_width="1dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/fpvOverlayText"
+            style="@style/hudText"
+            android:layout_marginBottom="4dp"
+            android:gravity="end"
+            android:text="" />
+
+        <!-- Gimbal look angle, its own view so it can carry the same accuracy colour as the
+             crosshair centre ring: placement error scales as 1/sin^2(pitch), so a shallow angle
+             is a real accuracy warning rather than decoration. -->
+        <TextView
+            android:id="@+id/fpvGimbalPitch"
+            style="@style/hudText"
+            android:layout_marginBottom="4dp"
+            android:gravity="end"
+            android:text="" />
+
+        <!-- FAA UASFM ceiling; own view so it can turn amber/red independently. Advisory. -->
+        <TextView
+            android:id="@+id/fpvFaaCeiling"
+            style="@style/hudText"
+            android:layout_marginBottom="6dp"
+            android:gravity="end"
+            android:text=""
+            android:visibility="gone" />
+
+        <!-- Locked TAK mini-map (operator's spec, matching the DJI flight screen): no pan, zoom
+             or rotate — north-up, fixed zoom, recentred on the aircraft each telemetry tick,
+             with a red home→aircraft line as the "which way back" reference. Tapping an inbound
+             contact still works (see LockedMapView). -->
+        <com.autel.sdksample.tak.LockedMapView
+            android:id="@+id/flightMap"
+            android:layout_width="@dimen/flight_map_size"
+            android:layout_height="@dimen/flight_map_size" />
+
     </LinearLayout>
 </FrameLayout>

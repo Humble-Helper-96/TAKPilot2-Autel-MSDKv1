@@ -1,10 +1,15 @@
 package com.autel.sdksample.tak
 
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.taklite.client.tak.CotBuilder
 import com.taklite.client.tak.TakCertEnroller
@@ -25,7 +30,6 @@ import java.util.UUID
 class TakConnectActivity : AppCompatActivity() {
 
     private lateinit var status: TextView
-    private lateinit var videoStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,6 +37,12 @@ class TakConnectActivity : AppCompatActivity() {
         AppLog.v(TAG, "onCreate")
 
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+
+        setupDroneSettingsSection()
+        setupMapDisplaySection()
+        setupDtedSection()
+        setupUasfmSection()
+
         val host = findViewById<EditText>(R.id.takHost)
         val enrollPort = findViewById<EditText>(R.id.takEnrollPort)
         val cotPort = findViewById<EditText>(R.id.takCotPort)
@@ -137,6 +147,15 @@ class TakConnectActivity : AppCompatActivity() {
         setupVideoControls(prefs)
     }
 
+    /**
+     * Video server config. Mirrors the blueprint: NO Start/Stop here — the flight screen's LIVE
+     * pill owns starting and stopping the stream; this screen only edits and SAVES the config.
+     *
+     * Persisting on every change matters more than it looks: the LIVE pill reads prefs, not this
+     * screen's live state. The previous version only wrote prefs when its (now removed) "Start
+     * Video" button was tapped, so edits made here and never "started" would have been silently
+     * lost the moment the buttons went away.
+     */
     private fun setupVideoControls(prefs: android.content.SharedPreferences) {
         val vHost = findViewById<EditText>(R.id.videoHost)
         val vPort = findViewById<EditText>(R.id.videoPort)
@@ -144,16 +163,25 @@ class TakConnectActivity : AppCompatActivity() {
         val vPass = findViewById<EditText>(R.id.videoPassword)
         val vStreamId = findViewById<EditText>(R.id.videoStreamId)
         val vTcp = findViewById<android.widget.CheckBox>(R.id.videoTcp)
-        val vLowBw = findViewById<android.widget.CheckBox>(R.id.videoLowBandwidth)
+        val vProfileGroup = findViewById<android.widget.RadioGroup>(R.id.videoProfileGroup)
         val vFullUrl = findViewById<TextView>(R.id.videoFullUrl)
-        videoStatus = findViewById(R.id.videoStatus)
 
         vHost.setText(prefs.getString(KEY_V_HOST, ""))
         vPort.setText(prefs.getInt(KEY_V_PORT, 8554).toString())
         vUser.setText(prefs.getString(KEY_V_USER, ""))
         vStreamId.setText(prefs.getString(KEY_V_STREAMID, ""))
         vTcp.isChecked = prefs.getBoolean(KEY_V_TCP, true)
-        vLowBw.isChecked = prefs.getBoolean(KEY_V_LOW_BW, false)
+        when (prefs.getString(KEY_V_PROFILE, "standard")) {
+            "low" -> vProfileGroup.check(R.id.videoProfileLow)
+            "high" -> vProfileGroup.check(R.id.videoProfileHigh)
+            else -> vProfileGroup.check(R.id.videoProfileStandard)
+        }
+
+        fun selectedProfile(): String = when (vProfileGroup.checkedRadioButtonId) {
+            R.id.videoProfileLow -> "low"
+            R.id.videoProfileHigh -> "high"
+            else -> "standard"
+        }
 
         fun buildConfig(): AutelVideoStreamer.VideoConfig = AutelVideoStreamer.VideoConfig(
             host = vHost.text.toString().trim(),
@@ -162,65 +190,37 @@ class TakConnectActivity : AppCompatActivity() {
             password = vPass.text.toString(),
             streamId = vStreamId.text.toString().trim(),
             tcp = vTcp.isChecked,
-            lowBandwidth = vLowBw.isChecked,
+            profile = selectedProfile(),
         )
 
-        // Live-update the full-URL preview as fields change.
-        val refreshUrl = {
-            val c = buildConfig()
-            vFullUrl.text = if (c.host.isEmpty() || c.streamId.isEmpty())
-                "rtsp://…  (enter host + identifier)" else c.urlSafe()
-        }
-        val watcher = object : android.text.TextWatcher {
-            override fun afterTextChanged(s: android.text.Editable?) = refreshUrl()
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        }
-        listOf(vHost, vPort, vUser, vPass, vStreamId).forEach { it.addTextChangedListener(watcher) }
-        vTcp.setOnCheckedChangeListener { _, _ -> refreshUrl() }
-        vLowBw.setOnCheckedChangeListener { _, on ->
-            AppLog.v(TAG, "Low bandwidth toggle -> $on")
-            refreshUrl()
-        }
-        refreshUrl()
-
-        findViewById<Button>(R.id.videoStartButton).setOnClickListener {
-            AppLog.v(TAG, "Start video tapped")
+        val refreshAndSave = {
             val cfg = buildConfig()
-            if (cfg.host.isEmpty() || cfg.streamId.isEmpty()) {
-                setVideoStatus("Host and broadcast identifier are required.", Color.parseColor("#F44336"))
-                return@setOnClickListener
-            }
+            vFullUrl.text = if (cfg.host.isEmpty() || cfg.streamId.isEmpty())
+                "rtsp://…  (enter host + identifier)" else cfg.urlSafe()
             prefs.edit()
                 .putString(KEY_V_HOST, cfg.host)
                 .putInt(KEY_V_PORT, cfg.port)
                 .putString(KEY_V_USER, cfg.username)
-                .putString("video_pass", cfg.password) // so the flight-screen button can start it
+                .putString("video_pass", cfg.password)
                 .putString(KEY_V_STREAMID, cfg.streamId)
                 .putBoolean(KEY_V_TCP, cfg.tcp)
-                .putBoolean(KEY_V_LOW_BW, cfg.lowBandwidth)
+                .putString(KEY_V_PROFILE, cfg.profile)
                 .apply()
-
-            setVideoStatus("Starting RTSP push → ${cfg.urlSafe()}", Color.parseColor("#B0B0B0"))
-            VideoStreamerHolder.start(this, cfg) { ok, msg ->
-                runOnUiThread {
-                    if (ok) {
-                        // Advertise the full UAS-tool-style URL (creds + ?tcp) in the drone CoT.
-                        TakBridgeHolder.setVideoUrl(cfg.advertiseUrl())
-                        setVideoStatus("$msg\nAdvertised in drone CoT.", Color.parseColor("#4CAF50"))
-                    } else {
-                        setVideoStatus(msg, Color.parseColor("#F44336"))
-                    }
-                }
-            }
         }
-
-        findViewById<Button>(R.id.videoStopButton).setOnClickListener {
-            AppLog.v(TAG, "Stop video tapped")
-            VideoStreamerHolder.stop()
-            TakBridgeHolder.setVideoUrl(null)
-            setVideoStatus("Video stopped; CoT video URL cleared.", Color.parseColor("#B0B0B0"))
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) = refreshAndSave()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
+        listOf(vHost, vPort, vUser, vPass, vStreamId).forEach { it.addTextChangedListener(watcher) }
+        vTcp.setOnCheckedChangeListener { _, _ -> refreshAndSave() }
+        // Persist the profile the moment it changes, so the flight-screen LIVE button (which
+        // reads prefs, not this screen's live state) always uses the pilot's current choice.
+        vProfileGroup.setOnCheckedChangeListener { _, _ ->
+            AppLog.v(TAG, "video profile -> ${selectedProfile()}")
+            prefs.edit().putString(KEY_V_PROFILE, selectedProfile()).apply()
+        }
+        refreshAndSave()
     }
 
     private fun enrollAndConnect(
@@ -334,11 +334,6 @@ class TakConnectActivity : AppCompatActivity() {
         status.setTextColor(color)
     }
 
-    private fun setVideoStatus(text: String, color: Int) {
-        videoStatus.text = text
-        videoStatus.setTextColor(color)
-    }
-
     // ---- My Channels ----
     private var selectedChannels: MutableSet<String> = mutableSetOf()
 
@@ -393,8 +388,420 @@ class TakConnectActivity : AppCompatActivity() {
         }
     }
 
+    // ---- 1. Drone Settings ----
+
+    /**
+     * Flight-safety limits, persisted here and pushed to the aircraft by
+     * [FlightLimitsController] on the next connect (via [AutelTakBridge]'s one-shot). Blank
+     * leaves the aircraft's own current setting alone.
+     *
+     * No signal-loss failsafe control, unlike the DJI blueprint — the Autel SDK exposes none.
+     * See [FlightLimitsController]'s doc for the audit.
+     */
+    private fun setupDroneSettingsSection() {
+        val maxAlt = findViewById<EditText>(R.id.limitMaxAltitude)
+        val maxRadius = findViewById<EditText>(R.id.limitMaxRadius)
+        val rthAlt = findViewById<EditText>(R.id.limitRthAltitude)
+
+        maxAlt.setText(FlightLimitsController.savedMaxAltitudeFt(this))
+        maxRadius.setText(FlightLimitsController.savedMaxRadiusFt(this))
+        rthAlt.setText(FlightLimitsController.savedRthAltitudeFt(this))
+
+        // Auto-save on edit, no Save button — matching the blueprint. These are local prefs
+        // only; FlightLimitsController pushes them to the aircraft on its next connect, which
+        // is what the section's subtitle tells the pilot. (An earlier version of this screen
+        // had a Save button that ALSO pushed immediately when connected; both were divergences
+        // from the blueprint and are gone.)
+        val save = {
+            FlightLimitsController.save(
+                this, maxAlt.text.toString(), maxRadius.text.toString(), rthAlt.text.toString(),
+            )
+        }
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) = save()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        }
+        listOf(maxAlt, maxRadius, rthAlt).forEach { it.addTextChangedListener(watcher) }
+
+        setupFailsafe()
+    }
+
+    /**
+     * Signal-loss failsafe picker. Like the numeric limits above, saved locally and pushed to
+     * the aircraft on its next connect via
+     * [FlightLimitsController.applyDefaults] → `doEmergencyAction` (the policy setter behind a
+     * misleading name — see that class's doc).
+     *
+     * The status line spells out that it applies on next connect AND that this SDK can't read
+     * the value back, because "I picked Return to Home" and "the aircraft is set to Return to
+     * Home" are different claims — and this is the setting where assuming the first means the
+     * second is exactly the wrong habit.
+     */
+    private fun setupFailsafe() {
+        val group = findViewById<android.widget.RadioGroup>(R.id.limitFailsafeGroup)
+        val status = findViewById<TextView>(R.id.limitFailsafeStatus)
+
+        val idFor = { f: FlightLimitsController.Failsafe ->
+            when (f) {
+                FlightLimitsController.Failsafe.GO_HOME -> R.id.failsafeGoHome
+                FlightLimitsController.Failsafe.HOVER -> R.id.failsafeHover
+                FlightLimitsController.Failsafe.LAND -> R.id.failsafeLand
+            }
+        }
+        group.check(idFor(FlightLimitsController.savedFailsafe(this)))
+
+        status.text = "Sent to the aircraft the next time it connects."
+
+        group.setOnCheckedChangeListener { _, checkedId ->
+            val choice = when (checkedId) {
+                R.id.failsafeHover -> FlightLimitsController.Failsafe.HOVER
+                R.id.failsafeLand -> FlightLimitsController.Failsafe.LAND
+                else -> FlightLimitsController.Failsafe.GO_HOME
+            }
+            AppLog.i("TP2LimitsAutel",
+                "signal-loss failsafe set to '${choice.label}' (applies on next connect)")
+            FlightLimitsController.saveFailsafe(this, choice)
+        }
+    }
+
+    // ---- 2. Map Display ----
+
+    /** Flight mini-map tile source. Street or a custom XYZ template — see [MapStyle] for why
+     *  there's no Hybrid/satellite option on this airframe. Takes effect next time the flight
+     *  screen opens (it reads [MapStyle.tileSource] in onCreate). */
+    private fun setupMapDisplaySection() {
+        val group = findViewById<android.widget.RadioGroup>(R.id.mapStyleGroup)
+        val customUrl = findViewById<EditText>(R.id.mapCustomUrl)
+
+        when (MapStyle.savedStyleChoice(this)) {
+            MapStyle.CUSTOM -> group.check(R.id.mapStyleCustom)
+            else -> group.check(R.id.mapStyleStreet)
+        }
+        customUrl.setText(MapStyle.savedCustomUrl(this))
+
+        findViewById<Button>(R.id.mapDisplaySaveButton).setOnClickListener {
+            val choice = when (group.checkedRadioButtonId) {
+                R.id.mapStyleCustom -> MapStyle.CUSTOM
+                else -> MapStyle.STREET
+            }
+            val url = customUrl.text.toString().trim()
+            // Validate BEFORE saving rather than discovering it in flight: a bad template
+            // silently falls back to street tiles at map-load time, which the pilot would only
+            // notice as "my imagery didn't work" with no explanation.
+            if (choice == MapStyle.CUSTOM && !MapStyle.isUsableTemplate(url)) {
+                Toast.makeText(
+                    this,
+                    "Custom URL must be http(s) and contain {z}, {x} and {y}",
+                    Toast.LENGTH_LONG,
+                ).show()
+                return@setOnClickListener
+            }
+            AppLog.v(TAG, "tap: Save Map Display -> $choice")
+            MapStyle.saveStyleChoice(this, choice, url)
+            Toast.makeText(this, "Map display saved — applies next time you enter Flight",
+                Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ---- 5. Elevation Data (DTED) ----
+
+    /** DTED region management — import a region .zip via the system document picker (any file;
+     *  DTED extensions aren't a registered MIME type so we don't filter), list imported regions
+     *  (one row each — never individual tiles, see [DtedStore]), allow deleting a whole region.
+     *
+     *  ACTION_OPEN_DOCUMENT deliberately: it's the Storage Access Framework, which needs no
+     *  storage permission and is the supported path on the Smart Controller V3's Android 11
+     *  (scoped storage) — a raw filesystem picker would not be. */
+    private fun setupDtedSection() {
+        findViewById<Button>(R.id.dtedUploadButton).setOnClickListener {
+            AppLog.v(TAG, "tap: Import Region")
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+            startActivityForResult(intent, REQUEST_CODE_DTED_PICK)
+        }
+        findViewById<Button>(R.id.dtedCleanButton).setOnClickListener {
+            AppLog.v(TAG, "tap: Clean Unused Tiles")
+            val removed = DtedStore.cleanUnreferencedTiles(this)
+            Toast.makeText(this, "Removed $removed unreferenced tile file(s)", Toast.LENGTH_SHORT).show()
+        }
+        renderDtedRegions()
+    }
+
+    private val dtedDateFormat = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.US)
+
+    /** One compact row per imported region — name/date/file-count/size plus a delete button,
+     *  never a per-tile listing (a full region is hundreds of tiles). */
+    private fun renderDtedRegions() {
+        val container = findViewById<LinearLayout>(R.id.dtedFileList)
+        val dtedStatus = findViewById<TextView>(R.id.dtedStatus)
+        container.orientation = LinearLayout.VERTICAL
+        container.removeAllViews()
+        val regions = DtedStore.listRegions(this)
+        dtedStatus.text = if (regions.isEmpty()) "No terrain regions imported."
+            else "${regions.size} region(s) imported."
+        for (region in regions) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setBackgroundColor(Color.parseColor("#202020"))
+                setPadding(12, 10, 12, 10)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 6 }
+            }
+            val info = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            info.addView(TextView(this).apply {
+                text = region.name
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            info.addView(TextView(this).apply {
+                val mb = region.totalBytes / 1024.0 / 1024.0
+                val sizeStr = if (mb >= 1024) "%.1f GB".format(mb / 1024.0) else "%.0f MB".format(mb)
+                text = "Imported ${dtedDateFormat.format(java.util.Date(region.importedAtMs))} · " +
+                    "${region.fileCount} file(s) · $sizeStr"
+                setTextColor(Color.parseColor("#909090"))
+                textSize = 12f
+            })
+            row.addView(info)
+            row.addView(TextView(this).apply {
+                text = "Delete"
+                setTextColor(Color.parseColor("#EF5350"))
+                textSize = 13f
+                setPadding(20, 8, 4, 8)
+                setOnClickListener {
+                    AppLog.v(TAG, "tap: delete DTED region ${region.name} (#${region.id})")
+                    DtedStore.deleteRegion(this@TakConnectActivity, region)
+                    renderDtedRegions()
+                }
+            })
+            container.addView(row)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_CODE_DTED_PICK || resultCode != RESULT_OK) return
+        val uri: Uri = data?.data ?: return
+        val name = queryDisplayName(uri) ?: "Region-${System.currentTimeMillis()}"
+        val dtedStatus = findViewById<TextView>(R.id.dtedStatus)
+        val result = DtedStore.import(this, uri, name)
+        dtedStatus.text = when {
+            result.error != null && result.importedCount == 0 -> "Failed to import $name: ${result.error}"
+            result.error != null -> "Imported ${result.importedCount} tile(s) from $name (${result.error})"
+            else -> "Imported ${result.importedCount} tile(s) from $name."
+        }
+        if (result.importedCount == 0) Toast.makeText(this, dtedStatus.text, Toast.LENGTH_SHORT).show()
+        renderDtedRegions()
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return runCatching {
+            contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+            }
+        }.getOrNull()
+    }
+
+    // ---- 6. FAA Airspace Ceilings (UASFM) ----
+
+    /** Download UASFM ceilings for an area. Deliberately a manual, explicit action on wifi
+     *  rather than anything automatic in flight: the flight screen must never depend on having
+     *  a network, and a silent background fetch would be exactly the wrong thing to discover
+     *  had failed while airborne. */
+    private fun setupUasfmSection() {
+        val latField = findViewById<EditText>(R.id.uasfmLat)
+        val lonField = findViewById<EditText>(R.id.uasfmLon)
+        val radiusField = findViewById<EditText>(R.id.uasfmRadius)
+        val uasfmStatus = findViewById<TextView>(R.id.uasfmStatus)
+        val downloadBtn = findViewById<Button>(R.id.uasfmDownloadButton)
+        val checkBtn = findViewById<Button>(R.id.uasfmCheckButton)
+
+        radiusField.setText("50")
+        renderUasfmStatus()
+
+        /** Reads the three fields, or null (with a toast) if they don't make sense. */
+        fun readBbox(): UasfmStore.Bbox? {
+            val lat = latField.text.toString().trim().toDoubleOrNull()
+            val lon = lonField.text.toString().trim().toDoubleOrNull()
+            val radius = radiusField.text.toString().trim().toDoubleOrNull()
+            if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                Toast.makeText(this, "Enter a valid centre latitude and longitude", Toast.LENGTH_SHORT).show()
+                return null
+            }
+            if (radius == null || radius <= 0 || radius > 500) {
+                Toast.makeText(this, "Enter a radius between 1 and 500 miles", Toast.LENGTH_SHORT).show()
+                return null
+            }
+            return UasfmStore.bboxAround(lat, lon, radius)
+        }
+
+        findViewById<Button>(R.id.uasfmUseLocationButton).setOnClickListener {
+            AppLog.v(TAG, "tap: UASFM Use My Location")
+            // Ask for location up front rather than letting the read fail: the manifest declares
+            // ACCESS_FINE/COARSE_LOCATION but nothing in this app had ever REQUESTED them at
+            // runtime, and on the Smart Controller V3's Android 11 that means the read throws
+            // and this button would silently report "no GPS fix" — blaming the hardware for a
+            // permission problem. Requesting here (rather than at app start) keeps the prompt
+            // attached to the one action that needs it.
+            if (!hasLocationPermission()) {
+                AppLog.i(TAG, "location permission not granted — requesting")
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                    ),
+                    REQUEST_CODE_LOCATION,
+                )
+                return@setOnClickListener
+            }
+            fillCentreFromLocation()
+        }
+
+        checkBtn.setOnClickListener {
+            val bbox = readBbox() ?: return@setOnClickListener
+            AppLog.v(TAG, "tap: UASFM Check Size")
+            checkBtn.isEnabled = false
+            uasfmStatus.text = "Checking…"
+            UasfmStore.countAsync(bbox) { result ->
+                checkBtn.isEnabled = true
+                uasfmStatus.text = when {
+                    result.error != null -> "Couldn't reach the FAA service: ${result.error}"
+                    result.count == 0 ->
+                        "No facility-map cells in that area — it's likely all uncontrolled " +
+                            "airspace, where the Part 107 400 ft limit applies."
+                    else -> "${result.count} cell(s) in that area. Tap Download to store them."
+                }
+            }
+        }
+
+        downloadBtn.setOnClickListener {
+            val bbox = readBbox() ?: return@setOnClickListener
+            val label = "%.3f, %.3f  ·  %s mi".format(
+                latField.text.toString().trim().toDoubleOrNull() ?: 0.0,
+                lonField.text.toString().trim().toDoubleOrNull() ?: 0.0,
+                radiusField.text.toString().trim(),
+            )
+            AppLog.i(TAG, "UASFM download starting for $label")
+            downloadBtn.isEnabled = false
+            uasfmStatus.text = "Downloading…"
+            UasfmStore.downloadAsync(
+                context = this,
+                bbox = bbox,
+                areaLabel = label,
+                onProgress = { count -> uasfmStatus.text = "Downloading… $count cell(s)" },
+                onDone = { result ->
+                    downloadBtn.isEnabled = true
+                    if (result.error != null) {
+                        AppLog.w(TAG, "UASFM download failed: ${result.error}")
+                        uasfmStatus.text = result.error
+                    } else {
+                        // Surface off-grid skips rather than burying them: a non-zero count means
+                        // the FAA moved off the 1/120 degree grid this design assumes, and the
+                        // pilot would otherwise have coverage holes with no hint why.
+                        val warn = if (result.offGridSkipped > 0)
+                            "\n⚠ ${result.offGridSkipped} cell(s) skipped — unexpected grid, report this."
+                        else ""
+                        renderUasfmStatus(extra = warn)
+                        Toast.makeText(this, "FAA ceilings downloaded", Toast.LENGTH_SHORT).show()
+                    }
+                },
+            )
+        }
+
+        findViewById<Button>(R.id.uasfmClearButton).setOnClickListener {
+            AppLog.v(TAG, "tap: UASFM Clear Data")
+            UasfmStore.clear(this)
+            renderUasfmStatus()
+            Toast.makeText(this, "FAA ceiling data cleared", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun renderUasfmStatus(extra: String = "") {
+        val uasfmStatus = findViewById<TextView>(R.id.uasfmStatus)
+        val meta = UasfmStore.meta(this)
+        uasfmStatus.text = if (meta == null) {
+            "No FAA ceiling data downloaded — the flight HUD will show the Part 107 400 ft default."
+        } else {
+            "${meta.cellCount} cell(s) for ${meta.areaLabel}\n" +
+                "Downloaded ${dtedDateFormat.format(java.util.Date(meta.downloadedAtMs))}  ·  " +
+                "FAA effective ${meta.effectiveLabel}$extra"
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Fills the UASFM centre fields from the controller's own fix, or explains why it can't —
+     *  distinguishing "no fix yet" from "permission denied", which are different problems with
+     *  different fixes and used to look identical to the pilot. */
+    private fun fillCentreFromLocation() {
+        val loc = lastKnownPhoneLocation()
+        if (loc == null) {
+            Toast.makeText(
+                this,
+                "No GPS fix yet — go outside for a moment, or type the centre manually",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        findViewById<EditText>(R.id.uasfmLat).setText("%.4f".format(loc.first))
+        findViewById<EditText>(R.id.uasfmLon).setText("%.4f".format(loc.second))
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_CODE_LOCATION) return
+        if (hasLocationPermission()) {
+            AppLog.i(TAG, "location permission granted")
+            fillCentreFromLocation()
+        } else {
+            AppLog.i(TAG, "location permission denied — centre must be entered manually")
+            Toast.makeText(
+                this,
+                "Location permission denied. Enter the centre latitude/longitude manually.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    /** Most recent GPS/network fix from the controller, or null. The Smart Controller V3 has
+     *  its own GPS, so unlike a phone-tethered RC this is normally available outdoors. */
+    private fun lastKnownPhoneLocation(): Pair<Double, Double>? {
+        val lm = getSystemService(android.content.Context.LOCATION_SERVICE)
+            as android.location.LocationManager
+        val loc = runCatching {
+            listOf(
+                android.location.LocationManager.GPS_PROVIDER,
+                android.location.LocationManager.NETWORK_PROVIDER,
+            ).mapNotNull { p -> if (lm.isProviderEnabled(p)) lm.getLastKnownLocation(p) else null }
+                .maxByOrNull { it.time }
+        }.getOrNull() ?: return null
+        return loc.latitude to loc.longitude
+    }
+
     companion object {
         private const val TAG = "TakConnectActivity"
+        private const val REQUEST_CODE_DTED_PICK = 4301
+        private const val REQUEST_CODE_LOCATION = 4302
         private const val PREFS = "takpilot2_tak"
         private const val KEY_HOST = "host"
         private const val KEY_ENROLL_PORT = "enroll_port"
@@ -412,7 +819,7 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_V_USER = "video_user"
         private const val KEY_V_STREAMID = "video_streamid"
         private const val KEY_V_TCP = "video_tcp"
-        private const val KEY_V_LOW_BW = "video_low_bw"
+        private const val KEY_V_PROFILE = "video_profile"
     }
 }
 

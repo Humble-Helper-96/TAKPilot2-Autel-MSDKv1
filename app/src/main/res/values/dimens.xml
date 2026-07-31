@@ -590,6 +590,23 @@
 	<dimen name="distance_tv_text_size">22sp</dimen>
 	<dimen name="btn_waypoint_unread_width">60dp</dimen>
 
+	<!-- Locked flight mini-map. MUST match the DJI sibling's flight_map_size (130dp base,
+	     160dp via values-h440dp) — these are not arbitrary.
+
+	     The HUD column is a fixed-height vertical LinearLayout: slider + EV scale + exposure
+	     readout + weighted spacer + 5-line readout + gimbal + FAA line + THIS MAP. The map is
+	     the last child, so when the column's contents exceed the screen height the weighted
+	     spacer collapses to zero and the map is pushed off the bottom and silently clipped —
+	     no error, no crash, just a half-map (the same failure class as the v1.1 Home-screen
+	     bug in TAKPilot2-Autel-HANDOFF.md).
+
+	     Budget: everything above the map is ~249dp, so 130dp needs 379dp of height and 160dp
+	     needs 409dp. A Pixel 8 Pro in landscape is ~448dp; the Smart Controller V3 ~600dp.
+	     This was briefly set to 200dp during the port (needing 449dp) which overflowed the
+	     Pixel by a hair — caught in the layout sweep, not on a device. Don't raise it without
+	     redoing that arithmetic. -->
+	<dimen name="flight_map_size">130dp</dimen>
+
 	<dimen name="margin_84dp">84dp</dimen>
 	<dimen name="margin_30dp">30dp</dimen>
 	<dimen name="margin_50dp">50dp</dimen>

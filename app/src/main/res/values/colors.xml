@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#3F51B5</color>
-    <color name="colorPrimaryDark">#303F9F</color>
-    <color name="colorAccent">#FF4081</color>
+    <!-- TAKPilot2 chrome, matched to the DJI blueprint's values so the two apps' action bars
+         and status bars read identically side by side. These were the stock Android-sample
+         purple/pink; the blueprint sets all three to the same navy. -->
+    <color name="colorPrimary">#314268</color>
+    <color name="colorPrimaryDark">#314268</color>
+    <color name="colorAccent">#314268</color>
     <color name="transparent">#00000000</color>
 
     <color name="black">#ff000000</color>

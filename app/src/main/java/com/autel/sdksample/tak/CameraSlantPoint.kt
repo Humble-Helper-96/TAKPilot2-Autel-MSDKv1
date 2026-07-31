@@ -5,14 +5,16 @@ import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 /**
  * Computes the ground point the camera is looking at (the "slant point" / sensor
  * point of interest) from the aircraft position, altitude, and camera orientation.
  *
- * Assumes flat ground at the aircraft's takeoff altitude (good over level terrain).
- * Structured so a terrain/DTED elevation could replace [aglMeters] later.
+ * Default (no [DtedIndex] coverage) assumes flat ground at the aircraft's takeoff altitude
+ * (good over level terrain). When DTED coverage is available for the area, [compute] instead
+ * iteratively refines the ground point against actual terrain elevation — see its doc.
  */
 object CameraSlantPoint {
 
@@ -22,8 +24,22 @@ object CameraSlantPoint {
     // When altitude/geometry can't give a valid range, plant the point this far along the
     // camera bearing (matches DJI UAS tool's behavior, so a point shows even on the ground).
     private const val FALLBACK_RANGE_M = 300.0
+    private const val TERRAIN_ITERATIONS = 4
+    private const val CONVERGE_M = 1.0
 
-    data class GroundPoint(val lat: Double, val lon: Double, val rangeMeters: Double)
+    /**
+     * @param elevationMeters terrain elevation at (lat, lon) as sampled from DTED during the
+     *   iteration that produced this point, or 0.0 when there was no coverage to sample (the
+     *   flat-ground path has no way to know the target's absolute elevation — it only ever
+     *   knows height *relative* to the aircraft's own ground). Carries the same uncorrected
+     *   MSL-vs-WGS84 geoid offset as everything else DTED-derived here; see the class note.
+     */
+    data class GroundPoint(
+        val lat: Double,
+        val lon: Double,
+        val rangeMeters: Double,
+        val elevationMeters: Double = 0.0,
+    )
 
     /**
      * Where the camera is looking, projected onto the ground.
@@ -33,12 +49,71 @@ object CameraSlantPoint {
      * back to [FALLBACK_RANGE_M] so a point still shows. Then project that HORIZONTAL
      * distance from the aircraft along the camera bearing.
      *
+     * When [elevationAt] is supplied (typically [DtedIndex]::elevationAt) and returns
+     * coverage for the aircraft's own position, this refines the flat-ground estimate by
+     * fixed-point iteration: [aglMeters] is height-above-takeoff-point, which the
+     * flat-ground path already treats as "height above the ground directly below the
+     * aircraft." Each iteration samples DTED elevation at the current candidate ground
+     * point, adjusts the effective height-above-target by the elevation delta between the
+     * aircraft's local ground and the target's ground, and recomputes — typically converges
+     * in 2-3 iterations over smooth terrain. Falls back to the flat-ground point if there's
+     * no DTED coverage at the aircraft's own position, or if a later iteration's candidate
+     * point walks outside the loaded tiles' coverage.
+     *
+     * Known limitation: DTED elevations are referenced to a geoid/MSL vertical datum, while
+     * [aglMeters] comes from the aircraft's WGS84-ellipsoid-based GPS altitude — the two can
+     * differ by tens of meters depending on location (geoid separation), which isn't
+     * corrected for here. This still meaningfully improves on the flat-ground assumption
+     * over hilly terrain (the dominant error source), but don't expect survey-grade accuracy.
+     *
      * @param lat,lon     aircraft position (deg)
      * @param aglMeters   aircraft height above the ground point (m); assume flat ground
      * @param bearingDeg  true bearing the camera points along (deg, 0..360)
      * @param pitchDeg    gimbal pitch (deg). Assumed (verify on Autel): level=0, looking down=negative.
+     * @param elevationAt optional terrain elevation lookup (meters) at a given (lat, lon);
+     *                    null/omitted keeps the original flat-ground behavior.
      */
     fun compute(
+        lat: Double, lon: Double, aglMeters: Double,
+        bearingDeg: Double, pitchDeg: Double,
+        elevationAt: ((Double, Double) -> Double?)? = null,
+        aircraftMslMeters: Double? = null,
+    ): GroundPoint {
+        val flat = computeFlat(lat, lon, aglMeters, bearingDeg, pitchDeg)
+        if (elevationAt == null) return flat
+
+        val groundElevAtAircraft = elevationAt(lat, lon) ?: return flat
+
+        var targetElev = groundElevAtAircraft
+        var point = flat
+        for (i in 0 until TERRAIN_ITERATIONS) {
+            // Height of the aircraft above the CANDIDATE TARGET.
+            //
+            // Prefer a true MSL frame when the caller can supply one: [aglMeters] is height
+            // above the TAKEOFF POINT, and the fallback below silently treats it as height
+            // above the ground directly beneath the aircraft. Those are equal only until the
+            // aircraft flies somewhere the terrain differs from the launch site — after that
+            // the ray is solved with the wrong height and the ground point lands short or
+            // long (same class of bug the DJI sibling app hit and fixed in the field
+            // 2026-07-27: flying out over lower ground put the SPoI well short of where the
+            // camera was actually pointing).
+            val effectiveAgl = if (aircraftMslMeters != null) {
+                aircraftMslMeters - targetElev
+            } else {
+                aglMeters + (groundElevAtAircraft - targetElev)
+            }
+            val candidate = computeFlat(lat, lon, effectiveAgl, bearingDeg, pitchDeg)
+            val sampled = elevationAt(candidate.lat, candidate.lon) ?: break
+            // Attach the elevation actually sampled AT this candidate — not targetElev, which
+            // at this instant still holds the *previous* round's value.
+            point = candidate.copy(elevationMeters = sampled)
+            if (abs(sampled - targetElev) < CONVERGE_M) break
+            targetElev = sampled
+        }
+        return point
+    }
+
+    private fun computeFlat(
         lat: Double, lon: Double, aglMeters: Double,
         bearingDeg: Double, pitchDeg: Double,
     ): GroundPoint {
@@ -73,6 +148,25 @@ object CameraSlantPoint {
 
     /** Normalize any heading/bearing to 0..360. */
     fun norm360(deg: Double): Double = ((deg % 360.0) + 360.0) % 360.0
+
+    /** Great-circle distance between two points (haversine), meters. */
+    fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLat = (lat2 - lat1) * DEG
+        val dLon = (lon2 - lon1) * DEG
+        val a = sin(dLat / 2).let { it * it } +
+            cos(lat1 * DEG) * cos(lat2 * DEG) * sin(dLon / 2).let { it * it }
+        return EARTH_RADIUS_M * 2 * atan2(sqrt(a), sqrt(1 - a))
+    }
+
+    /** True (not magnetic) initial bearing from point 1 to point 2, degrees 0..360. */
+    fun initialBearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val phi1 = lat1 * DEG
+        val phi2 = lat2 * DEG
+        val dLon = (lon2 - lon1) * DEG
+        val y = sin(dLon) * cos(phi2)
+        val x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dLon)
+        return norm360(atan2(y, x) / DEG)
+    }
 
     /**
      * Project the camera's rectangular field of view onto the ground — the footprint

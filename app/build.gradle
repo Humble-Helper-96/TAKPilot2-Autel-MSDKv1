@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt'
 
 android {
     signingConfigs {
@@ -85,6 +86,11 @@ dependencies {
     implementation 'com.github.pedroSG94.rtmp-rtsp-stream-client-java:rtsp:2.2.6'
     // Flight-map (OSM tiles, offline-cacheable) for TAK markers / drop pins
     implementation 'org.osmdroid:osmdroid-android:6.1.14'
+    // Imported-DTED region tracking (terrain-corrected SPoI) — ported from the DJI sibling
+    // app. DJI pins 2.2.6 there because its Kotlin 1.5.10 can't read newer Room's metadata;
+    // this project is on Kotlin 1.7.20, so a more current Room release is fine.
+    implementation "androidx.room:room-runtime:2.4.3"
+    kapt "androidx.room:room-compiler:2.4.3"
     //    compile autelSdkDependencies.okIO
 //    api 'io.reactivex.rxjava2:rxjava:2.1.2'
 //    api 'io.reactivex.rxjava2:rxandroid:2.0.1'

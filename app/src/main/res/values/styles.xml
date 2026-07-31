@@ -8,6 +8,27 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <!-- No ActionBar — the TAKPilot2 screens draw their own chrome (the flight screen's
+         instrument toolbar, the home screen's cards), so the platform bar is dead space that
+         also breaks the side-by-side match with the DJI blueprint. Mirrors DJI's styles of the
+         same names. -->
+    <style name="AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- Home screen: no ActionBar/title, but a SOLID status bar (not transparent) — the home
+         layout doesn't go immersive/fullscreen like the flight screen does, so a transparent
+         status bar leaves an unpainted gap: content is inset below it, but nothing draws INTO
+         that strip and the platform's default light scrim shows through instead of the app's
+         dark background. Colour matches the home layout's #0E0E10 background. -->
+    <style name="AppTheme.NoActionBar.SolidStatusBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">#0E0E10</item>
+    </style>
+
     <style name="CodecTheme" parent="Theme.AppCompat.Light">
         <!-- Customize your theme here. -->
         <item name="colorPrimary">@color/colorPrimary</item>
@@ -93,5 +114,62 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">#AAAAAA</item>
         <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- Dark dialog styling, matching the DJI blueprint. -->
+    <style name="TakDialogTheme" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/tak_dialog_bg</item>
+        <item name="colorAccent">#9AC4FF</item>
+        <item name="android:colorAccent">#9AC4FF</item>
+        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:textColorSecondary">#AAAAAA</item>
+        <item name="android:textColorPrimaryInverse">#FFFFFF</item>
+        <item name="android:textColorAlertDialogListItem">#FFFFFF</item>
+        <item name="android:editTextColor">#FFFFFF</item>
+        <item name="android:textColorHint">#777777</item>
+    </style>
+
+    <!-- Same, but the positive/default-highlight colour reads as a warning — for confirms
+         where getting it wrong has a real consequence (resetting the home point). -->
+    <style name="TakDialogTheme.Destructive">
+        <item name="colorAccent">#EF5350</item>
+        <item name="android:colorAccent">#EF5350</item>
+    </style>
+
+    <!-- Pre-Flight Setup form layout, matching the DJI blueprint's styles of the same names. -->
+    <style name="takFormRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
+    <style name="takColumn">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginEnd">4dp</item>
+    </style>
+    <style name="takColumnRadio">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:buttonTint">#9AC4FF</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- Flight-screen HUD readouts: plain text over video, no box, drop-shadowed so it stays
+         legible on bright ground. Matches the DJI blueprint's hudText. -->
+    <style name="hudText">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:shadowColor">#CC000000</item>
+        <item name="android:shadowDx">0</item>
+        <item name="android:shadowDy">1</item>
+        <item name="android:shadowRadius">3</item>
     </style>
 </resources>

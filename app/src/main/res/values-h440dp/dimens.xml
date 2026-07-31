@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Taller landscape screens (Pixel 8 Pro is ~448dp; Smart Controller V3 ~600dp) can
+         afford the larger mini-map. See the base values/dimens.xml entry for the height
+         budget this number has to fit inside. -->
+    <dimen name="flight_map_size">160dp</dimen>
+</resources>

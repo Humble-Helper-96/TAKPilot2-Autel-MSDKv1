@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">TAKPilot2</string>
+    <string name="app_name">TAKPilot2 - Autel 640T</string>
 
     <string name="product_not_connect">device not connected</string>
     <string name="product_connect">enter the device</string>

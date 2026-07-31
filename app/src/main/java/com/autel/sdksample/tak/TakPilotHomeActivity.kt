@@ -1,37 +1,41 @@
 package com.autel.sdksample.tak
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.autel.sdk.Autel
-import com.autel.sdksample.ProductActivity
 import com.autel.sdksample.R
 import com.taklite.client.tak.TakManager
 import com.taklite.util.AppLog
 
 /**
- * TAKPilot2-Autel home screen — port of TAKPilot2HomeActivity. Aircraft/SDK + TAK status
- * and quick toggles on the left; the large "Enter Flight" card on the right. TAK
- * auto-connects in the background before the operator even enters flight.
+ * TAKPilot2-Autel home screen — mirrors the DJI blueprint's TAKPilot2GoHomeActivity:
+ * logo + TAK status and a Quick Controls card on the left, the large "Enter Flight" card on
+ * the right. TAK auto-connects in the background before the operator even enters flight.
  *
- * Differences vs the DJI original:
- *  - "Button Mapping" (DJI RC Plus physical keys) is repurposed as "SDK Test Tools",
- *    opening the stock Autel sample's ProductActivity — invaluable for bench debugging.
- *  - Aircraft status comes from [AutelProductHolder] instead of DJI KeyManager.
+ * Kept deliberately identical to the blueprint (operator, 2026-07-30). Three Autel-only
+ * extras were REMOVED to get there: an "SDK Test Tools" button (opened the stock Autel
+ * sample's ProductActivity — bench-debug only, and reachable by other means), and two Quick
+ * Controls checkboxes for video streaming and camera look-point. Neither checkbox owned its
+ * setting: look-point lives in Pre-Flight Setup and is applied on auto-connect by
+ * [TakAutoConnect], and streaming is started from the flight screen's LIVE badge — so
+ * removing them dropped no functionality. The Enter Flight card's battery line went too;
+ * battery is on the flight toolbar's gauge.
+ *
+ * Only real difference left: aircraft status comes from [AutelProductHolder] instead of
+ * DJI's KeyManager.
  */
 class TakPilotHomeActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var aircraft: TextView
     private lateinit var sdk: TextView
-    private lateinit var battery: TextView
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
 
@@ -54,16 +58,14 @@ class TakPilotHomeActivity : AppCompatActivity() {
 
         aircraft = findViewById(R.id.homeAircraft)
         sdk = findViewById(R.id.homeSdk)
-        battery = findViewById(R.id.homeBattery)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
 
-        findViewById<android.view.View>(R.id.homeEnterFlightCard).setOnClickListener {
-            AppLog.v(TAG, "Enter Flight card tapped")
-            startActivity(Intent(this, FlightActivity::class.java))
-        }
+        // One tap target: the whole card. The separate "Enter Flight" button that used to sit
+        // below it was removed — it duplicated the card's own click and cost ~56dp of a
+        // height budget that was already over on shorter screens (see the layout comment).
         findViewById<android.view.View>(R.id.homeEnterFlight).setOnClickListener {
-            AppLog.v(TAG, "Enter Flight button tapped")
+            AppLog.v(TAG, "Enter Flight tapped")
             startActivity(Intent(this, FlightActivity::class.java))
         }
         findViewById<Button>(R.id.homeTakSetup).setOnClickListener {
@@ -71,39 +73,6 @@ class TakPilotHomeActivity : AppCompatActivity() {
             startActivity(Intent(this, TakConnectActivity::class.java))
         }
 
-        val prefs = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
-
-        val videoToggle = findViewById<CheckBox>(R.id.homeVideoToggle)
-        videoToggle.isChecked = VideoStreamerHolder.isActive
-        videoToggle.setOnCheckedChangeListener { _, on ->
-            AppLog.v(TAG, "Stream video toggle -> $on")
-            if (on) {
-                val ok = VideoStreamerHolder.startFromPrefs(applicationContext) { _, _ -> }
-                if (!ok) {
-                    videoToggle.isChecked = false
-                    toast("Set up the stream in TAK Setup first")
-                }
-            } else {
-                VideoStreamerHolder.stop()
-            }
-        }
-
-        val cpToggle = findViewById<CheckBox>(R.id.homeCameraPointToggle)
-        cpToggle.isChecked = prefs.getBoolean("camera_point", false)
-        cpToggle.setOnCheckedChangeListener { _, on ->
-            AppLog.v(TAG, "Camera FOV / look-point toggle -> $on")
-            prefs.edit().putBoolean("camera_point", on).apply()
-            TakBridgeHolder.setCameraPointEnabled(on)
-        }
-
-        // DJI's "Button Mapping" slot → Autel SDK sample test tools (bench debugging).
-        findViewById<Button>(R.id.homeButtonMapping).apply {
-            text = "SDK Test Tools"
-            setOnClickListener {
-                AppLog.v(TAG, "SDK Test Tools tapped")
-                startActivity(Intent(this@TakPilotHomeActivity, ProductActivity::class.java))
-            }
-        }
         findViewById<Button>(R.id.homeDataSync).setOnClickListener {
             AppLog.v(TAG, "Data Sync tapped")
             startActivity(Intent(this, DataSyncActivity::class.java))
@@ -112,6 +81,41 @@ class TakPilotHomeActivity : AppCompatActivity() {
             AppLog.v(TAG, "Debug tapped")
             startActivity(Intent(this, DebugActivity::class.java))
         }
+        findViewById<Button>(R.id.homeQuit).setOnClickListener {
+            AppLog.v(TAG, "STOP/QUIT tapped")
+            confirmQuit()
+        }
+        findViewById<Button>(R.id.homeFieldGuide).setOnClickListener {
+            AppLog.v(TAG, "Field Guide tapped")
+            startActivity(Intent(this, FieldGuideActivity::class.java))
+        }
+    }
+
+    /** The "nuclear option": tear down every long-lived TAKPilot2-Autel process (video
+     *  stream, TAK connection + its foreground service, telemetry bridge) and then kill this
+     *  process outright, so a relaunch starts completely clean — for clearing out any stuck
+     *  state found mid-operation without having to know which subsystem is wedged. Ported
+     *  from the DJI sibling's identical STOP/QUIT. */
+    private fun confirmQuit() {
+        AlertDialog.Builder(this)
+            .setTitle("Stop & Quit")
+            .setMessage("Force-stop TAKPilot2-Autel and all its background processes (video stream, TAK connection, telemetry)? You'll need to relaunch the app.")
+            .setPositiveButton("Stop & Quit") { _, _ -> doQuit() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun doQuit() {
+        AppLog.i(TAG, "STOP/QUIT — tearing down and killing process")
+        runCatching { VideoStreamerHolder.stop() }
+        runCatching { TakBridgeHolder.stop() }
+        runCatching { TakManager.getInstance().disconnect() }
+        runCatching { TakForegroundService.stop(applicationContext) }
+        handler.removeCallbacksAndMessages(null)
+        finishAffinity()
+        Handler(Looper.getMainLooper()).postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 200)
     }
 
     override fun onResume() {
@@ -131,8 +135,6 @@ class TakPilotHomeActivity : AppCompatActivity() {
         val product = AutelProductHolder.product
         aircraft.text = product?.type?.toString() ?: "Not connected"
         sdk.text = "Autel MSDK " + (runCatching { Autel.getSdkVersion() }.getOrNull() ?: "1.5")
-        val batt = TakBridgeHolder.hud()?.batteryPct ?: -1
-        battery.text = if (batt > 0) "Battery $batt%" else "Battery —"
 
         val connected = TakManager.getInstance().isConnected
         val color = if (connected) Color.parseColor("#4CAF50") else Color.parseColor("#F44336")
@@ -141,8 +143,6 @@ class TakPilotHomeActivity : AppCompatActivity() {
         (takDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(color)
             ?: takDot.background?.setTint(color)
     }
-
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 
     companion object { private const val TAG = "TakPilotHomeActivity" }
 }

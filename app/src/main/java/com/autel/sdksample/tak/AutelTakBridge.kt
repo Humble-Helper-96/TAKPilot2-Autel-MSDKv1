@@ -67,6 +67,14 @@ class AutelTakBridge(
     @Volatile private var vertAccM = -1.0
     @Volatile private var liveGimbalPitch: Double? = null
     @Volatile private var liveGimbalYaw: Double? = null
+    @Volatile private var homeLat = Double.NaN
+    @Volatile private var homeLon = Double.NaN
+    @Volatile private var homeSet = false
+
+    // One-shot guard so the pilot-configured flight-safety limits (max altitude/radius/RTH
+    // height) are pushed exactly once per connect, off the first real telemetry report — a
+    // reliable "the flight controller is actually up" signal, same pattern as the DJI sibling.
+    @Volatile private var limitsApplied = false
 
     // Sensor FOV cone state, embedded in the drone PLI so ATAK/taklite draw the cone
     // natively. -1 = omit.
@@ -96,6 +104,10 @@ class AutelTakBridge(
     fun start() {
         if (running) return
         running = true
+        // New session = new flight = a new takeoff point, so the latched terrain reference
+        // from the last one must not carry over (see TerrainAgl).
+        TerrainAgl.reset()
+        limitsApplied = false
         subscribe()
         handler.post(tick)
         AppLog.i(TAG, "AutelTakBridge started ($droneCallsign / $droneUid, every ${intervalMs}ms)")
@@ -122,6 +134,13 @@ class AutelTakBridge(
             CallbackWithOneParam<EvoFlyControllerInfo> {
             override fun onSuccess(info: EvoFlyControllerInfo?) {
                 info ?: return
+                if (!limitsApplied) {
+                    limitsApplied = true
+                    val context = com.autel.sdksample.TestApplication.getInstance()
+                    if (context != null) {
+                        FlightLimitsController.applyDefaults(context, evo.flyController)
+                    }
+                }
                 info.gpsInfo?.let { gps ->
                     lat = gps.latitude
                     lon = gps.longitude
@@ -142,6 +161,12 @@ class AutelTakBridge(
                         val x = local.xSpeed.toDouble(); val y = local.ySpeed.toDouble()
                         sqrt(x * x + y * y)
                     }
+                    // Home point — the takeoff-terrain reference TerrainAgl latches from.
+                    // getHomeEnable() is the SDK's own "has a home point been recorded yet"
+                    // flag; until then homeLatitude/Longitude are meaningless zeros.
+                    homeSet = local.homeEnable != 0
+                    homeLat = local.homeLatitude
+                    homeLon = local.homeLongitude
                 }
                 info.attitudeInfo?.let { att ->
                     headingDeg = CameraSlantPoint.norm360(att.yaw)
@@ -220,13 +245,28 @@ class AutelTakBridge(
 
     /**
      * Height above the ground the camera ray hits — used by the slant-point math, which
-     * assumes flat ground at that height. Best available estimate: altitude above the
-     * takeoff point ([relAlt]); falls back to 0 (which trips the fallback range).
-     *
-     * UPGRADE PATH (tracker §4.6): replace with `mslAlt − DTED(lat,lon)` ray-march for
-     * real-terrain SPoI — mslAlt is already cached here for exactly that purpose.
+     * assumes flat ground at that height when there's no DTED coverage. Best available
+     * estimate: altitude above the takeoff point ([relAlt]); falls back to 0 (which trips the
+     * fallback range). When DTED coverage exists, [pushCameraPoint]/[lookPoint] refine this
+     * flat-ground starting point against actual terrain via [CameraSlantPoint]'s
+     * `elevationAt`/`aircraftMslMeters` params — see [aircraftMsl]/[elevationLookup].
      */
     private fun aglMeters(): Double = if (relAlt.isFinite() && relAlt > 0) relAlt else 0.0
+
+    /** Aircraft altitude above MEAN SEA LEVEL, or null before the takeoff terrain reference
+     *  latches. [heightAboveTakeoff] is the bridge's own altitude; adding the takeoff point's
+     *  terrain elevation puts it in the same frame as the DTED samples the slant solver
+     *  compares against. */
+    private fun aircraftMsl(heightAboveTakeoff: Double): Double? =
+        TerrainAgl.takeoffTerrainElevMsl?.plus(heightAboveTakeoff)
+
+    /** DTED-backed elevation lookup for [CameraSlantPoint], or null if no tile covers the
+     *  point (that's the normal case until the pilot uploads coverage for the area — the
+     *  math falls back to the flat-ground estimate). */
+    private fun elevationLookup(lat: Double, lon: Double): Double? {
+        val context = com.autel.sdksample.TestApplication.getInstance() ?: return null
+        return DtedIndex.elevationAt(context, lat, lon)
+    }
 
     /**
      * True geographic bearing the camera points along.
@@ -254,7 +294,8 @@ class AutelTakBridge(
         // SPI lands behind/above the aircraft in testing.
         val pitchAdj = pitch * PITCH_SIGN + PITCH_OFFSET_DEG
 
-        val gp = CameraSlantPoint.compute(lat, lon, aglMeters, bearing, pitchAdj)
+        val gp = CameraSlantPoint.compute(
+            lat, lon, aglMeters, bearing, pitchAdj, ::elevationLookup, aircraftMsl(aglMeters))
         tak.sendCameraPoint(spiUid, droneUid, "$droneCallsign-SPI", gp.lat, gp.lon, gp.rangeMeters)
 
         val zoom = liveZoom
@@ -289,8 +330,14 @@ class AutelTakBridge(
         val lat = this.lat; val lon = this.lon
         if (!isValidLat(lat) || !isValidLon(lon)) return null
         val bearing = cameraBearing(yaw, headingDeg)
-        val gp = CameraSlantPoint.compute(lat, lon, aglMeters(), bearing, pitch * PITCH_SIGN + PITCH_OFFSET_DEG)
-        return Triple(gp.lat, gp.lon, 0.0)
+        val agl = aglMeters()
+        val gp = CameraSlantPoint.compute(
+            lat, lon, agl, bearing, pitch * PITCH_SIGN + PITCH_OFFSET_DEG,
+            ::elevationLookup, aircraftMsl(agl))
+        // Third element is the target's terrain elevation, which dropped markers publish as
+        // their CoT hae. 0.0 when there's no DTED coverage — same "unknown, assume sea level"
+        // fallback the SPI push has always used.
+        return Triple(gp.lat, gp.lon, gp.elevationMeters)
     }
 
     // ---- HUD accessors for FlightActivity ----
@@ -298,9 +345,17 @@ class AutelTakBridge(
         val lat: Double, val lon: Double, val relAlt: Double, val hae: Double,
         val speedMs: Double, val headingDeg: Double, val batteryPct: Int,
         val sats: Int, val gimbalPitch: Double?, val hasFix: Boolean,
+        val homeLat: Double, val homeLon: Double, val homeSet: Boolean,
     )
     fun hud(): Hud = Hud(lat, lon, relAlt, hae, speedMs, headingDeg, batteryPct, satCount,
-        liveGimbalPitch, isValidLat(lat) && isValidLon(lon))
+        liveGimbalPitch, isValidLat(lat) && isValidLon(lon), homeLat, homeLon, homeSet)
+
+    /** Terrain-corrected AGL + MSL reading for the current telemetry snapshot (Phase 2 HUD
+     *  wiring reads this); see [TerrainAgl]. Needs an app Context for the DTED lookup. */
+    fun aglReading(): TerrainAgl.Reading? {
+        val context = com.autel.sdksample.TestApplication.getInstance() ?: return null
+        return TerrainAgl.reading(context, hud())
+    }
 
     companion object {
         private const val TAG = "AutelTakBridge"

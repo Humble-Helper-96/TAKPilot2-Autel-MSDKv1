@@ -11,8 +11,8 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ArrayBlockingQueue
 
 /**
- * Opt-in "Low Bandwidth" mode support: decodes the aircraft's native H.264/H.265 downlink
- * and re-encodes it as a small H.264 stream for weak-cellular links, entirely on its own
+ * Video-quality transcode support: decodes the aircraft's native H.264/H.265 downlink and
+ * re-encodes it at the pilot-selected [TranscodeProfile], entirely on its own
  * background thread. The on-screen [com.autel.sdk.widget.AutelCodecView] in FlightActivity
  * is untouched — it reads straight from the SDK, not from this class — so the pilot always
  * sees native-resolution video locally; only what gets pushed to the media server shrinks.
@@ -24,13 +24,35 @@ import java.util.concurrent.ArrayBlockingQueue
  *
  * UNTESTED ON HARDWARE — built and code-reviewed without an aircraft attached (see the
  * project handoff's §7 calibration table for the same caveat on the rest of the video
- * path). [TARGET_BITRATE] in particular wants a real-network check before trusting it.
+ * path). The profiles' bitrates in particular want a real-network check before trusting them.
  */
 class LowBandwidthTranscoder(
     private val isHevc: Boolean,
+    /** Output size/rate/bitrate. Defaults to [TranscodeProfile.STANDARD] so existing callers
+     *  keep the behaviour this class shipped with. */
+    private val profile: TranscodeProfile = TranscodeProfile.STANDARD,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
     private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer) -> Unit,
 ) {
+    /**
+     * The pilot-selectable video quality tiers, matching the DJI blueprint's
+     * `StreamTranscoder.TranscodeProfile` value-for-value so a given choice means the same
+     * thing on either airframe.
+     */
+    enum class TranscodeProfile(val maxHeight: Int, val fps: Int, val bitrateBps: Int) {
+        LOW(360, 10, 275_000),        // maximum survivability on marginal links
+        STANDARD(480, 15, 550_000),   // default — ~2x Low's bitrate, noticeably better
+        HIGH(720, 15, 1_000_000);     // ~2x again, plus higher resolution
+
+        companion object {
+            fun fromPref(name: String?): TranscodeProfile = when (name) {
+                "low" -> LOW
+                "high" -> HIGH
+                else -> STANDARD
+            }
+        }
+    }
+
     private val thread = HandlerThread("LowBWTranscoder").apply { start() }
     private val handler = Handler(thread.looper)
     private val queue = ArrayBlockingQueue<QueuedFrame>(QUEUE_CAPACITY)
@@ -41,6 +63,7 @@ class LowBandwidthTranscoder(
     private var lastForwardedNs = 0L
     private var encFrameCount = 0
     private var encBytesSinceLog = 0L
+    private val frameIntervalNs = 1_000_000_000L / profile.fps
 
     private class QueuedFrame(val bytes: ByteArray, val isIFrame: Boolean)
 
@@ -132,14 +155,15 @@ class LowBandwidthTranscoder(
 
     private fun ensureEncoder(srcW: Int, srcH: Int) {
         if (encoder != null || srcW <= 0 || srcH <= 0) return
-        var targetH = TARGET_HEIGHT
+        // never upscale: a 360p source stays 360p even on the HIGH profile
+        var targetH = minOf(profile.maxHeight, srcH)
         var targetW = (srcW.toDouble() / srcH * targetH).toInt()
         targetW -= targetW % 2   // most encoders require even dimensions
         targetH -= targetH % 2
         val format = MediaFormat.createVideoFormat("video/avc", targetW, targetH).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-            setInteger(MediaFormat.KEY_BIT_RATE, TARGET_BITRATE)
-            setInteger(MediaFormat.KEY_FRAME_RATE, TARGET_FPS)
+            setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrateBps)
+            setInteger(MediaFormat.KEY_FRAME_RATE, profile.fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
             runCatching { setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline) }
         }
@@ -148,16 +172,16 @@ class LowBandwidthTranscoder(
                 configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
-            AppLog.i(TAG, "low-bandwidth encoder: ${srcW}x$srcH -> ${targetW}x$targetH " +
-                    "@ ${TARGET_FPS}fps ${TARGET_BITRATE / 1000}kbps")
+            AppLog.i(TAG, "encoder [${profile.name}]: ${srcW}x$srcH -> ${targetW}x$targetH " +
+                    "@ ${profile.fps}fps ${profile.bitrateBps / 1000}kbps")
         }.onFailure { AppLog.w(TAG, "encoder setup failed: ${it.message}") }
     }
 
-    /** Throttles to [TARGET_FPS] and nearest-neighbor downsamples each plane into the encoder's input. */
+    /** Throttles to the profile's fps and nearest-neighbor downsamples each plane into the encoder's input. */
     private fun scaleAndForward(src: Image) {
         val enc = encoder ?: return
         val nowNs = System.nanoTime()
-        if (nowNs - lastForwardedNs < FRAME_INTERVAL_NS) return
+        if (nowNs - lastForwardedNs < frameIntervalNs) return
         lastForwardedNs = nowNs
 
         val inIdx = enc.dequeueInputBuffer(0)
@@ -262,11 +286,5 @@ class LowBandwidthTranscoder(
         private const val O: Byte = 1
         private const val QUEUE_CAPACITY = 6
 
-        const val TARGET_HEIGHT = 480
-        const val TARGET_FPS = 15
-        // "High compression" for weak cellular — a calibration constant like the rest of
-        // the project's video/telemetry tuning; wants a real-network check, not just a guess.
-        const val TARGET_BITRATE = 600_000
-        private const val FRAME_INTERVAL_NS = 1_000_000_000L / TARGET_FPS
     }
 }

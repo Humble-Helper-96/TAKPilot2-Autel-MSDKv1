@@ -45,11 +45,35 @@ public class TestApplication extends Application {
     private static  String LOG_PATH;
 //    public static XLogPrinter globalFilePrinter;
 
+    // App-wide Context accessor, mirroring the DJI sibling's DJISampleApplication.getInstance()
+    // — DTED lookups (DtedIndex/TerrainAgl) need a Context but run from a background telemetry
+    // tick with no Activity in hand.
+    private static Application app;
+
+    public static Application getInstance() {
+        return app;
+    }
+
     public void onCreate() {
         super.onCreate();
+        app = this;
         Log.v("connectDebug", "TestApplication onCreate ");
         initXlog();
         AppLog.init(this);
+        // Real client identity for CoT's <takv> block, so this app's own entry in a TAK
+        // server's connected-users list says what it actually is, not the shared TakManager
+        // core's generic placeholder. See TakManager.setClientIdentity's doc — deliberately
+        // set from HERE (this app), not inside the shared core, which is also used by the
+        // separate DJI sibling port and must not be hardcoded to either app's name.
+        com.taklite.client.tak.TakManager.getInstance().setClientIdentity(
+                "TAKPilot2-Autel",
+                android.os.Build.MODEL,
+                "Android " + android.os.Build.VERSION.RELEASE,
+                appVersionName(this));
+        // Pull the downloaded FAA ceilings into memory on a background thread now, so a later
+        // HUD/telemetry read never has to do a tens-of-thousands-of-rows read on the main
+        // thread while video is running. Matches the DJI sibling's startup sequencing.
+        com.autel.sdksample.tak.UasfmIndex.INSTANCE.preload(this);
         /**
          * 初始化SDK，通过网络验证APPKey的有效性
          */
@@ -76,6 +100,19 @@ public class TestApplication extends Application {
         });
 
         AutelConfigManager.instance().init(this);
+    }
+
+    /** Real app versionName for the <takv version="..."> attribute, read from the package rather
+     *  than hand-maintained, so it can never go stale the way the shared core's old hardcoded
+     *  "1.0" placeholder already had. "unknown" only if the package itself can't be read, which
+     *  should not happen for a running app. */
+    private static String appVersionName(Context context) {
+        try {
+            return context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     public BaseProduct getCurrentProduct() {

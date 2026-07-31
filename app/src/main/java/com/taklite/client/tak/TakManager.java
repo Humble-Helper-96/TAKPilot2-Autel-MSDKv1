@@ -38,6 +38,32 @@ public class TakManager implements TakClient.TakClientListener {
     private boolean initialPliSent = false;
     private String activeAlertId;
 
+    // Client identity for CoT's <takv> block — what a TAK server's "Connected Users" panel shows
+    // as this client's type/device/version. Defaults are deliberately generic (never a specific
+    // app name): this class is shared with the DJI sibling port, and hardcoding an identity
+    // here would mislabel whichever app never calls setClientIdentity(). See that method's doc.
+    private String takvPlatform = "TAK Lite";
+    private String takvDevice = "Unknown Device";
+    private String takvOs = "Android";
+    private String takvVersion = "1.0";
+
+    /**
+     * Sets the client identity every outbound PLI reports via {@code <takv>}. Call once at app
+     * startup — real values here (not this class's placeholder defaults) are what makes a
+     * pilot's own entry in a TAK server's connected-users list say the ACTUAL app, not a
+     * leftover generic name from the shared core.
+     *
+     * Deliberately not hardcoded inside this shared class: {@link TakManager}/{@link CotBuilder}
+     * are used by more than one sibling app (this Autel port and the separate DJI port), and
+     * baking one app's name in here would mislabel the other.
+     */
+    public void setClientIdentity(String platform, String device, String os, String version) {
+        if (platform != null) this.takvPlatform = platform;
+        if (device != null) this.takvDevice = device;
+        if (os != null) this.takvOs = os;
+        if (version != null) this.takvVersion = version;
+    }
+
     private final ConcurrentHashMap<String, TakUser> takUsers = new ConcurrentHashMap<>();
     private final List<TakUserListener> listeners = new ArrayList<>();
     private final List<TakAlertListener> alertListeners = new ArrayList<>();
@@ -184,6 +210,19 @@ public class TakManager implements TakClient.TakClientListener {
         return xml.substring(0, detailEnd) + "<marti>" + dests + "</marti>" + xml.substring(detailEnd);
     }
 
+    /**
+     * The {@code <takv device="...">} value: hardware model plus the CURRENT callsign, so a
+     * teammate can tell two otherwise-identical devices apart in the connected-users list
+     * without opening each track. Built fresh at send time (not cached alongside
+     * {@link #setClientIdentity}) specifically so it can never go stale if the pilot edits their
+     * callsign mid-session — {@link #setClientIdentity} is a one-time startup call, callsign is
+     * not.
+     */
+    private String deviceWithCallsign(String cs) {
+        if (cs == null || cs.isEmpty()) return takvDevice;
+        return takvDevice + " (" + cs + ")";
+    }
+
     private static String escapeXmlAttr(String s) {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
@@ -195,7 +234,8 @@ public class TakManager implements TakClient.TakClientListener {
             lastLon = location.getLongitude();
             String xml = CotBuilder.buildPLI(uid, callsign, team, role,
                     location.getLatitude(), location.getLongitude(), location.getAltitude(),
-                    location.getBearing(), location.getSpeed(), battery);
+                    location.getBearing(), location.getSpeed(), battery,
+                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion);
             sendCot(xml);
             AppLog.d(TAG, "PLI sent: " + callsign + " @ " + lastLat + "," + lastLon);
             AppLog.d(TAG, "PLI XML: " + xml);
@@ -277,28 +317,47 @@ public class TakManager implements TakClient.TakClientListener {
         activeAlertId = null;
     }
 
-    /** Broadcast a marker CoT (server-wide); returns its uid, or null if not connected. */
+    /** Mint a marker uid. Only for a marker's FIRST send — reuse it afterwards, see below. */
+    public static String newMarkerUid() {
+        return "marker-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /** Broadcast a marker CoT (server-wide) under a NEW uid; returns it, or null if not
+     *  connected. Use {@link #sendMarkerWithUid} to update a marker that already exists. */
     public String sendMarker(double lat, double lon, double alt, String affiliation,
                              String name, String remarks) {
-        if (client == null || !connected) return null;
-        String markerUid = "marker-" + UUID.randomUUID().toString().substring(0, 8);
-        String xml = CotBuilder.buildMarker(uid, callsign, markerUid, affiliation, lat, lon, alt,
-                name, remarks);
-        sendCot(xml);
-        AppLog.d(TAG, "Marker sent: " + affiliation + " @ " + lat + "," + lon + " id=" + markerUid);
-        return markerUid;
+        return sendMarkerWithUid(newMarkerUid(), lat, lon, alt, affiliation, name, remarks, null);
     }
 
     /** Send a marker scoped to a Data Sync mission/feed only (NOT server-wide) via a
      *  &lt;marti&gt;&lt;dest mission=…/&gt;&lt;/marti&gt; tag. Returns its uid, or null if not connected. */
     public String sendMarkerToMission(double lat, double lon, double alt, String affiliation,
                                       String name, String remarks, String missionName) {
+        return sendMarkerWithUid(newMarkerUid(), lat, lon, alt, affiliation, name, remarks, missionName);
+    }
+
+    /**
+     * Send a marker CoT under a CALLER-SUPPLIED uid — the one call that can MOVE or otherwise
+     * update an existing marker rather than spawning a new one.
+     *
+     * In CoT the uid <em>is</em> the marker's identity: re-send the same uid with new lat/lon
+     * and fresh time/start/stale, and every ATAK/iTAK/TAKAware client moves the existing
+     * marker in place. Send a fresh uid instead and they all draw a second marker. So a caller
+     * that owns a persistent pin must store the uid from its first send and pass it back here
+     * for every subsequent move/rename/retype/re-send.
+     *
+     * @param missionName Data Sync feed to scope to, or null to broadcast server-wide.
+     * @return the uid that was sent, or null if not connected.
+     */
+    public String sendMarkerWithUid(String markerUid, double lat, double lon, double alt,
+                                    String affiliation, String name, String remarks,
+                                    String missionName) {
         if (client == null || !connected) return null;
-        String markerUid = "marker-" + UUID.randomUUID().toString().substring(0, 8);
         String xml = CotBuilder.buildMarker(uid, callsign, markerUid, affiliation, lat, lon, alt,
                 name, remarks, missionName);
         sendCot(xml);
-        AppLog.d(TAG, "Marker sent to mission " + missionName + ": " + affiliation + " id=" + markerUid);
+        AppLog.d(TAG, "Marker sent" + (missionName != null ? " to mission " + missionName : "")
+                + ": " + affiliation + " @ " + lat + "," + lon + " id=" + markerUid);
         return markerUid;
     }
 
@@ -326,7 +385,8 @@ public class TakManager implements TakClient.TakClientListener {
         AppLog.d(TAG, "Connected to TAK server");
         if (uid != null) {
             String cs = callsign != null ? callsign : uid;
-            String initCot = CotBuilder.buildPLI(uid, cs, team, role, 0, 0, 0, 0, 0, 100);
+            String initCot = CotBuilder.buildPLI(uid, cs, team, role, 0, 0, 0, 0, 0, 100,
+                    takvPlatform, deviceWithCallsign(cs), takvOs, takvVersion);
             client.sendMessage(initCot);
             AppLog.d(TAG, "Initial PLI sent to register with server");
         }

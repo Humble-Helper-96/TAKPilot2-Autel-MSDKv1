@@ -44,11 +44,19 @@ class AutelVideoStreamer(
         val password: String,
         val streamId: String,
         val tcp: Boolean,
-        val lowBandwidth: Boolean = false,
+        /** Pilot-selected video quality: "low" | "standard" | "high", matching the DJI
+         *  blueprint's video_profile pref. Every profile is an on-device transcode. */
+        val profile: String = "standard",
     ) {
+        val transcodeProfile: LowBandwidthTranscoder.TranscodeProfile
+            get() = LowBandwidthTranscoder.TranscodeProfile.fromPref(profile)
+
         // -Low suffix flows through push/advertise/display URLs alike, so the CoT always
         // points at whichever stream is actually live — full-res and -Low are never both up.
-        private fun path(): String = streamId.trim('/') + if (lowBandwidth) "-Low" else ""
+        // Kept for every profile (not just "low") to match the blueprint: the suffix tells the
+        // media server this path is already transcoded and should be passed through rather
+        // than re-encoded, which is true of all three tiers.
+        private fun path(): String = streamId.trim('/') + "-Low"
         fun pushUrl(): String = "rtsp://$host:$port/${path()}"
         fun advertiseUrl(): String {
             val cred = if (username.isNotEmpty()) "${enc(username)}:${enc(password)}@" else ""
@@ -106,7 +114,7 @@ class AutelVideoStreamer(
         c.setCodecListener(codecListener, null)
         client.connect(config.pushUrl())
         AppLog.i(TAG, "push=${config.pushUrl()}  advertise=${config.urlSafe()}" +
-                (if (config.lowBandwidth) "  [low-bandwidth: transcoding]" else ""))
+                "  [${config.transcodeProfile.name}: transcoding]")
         onStatus(true, "Starting RTSP push → ${config.urlSafe()}")
     }
 
@@ -132,20 +140,18 @@ class AutelVideoStreamer(
                     sniffParameterSets(videoBuffer, size)
                     val s = sps; val p = pps
                     if (s != null && p != null && (!sawHevcNal || vps != null)) {
-                        if (config.lowBandwidth) {
+                        run {
                             // The -Low stream's SPS/PPS come from OUR encoder, not the
                             // source's — client.setVideoInfo() is called from onParamsReady
                             // once the transcoder's encoder actually produces them.
                             transcoder = LowBandwidthTranscoder(
                                 isHevc = sawHevcNal,
+                                profile = config.transcodeProfile,
                                 onEncoded = { buf, bufInfo -> client.sendVideo(buf, bufInfo) },
                                 onParamsReady = { spsB, ppsB -> client.setVideoInfo(spsB, ppsB, null) },
                             )
-                            AppLog.i(TAG, "low-bandwidth transcoder started (source " +
+                            AppLog.i(TAG, "transcoder started [${config.transcodeProfile.name}] (source " +
                                     "${if (sawHevcNal) "H.265" else "H.264"})")
-                        } else {
-                            client.setVideoInfo(ByteBuffer.wrap(s), ByteBuffer.wrap(p),
-                                vps?.let { ByteBuffer.wrap(it) })
                         }
                         paramsSet = true
                         AppLog.i(TAG, "parameter sets found (${if (vps != null) "H.265" else "H.264"}); " +
@@ -153,20 +159,17 @@ class AutelVideoStreamer(
                     } else return   // keep waiting for a keyframe carrying the params
                 }
 
-                if (config.lowBandwidth) {
-                    transcoder?.submit(videoBuffer, size, isIFrame)
-                } else {
-                    val info = MediaCodec.BufferInfo()
-                    // Monotonic synthesized pts — the SDK's pts units are undocumented, and
-                    // RTSP timestamps only need to be monotonic at the right rate.
-                    val ptsUs = (System.nanoTime() - startNs) / 1000
-                    info.set(0, size, ptsUs, if (isIFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
-                    client.sendVideo(ByteBuffer.wrap(videoBuffer, 0, size), info)
-                }
+                // Every profile is a transcode now (Low/Standard/High), matching the DJI
+                // blueprint's video-quality choice — so frames always go through the
+                // transcoder rather than being pushed straight out. The raw-passthrough branch
+                // that used to live here is gone with the old lowBandwidth boolean; if a
+                // full-resolution passthrough tier is ever wanted back, it belongs as a fourth
+                // profile rather than a parallel code path.
+                transcoder?.submit(videoBuffer, size, isIFrame)
 
                 // Periodic throughput summary (not per-frame — this callback can run at 30fps).
-                // Counts source frames received either way; the transcoder logs its own
-                // (lower-rate) output throughput separately when low-bandwidth is active.
+                // Counts SOURCE frames received; the transcoder logs its own (lower-rate)
+                // output throughput separately.
                 frameCount++
                 frameBytesSinceLog += size
                 if (frameCount % 150 == 0) {
@@ -312,7 +315,7 @@ object VideoStreamerHolder {
             password = p.getString("video_pass", "") ?: "",
             streamId = streamId,
             tcp = p.getBoolean("video_tcp", true),
-            lowBandwidth = p.getBoolean("video_low_bw", false),
+            profile = p.getString("video_profile", "standard") ?: "standard",
         )
         start(context, cfg) { ok, msg ->
             if (ok) TakBridgeHolder.setVideoUrl(cfg.advertiseUrl())

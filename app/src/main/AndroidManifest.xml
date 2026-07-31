@@ -116,6 +116,7 @@
         <!-- ============ TAKPilot2-Autel components ============ -->
         <activity
             android:name=".tak.TakPilotHomeActivity"
+            android:theme="@style/AppTheme.NoActionBar.SolidStatusBar"
             android:screenOrientation="landscape"
             android:exported="true">
             <intent-filter>
@@ -126,15 +127,21 @@
         <activity android:name=".tak.FlightActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize"
-            android:theme="@style/CodecTheme" />
+            android:theme="@style/AppTheme.NoActionBar" />
         <activity android:name=".tak.TakConnectActivity"
+            android:label="TAK Setup"
             android:screenOrientation="landscape" />
         <activity android:name=".tak.DataSyncActivity"
+            android:label="Data Sync"
             android:screenOrientation="landscape" />
         <service android:name=".tak.TakForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
         <activity android:name=".tak.DebugActivity"
+            android:label="Debug Log"
+            android:screenOrientation="landscape" />
+        <activity android:name=".tak.FieldGuideActivity"
+            android:label="Field Guide"
             android:screenOrientation="landscape" />
 
         <provider
