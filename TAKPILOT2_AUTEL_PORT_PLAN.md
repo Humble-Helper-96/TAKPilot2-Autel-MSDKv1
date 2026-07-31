@@ -664,6 +664,99 @@ patched.
       actual density during the QC pass**, since at density 2.5 it would be ~800dp and
       uncomfortably close.
 
+## Phase 2.5 — Flight-screen activation plan (written 2026-07-30, post-v1.3)
+
+Turn every placeholder on the flight screen into a working control. Every SDK claim below
+was verified by `javap` against the bundled `autel-sdk-release.aar` (not guessed from
+method names — that mistake already happened twice, see the failsafe and RTH entries).
+The 640T's camera is the **XT709**, whose interface chain is
+`AutelXT709 → AutelXT706 → AutelBaseCamera`.
+
+**Step 0 — camera plumbing (prerequisite for items 1–4).** There is no synchronous
+"get camera" call; acquisition is listener-based like everything else on this SDK:
+`BaseProduct.getCameraManager().setCameraChangeListener((CameraProduct, AutelBaseCamera))`.
+Extend `AutelProductHolder` to install this listener alongside the product listener, cache
+the `AutelBaseCamera` (and its `AutelXT706` downcast when applicable), and expose it the
+way `evo2` is exposed today. Same single-global-slot caution as
+`Autel.setProductConnectListener` — re-install on resume. Also register
+`setMediaStateListener` here once, caching media status into the bridge.
+
+**1 — REC (record to aircraft SD).** `startRecordVideo(cb)` / `stopRecordVideo(cb)` on
+the base interface. Real state feedback exists: `setMediaStateListener` delivers
+`MediaStatus.RECORD_START / RECORD_STOP / RECORD_FAILED_WRITE_ERROR /
+RECORD_FAILED_SDCARD_REMOVED / RECORD_BUFFER_FULL` — so the pill can track the camera's
+ACTUAL state, closing the "REC showing stopped is not proof" caveat in the Field Guide
+(update that entry when this lands). May require `setMediaMode(MediaMode.VIDEO)` first if
+the camera is in a photo mode — check `getMediaMode` and switch, mirroring DJI's
+flat-mode dance in `onRecordToggleTapped`.
+
+**2 — Photo.** `startTakePhoto(cb)`; confirmation via `MediaStatus.PHOTO_TAKEN_DONE`.
+Open question only hardware can answer: whether XT709 accepts `startTakePhoto` while in
+`MediaMode.VIDEO` (many cameras do). Attempt directly; on failure fall back to
+`setMediaMode(SINGLE) → startTakePhoto → restore VIDEO`, which is exactly DJI's pattern.
+
+**3 — Zoom (1X/2X pill).** `setDigitalZoomScale(int, cb)` + `getDigitalZoomScale` on
+XT706 (there is also `setZoomSlide(int, cb)`). **Unknown units** — the int may be a plain
+multiplier or x100; read and log the current value on connect BEFORE writing anything,
+then derive the 2X value from the observed 1X reading. On success set
+`bridge.liveZoom`, which already narrows the published SPI FOV cone — that plumbing has
+been waiting for exactly this.
+
+**4 — EV slider + ISO/shutter readout.** `setExposure(ExposureCompensation)` — enum in
+1/3-EV steps spanning ±3.0, superset of the slider's −2..+2, so the existing 13-step
+`EvSliderView` maps index→enum directly with no UI change. Readout: `getISO(cb)` /
+`getShutter(cb)` polled on the 2s bridge tick into cached fields (no push listener for
+these). Deviation from DJI to note in code: DJI's `ExposureController` forces
+shutter-priority + auto-ISO on connect; on Autel leave `setExposureMode` alone initially
+— EV compensation works within whatever auto mode the camera is in, and forcing modes on
+an uncharacterised camera risks trading a known-good picture for a theory.
+
+**5 — Video re-sync.** No direct "request IDR" hook, but `AutelCodecView` exposes static
+`stopCodec()` / `startDecode(...)` / `pause()` / `resume()`. The contained approach,
+since FlightActivity already constructs the view in code: tear down and rebuild —
+remove view from container → `stopCodec()` → new `AutelCodecView` → re-add. Functionally
+DJI's `requestResync()`, likely with a similar few-second black gap. Also reuse this for
+the screen-lock/background recovery path Phase 5 wants to validate.
+
+**6 — Quick marker (crosshair tap / long-press re-aim).** No SDK work at all — pure port
+of the blueprint's `TakDropMarkers.quickPin()/placeQuick()/moveQuick()` + `QUICK_NAME`
+(the remaining marker-suite gap already itemised under Phase 2) and wiring
+`crosshairView.onReticleTap/onReticleLongPress` exactly as DJI's flight screen does.
+`lookPoint()` and the send-with-uid machinery it needs are already live.
+
+**7 — AR overlay (+ options long-press).** Biggest item, but pure app-side port:
+`ArOverlayView.kt` (~695 lines) + `ArSettings.kt`. Its DJI imports map 1:1 to things that
+now exist on this side (`CameraSlantPoint`, `TakDropMarkers.pinsForAr`, `TakMapMarkers`,
+`TerrainAgl`, hud) — with one addition needed: port `cameraPose()` from `DroneTakBridge`
+into `AutelTakBridge` (same bearing/pitch model as `lookPoint()`, one source of truth so
+drops and overlay can never disagree). Known accuracy dependencies, all flagged
+elsewhere: video-rect assumption, uncalibrated `PITCH_SIGN`/bearing offset, and the FOV
+constants — AR will be *drawable* before it is *trustworthy*; the 6D-D FOV calibration
+flow exists on the DJI side for exactly that reason.
+
+**8 — Signal bars.** The only item without a ready-made value. `BaseProduct.getDsp()` →
+`EvoDsp.setDspInfoListener(EvoDspInfo)` → `EvoDspInfo.getSignalStrengthInfo()` returns
+`SignalInfo` with raw RF metrics: `getRsrp()[]`, `getMasterSnr()`, `getAirSnr()`,
+`getMeanPower()`. Wire the listener + cache NOW and log raw values every tick (that log
+IS the Phase 4 calibration dataset), but map to bars only behind a provisional
+RSRP→quality curve marked as a calibration constant — and keep the indicator in its
+no-data state until the mapping has been sanity-checked against the controller's own
+signal display on hardware. This is the one place "wire it now" and "show it now" split:
+an invented link-quality number is the exact thing the standing rule's indicator
+carve-out exists to prevent.
+
+**Order of implementation:** 0 → 1 → 2 → 3 → 4 → 5 (camera cluster, each small once
+plumbing exists) → 6 (small) → 7 (large) → 8 (plumbing now, display after calibration).
+Rationale: the camera cluster shares Step 0 and each item is independently testable; the
+quick marker unlocks the last Field Guide "NOT WORKING YET" that needs no hardware; AR
+last because it's biggest and its accuracy is gated on Phase 4 calibration anyway.
+
+**Phase 3 tie-in discovered during this survey:** `AutelXT706.setDisplayMode /
+getDisplayMode` with `DisplayMode.{VISIBLE, PICTURE_IN_PICTURE, IR, OVERLAP}` is the
+thermal/lens switch Phase 3 defers — and it's a two-call API, much simpler than feared.
+When it lands, it must drive `bridge.activeLens` (the hook preserved since v1.2) so the
+SPI FOV switches between the EO and IR constants.
+
 ## Phase 3 — Camera/gimbal seam (thermal deferred)
 
 - [ ] Keep the Flight screen single-lens, visually identical to the Mini 2's — do **not**
