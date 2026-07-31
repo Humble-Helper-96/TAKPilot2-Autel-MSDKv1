@@ -45,8 +45,8 @@ looking identical to the Mini 2's, for this pass.
 > number (see the signal-bars and REC handling on the Flight screen).
 
 **Status (2026-07-30): Phases 0–2 complete, committed as v1.3.** Phase 0/1/2 work is
-committed (`380ba0e`, tag `autel-v1.3`) on top of the v1.2 baseline (`c175d40`, tag
-`autel-baseline-v1.2`). Every screen now matches the DJI blueprint: Home, Flight (full
+committed as `380ba0e` (the port) + `4ad40fc` (the version bump, tagged `autel-v1.3`), on
+top of the v1.2 baseline (`c175d40`, tag `autel-baseline-v1.2`). Every screen now matches the DJI blueprint: Home, Flight (full
 toolbar + locked mini-map + right-hand HUD column + marker suite), Pre-Flight Setup (all
 six sections), Field Guide, Debug Log, Data Sync. `./gradlew assembleDebug` clean
 throughout. The not-yet-functional controls ship as self-describing placeholders per the
