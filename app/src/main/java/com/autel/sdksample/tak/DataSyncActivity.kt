@@ -128,7 +128,7 @@ class DataSyncActivity : AppCompatActivity() {
     }
 
     private fun confirmDelete(name: String) {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Delete feed?")
             .setMessage("Delete \"$name\" from the TAK Server for everyone? This can't be undone.")
             .setNegativeButton("Cancel", null)
@@ -148,7 +148,7 @@ class DataSyncActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "Feed password"
         }
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Join $name")
             .setView(input)
             .setPositiveButton("Join") { _, _ -> doJoin(name, input.text.toString()) }
@@ -210,7 +210,7 @@ class DataSyncActivity : AppCompatActivity() {
             (chanSpinner.adapter as android.widget.ArrayAdapter<*>).notifyDataSetChanged()
         }
 
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Create Feed")
             .setView(col)
             .setPositiveButton("Create") { _, _ ->

@@ -97,7 +97,10 @@ class TakPilotHomeActivity : AppCompatActivity() {
      *  state found mid-operation without having to know which subsystem is wedged. Ported
      *  from the DJI sibling's identical STOP/QUIT. */
     private fun confirmQuit() {
-        AlertDialog.Builder(this)
+        // Themed, unlike the DJI sibling's otherwise-identical confirmQuit — that one is
+        // unthemed and renders as a white card on a dark screen, which is the blueprint being
+        // inconsistent with itself rather than a decision worth copying.
+        AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Stop & Quit")
             .setMessage("Force-stop TAKPilot2-Autel and all its background processes (video stream, TAK connection, telemetry)? You'll need to relaunch the app.")
             .setPositiveButton("Stop & Quit") { _, _ -> doQuit() }

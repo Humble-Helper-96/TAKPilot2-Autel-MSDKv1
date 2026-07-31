@@ -474,7 +474,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     private fun confirmRth() {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Return to Home")
             .setMessage("Command the aircraft to return to home now?")
             .setPositiveButton("Return to Home") { _, _ ->
@@ -1203,7 +1203,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     private fun pickAffiliationThen(then: (TakDropMarkers.Affiliation) -> Unit) {
         val affs = TakDropMarkers.Affiliation.values()
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Marker affiliation")
             .setItems(affs.map { it.label }.toTypedArray()) { _, which ->
                 AppLog.v(TAG, "affiliation chosen: ${affs[which].label}")
@@ -1217,7 +1217,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     override fun askSend(affiliationLabel: String, onChoice: (Boolean) -> Unit) {
         runOnUiThread {
-            AlertDialog.Builder(this)
+            AlertDialog.Builder(this, R.style.TakDialogTheme)
                 .setTitle("$affiliationLabel pin placed")
                 .setMessage("Send this pin to the TAK server?")
                 .setCancelable(false)
@@ -1229,7 +1229,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     override fun pinMenu(title: String, onSend: () -> Unit, onDelete: () -> Unit, sendLabel: String?) {
         runOnUiThread {
-            val b = AlertDialog.Builder(this).setTitle(title)
+            val b = AlertDialog.Builder(this, R.style.TakDialogTheme).setTitle(title)
             if (sendLabel != null) b.setPositiveButton(sendLabel) { _, _ -> AppLog.i(TAG, "pin menu: $sendLabel ($title)"); onSend() }
             b.setNegativeButton("Delete") { _, _ -> AppLog.i(TAG, "pin menu: delete ($title)"); onDelete() }
             b.setNeutralButton("Cancel", null)
