@@ -229,7 +229,7 @@ object TakMapMarkers {
      * MIL-STD-2525 affiliation MARKERS (a-{f,h,n,u}-G, NOT the …-G-U-… unit/PLI form) →
      * frame drawable. Null for PLI/units/drones (those keep the team-colored dot).
      */
-    private fun milMarkerRes(type: String?): Int? {
+    fun milMarkerRes(type: String?): Int? {
         if (type == null) return null
         val parts = type.split("-")
         if (parts.size < 3 || parts[0] != "a" || parts[2] != "G") return null
@@ -245,7 +245,7 @@ object TakMapMarkers {
     }
 
     /** TAK team-name → color, identical to taklite's getTeamColor(). */
-    private fun teamColor(team: String?): Int {
+    fun teamColor(team: String?): Int {
         if (team == null) return Color.GREEN
         return when (team.lowercase()) {
             "cyan" -> Color.parseColor("#00BCD4")

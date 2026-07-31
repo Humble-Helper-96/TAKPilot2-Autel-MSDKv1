@@ -16,6 +16,9 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.autel.common.CallbackWithNoParam
+import com.autel.common.camera.base.MediaMode
+import com.autel.common.error.AutelError
 import com.autel.sdk.widget.AutelCodecView
 import com.autel.sdksample.R
 import com.taklite.client.tak.TakManager
@@ -42,11 +45,13 @@ import java.io.File
  */
 class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
+    private lateinit var exposureReadout: TextView
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvNotice: TextView
     private lateinit var crosshairView: CrosshairView
+    private lateinit var arOverlay: ArOverlayView
     private lateinit var streamToggle: LiveToggleView
     private lateinit var recordToggle: RecordToggleView
     private lateinit var toolbarSignal: SignalBarsView
@@ -65,8 +70,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private var homeLine: Polyline? = null
     private var lastHomeSet = false
 
-    /** Throttles the EV slider's placeholder toast while dragging — see its wiring. */
-    private var lastEvToastMs = 0L
+    /** Zoom pill state. Screen-scoped like the blueprint's — reopening the flight screen
+     *  re-reads reality via the connect-time baseline rather than trusting a saved flag. */
+    private var zoomedIn = false
+
+    // ISO/shutter readout cache, refreshed by pollExposureReadout() every ~2s (no push
+    // listener exists for these on this SDK).
+    @Volatile private var lastIsoLabel: String? = null
+    @Volatile private var lastShutterLabel: String? = null
 
     // FAA cell lookup cache — see updateFaaCeiling.
     private var lastFaaGridRow = Int.MIN_VALUE
@@ -98,11 +109,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         setContentView(R.layout.activity_flight)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        exposureReadout = findViewById(R.id.exposureReadout)
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvNotice = findViewById(R.id.fpvNotice)
         crosshairView = findViewById(R.id.flightCrosshair)
+        arOverlay = findViewById(R.id.flightArOverlay)
+        // Load the calibrated FOV before the overlay draws anything with it.
+        ArSettings.loadFov(this)
+        // Chrome insets so edge arrows can't be parked under the toolbar or the HUD column
+        // where they're invisible — the exact case (aircraft directly overhead) the indicator
+        // matters most. Measured from the real views after layout, re-read every pass, so a
+        // toolbar/HUD/map-size change can't silently break it.
+        val toolbarView = findViewById<View>(R.id.flightToolbar)
+        val hudColumn = findViewById<View>(R.id.flightHudColumn)
+        toolbarView.viewTreeObserver.addOnGlobalLayoutListener {
+            arOverlay.setChromeInsets(
+                top = toolbarView.height.toFloat(),
+                right = hudColumn.width.toFloat(),
+            )
+        }
         streamToggle = findViewById(R.id.flightStreamButton)
         recordToggle = findViewById(R.id.flightRecordButton)
         toolbarSignal = findViewById(R.id.toolbarSignal)
@@ -172,57 +199,47 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // are deliberately VISIBLE rather than omitted, so the toolbar a pilot learns on the
         // Mini 2 is the same toolbar they see here — and each says plainly what it is when
         // pressed, rather than looking broken or doing nothing. See notImplemented().
-        arButton.setOnClickListener {
-            AppLog.v(TAG, "tap: AR (not implemented)")
-            notImplemented("AR overlay", "drawing markers onto the live video")
-        }
-        arButton.setOnLongClickListener {
-            notImplemented("AR overlay options", "choosing what the AR overlay draws"); true
-        }
+        arButton.setOnClickListener { onArToggleTapped() }
+        // Same long-press idiom as RTH (reset home) and drop-pin (markers list).
+        arButton.setOnLongClickListener { onArOptionsTapped(); true }
+        refreshArButton()
         findViewById<ImageButton>(R.id.flightShootPhotoButton).setOnClickListener {
-            AppLog.v(TAG, "tap: Photo (not implemented)")
-            notImplemented("Photo", "taking a still to the aircraft's card")
+            AppLog.v(TAG, "tap: Photo")
+            onShootPhotoTapped()
         }
         zoomButton.setOnClickListener {
-            AppLog.v(TAG, "tap: Zoom (not implemented)")
-            notImplemented("Zoom", "switching the camera between 1x and 2x")
+            AppLog.v(TAG, "tap: Zoom (currently ${if (zoomedIn) "2X" else "1X"})")
+            onZoomTapped()
         }
         findViewById<ImageButton>(R.id.flightResyncButton).setOnClickListener {
-            AppLog.v(TAG, "tap: Video re-sync (not implemented)")
-            notImplemented("Video re-sync", "rebuilding the video picture")
+            AppLog.v(TAG, "tap: Video re-sync")
+            resyncVideo()
+            toast("Re-syncing video…")
         }
         recordToggle.setOnClickListener {
-            AppLog.v(TAG, "tap: REC (not implemented)")
-            notImplemented("Record", "recording video to the aircraft's card")
+            AppLog.v(TAG, "tap: REC")
+            onRecordToggleTapped()
         }
-        toolbarSignal.setOnClickListener { signalNotAvailable() }
-        toolbarSignalText.setOnClickListener { signalNotAvailable() }
+        toolbarSignal.setOnClickListener { signalDetail() }
+        toolbarSignalText.setOnClickListener { signalDetail() }
         // NOT setOnClickListener: EvSliderView consumes ACTION_DOWN and returns true without
-        // calling super, so performClick() never runs and a click listener would be dead code —
-        // the thumb would slide and nothing would happen, which is exactly the "looks broken"
-        // state a placeholder is supposed to prevent. onIndexChanged is the callback it
-        // actually invokes. Throttled so dragging across the track doesn't stack up toasts.
-        findViewById<EvSliderView>(R.id.evSlider).onIndexChanged = { _, fromUser ->
+        // calling super, so performClick() never runs and a click listener would be dead code.
+        // onIndexChanged is the callback it actually invokes.
+        val evSlider = findViewById<EvSliderView>(R.id.evSlider)
+        evSlider.steps = AutelExposureController.sliderMax
+        evSlider.index = AutelExposureController.savedSliderIndex(this)
+        evSlider.onIndexChanged = { idx, fromUser ->
             if (fromUser) {
-                val now = System.currentTimeMillis()
-                if (now - lastEvToastMs > NOTICE_MS) {
-                    lastEvToastMs = now
-                    AppLog.v(TAG, "EV slider moved (not implemented)")
-                    notImplemented("Exposure", "biasing the camera's auto-exposure")
-                }
+                // v() not i(): a drag fires this on every step, so keep it out of a
+                // Standard-level capture.
+                AppLog.v(TAG, "EV slider -> ${AutelExposureController.labelAt(idx)} (index $idx)")
+                AutelExposureController.setEvAt(
+                    applicationContext, AutelProductHolder.xt706, idx) {}
             }
         }
 
-        // The reticle is the aiming reference for drops; DJI also makes tapping it place a
-        // one-off "quick marker". That needs the marker-suite work that's still outstanding on
-        // this side, so for now a tap says so rather than silently doing nothing.
-        crosshairView.onReticleTap = {
-            AppLog.v(TAG, "tap: crosshair quick-marker (not implemented)")
-            notImplemented("Quick marker", "dropping a marker straight from the crosshair")
-        }
-        crosshairView.onReticleLongPress = {
-            notImplemented("Quick marker", "re-aiming the quick marker")
-        }
+        crosshairView.onReticleTap = { onQuickDropTapped() }
+        crosshairView.onReticleLongPress = { onQuickDropLongPressed() }
 
         VideoStreamerHolder.onStateChanged = Runnable { refreshStreamToggle() }
         refreshStreamToggle()
@@ -284,6 +301,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     override fun onDestroy() {
         super.onDestroy()
         AppLog.v(TAG, "onDestroy")
+        arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         TakMapMarkers.onMapDestroyed()
         // NOTE: bridge + TAK connection + video stream deliberately keep running — they
@@ -315,9 +333,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             ?: toolbarTakDot.background?.setTint(takColor)
         toolbarBattery.setPercent(hud?.batteryPct?.takeIf { hud.hasFix || it > 0 })
         toolbarGps.text = if (hud?.hasFix == true) hud.sats.toString() else "—"
-        // Signal bars stay in their null/no-data state — see signalNotAvailable(). Set every
-        // tick anyway so this can't be mistaken for a stale reading that used to be live.
-        toolbarSignal.setPercent(null)
+        val signalPct = hud?.uplinkSignalPct
+        toolbarSignal.setPercent(signalPct)
+        toolbarSignalText.text = if (signalPct != null) "${bucketSignalPct(signalPct)}%" else "—%"
+        toolbarSignalText.alpha = if (signalPct != null) 1.0f else 0.4f
         // "Waiting for aircraft…" cover. Gated on the product connection rather than on real
         // decoded frames: AutelCodecView gives no frame callback (the codec listener in
         // AutelVideoStreamer only fires while the RTSP push is running, which is a separate
@@ -326,9 +345,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // video", so it doesn't claim more than it knows.
         findViewById<View>(R.id.flightNoVideoCover).visibility =
             if (acOk) View.GONE else View.VISIBLE
-        // REC follows the aircraft's real recording state once camera control exists; until
-        // then it stays visibly stopped rather than pretending.
-        recordToggle.setRecording(false)
+        // Slow-cadence camera reads piggyback on the HUD tick (500ms * 4 = ~2s).
+        if (hudTickCount % 4 == 0) pollExposureReadout()
+        exposureReadout.text = "ISO ${lastIsoLabel ?: "—"}   ${lastShutterLabel ?: "—"}"
+
+        // REC shows the CAMERA's own reported state (MediaStatus events), not the last button
+        // press — so a record that failed to start, or stopped itself (card full/removed),
+        // shows truthfully within a tick.
+        recordToggle.setRecording(AutelProductHolder.isRecording)
+        if (AutelProductHolder.photoTakenFlag) {
+            AutelProductHolder.photoTakenFlag = false
+            showNotice("Photo Saved")
+        }
 
         // Home point is independent of the CURRENT fix — once set it stays valid even if the
         // live fix drops momentarily, so this isn't gated behind hasFix like the map work below.
@@ -480,17 +508,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         toast("$name isn't available on the EVO II build yet — $what isn't wired up.")
     }
 
-    /**
-     * The signal indicator is inert for a different reason than the buttons above: the data
-     * genuinely isn't derivable yet. Autel's SDK reports raw RF metrics (RSRP/SNR/gain) with no
-     * 0-100% quality figure like DJI's, and turning those into bars needs calibration against
-     * real hardware. Showing invented bars would be worse than showing none — a pilot reads
-     * this to decide whether to bring the aircraft back.
-     */
-    private fun signalNotAvailable() {
-        AppLog.v(TAG, "tap: signal bars (no data source)")
-        toast("Controller signal strength isn't reported on the EVO II build yet — " +
-            "use the controller's own signal indicator.")
+    /** Bucket raw signal % into coarse steps for display (operator's spec): 0-10% shows as
+     *  0%, otherwise round to the nearest of 25/50/75/100%. Identical to the DJI blueprint's. */
+    private fun bucketSignalPct(pct: Int): Int {
+        if (pct <= 10) return 0
+        val buckets = intArrayOf(25, 50, 75, 100)
+        return buckets.minByOrNull { kotlin.math.abs(it - pct) } ?: 0
+    }
+
+    /** Tap on the signal indicator — reports the uncoarsened figure and where it comes from. */
+    private fun signalDetail() {
+        val pct = TakBridgeHolder.hud()?.uplinkSignalPct
+        AppLog.v(TAG, "tap: signal bars (pct=${pct ?: "-"})")
+        toast(if (pct != null) "Controller link: $pct%"
+              else "No link reading yet — connect the aircraft.")
     }
 
     /**
@@ -605,6 +636,329 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             ).mapNotNull { p -> if (lm.isProviderEnabled(p)) lm.getLastKnownLocation(p) else null }
                 .maxByOrNull { it.time }
         }.getOrNull()
+    }
+
+    // ---- AR overlay ----
+
+    /** AR on/off. Off by default every time the flight screen opens — it draws over the video,
+     *  so it should be something the pilot switches on deliberately rather than something they
+     *  inherit from a previous session and have to notice. */
+    private fun onArToggleTapped() {
+        if (arOverlay.isRunning) arOverlay.stop() else arOverlay.start()
+        AppLog.v(TAG, "tap: AR overlay -> ${if (arOverlay.isRunning) "ON" else "OFF"}")
+        refreshArButton()
+    }
+
+    /**
+     * AR options — what the overlay may draw, and how far out it draws air traffic. One dialog
+     * showing every switch at once; everything applies LIVE (the overlay reads ArSettings every
+     * frame), which is what makes decluttering a usable in-flight action rather than a setup
+     * step.
+     */
+    private fun onArOptionsTapped() {
+        AppLog.v(TAG, "long-press: AR options")
+        val view = layoutInflater.inflate(R.layout.dialog_ar_options, null)
+
+        // Rows built from the enum, not written out in XML — a category added later can't be
+        // silently missing from the menu that controls it.
+        val container = view.findViewById<android.widget.LinearLayout>(R.id.arCategoryContainer)
+        for (category in ArSettings.Category.values()) {
+            val row = layoutInflater.inflate(R.layout.row_ar_category, container, false)
+                as android.widget.CheckBox
+            row.text = category.label
+            row.isChecked = ArSettings.isEnabled(this, category)
+            row.setOnCheckedChangeListener { _, isChecked ->
+                ArSettings.setEnabled(this, category, isChecked)
+            }
+            container.addView(row)
+        }
+
+        val group = view.findViewById<android.widget.RadioGroup>(R.id.arRangeGroup)
+        val rangeIds = mapOf(
+            ArSettings.AirRange.MI_2_5 to R.id.arRange25,
+            ArSettings.AirRange.MI_5 to R.id.arRange5,
+            ArSettings.AirRange.MI_15 to R.id.arRange15,
+        )
+        group.check(rangeIds.getValue(ArSettings.airRange(this)))
+        group.setOnCheckedChangeListener { _, checkedId ->
+            rangeIds.entries.firstOrNull { it.value == checkedId }?.let {
+                ArSettings.setAirRange(this, it.key)
+            }
+        }
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("AR Overlay")
+            .setView(view)
+            .setPositiveButton("Done", null)
+            .setNeutralButton("Calibrate FOV…") { _, _ -> onArCalibrateTapped() }
+            .show()
+    }
+
+    /**
+     * AR field-of-view calibration. The base FOV is published-spec, not measured, and the
+     * projection is most sensitive to it at the FRAME EDGES — so the pilot puts a marker on a
+     * known object near the edge and adjusts until the icon sits on it, watching it converge
+     * live. Adjusts the 1x base; the zoom correction rides on top, so calibrating at 1x fixes
+     * every zoom level at once.
+     */
+    private fun onArCalibrateTapped() {
+        AppLog.v(TAG, "AR FOV calibration opened")
+        val view = layoutInflater.inflate(R.layout.dialog_ar_fov, null)
+        val hValue = view.findViewById<TextView>(R.id.arFovHValue)
+        val vValue = view.findViewById<TextView>(R.id.arFovVValue)
+        val hint = view.findViewById<TextView>(R.id.arFovHint)
+
+        var h = TakBridgeHolder.currentHFovBase
+        var v = TakBridgeHolder.currentVFovBase
+
+        fun apply() {
+            ArSettings.saveFov(this, h, v)
+            h = TakBridgeHolder.currentHFovBase
+            v = TakBridgeHolder.currentVFovBase
+            hValue.text = "%.1f°".format(h)
+            vValue.text = "%.1f°".format(v)
+            hint.text = if (TakBridgeHolder.currentZoomFactor > 1.0) {
+                "Effective at %.0fx zoom: %.1f° × %.1f°".format(
+                    TakBridgeHolder.currentZoomFactor,
+                    AutelTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
+                    AutelTakBridge.vFovDeg(TakBridgeHolder.currentZoomFactor),
+                )
+            } else {
+                "Marker too far OUT from centre → reduce. Too far IN → increase."
+            }
+        }
+        apply()
+
+        view.findViewById<android.widget.Button>(R.id.arFovHMinus).setOnClickListener { h -= FOV_STEP_DEG; apply() }
+        view.findViewById<android.widget.Button>(R.id.arFovHPlus).setOnClickListener { h += FOV_STEP_DEG; apply() }
+        view.findViewById<android.widget.Button>(R.id.arFovVMinus).setOnClickListener { v -= FOV_STEP_DEG; apply() }
+        view.findViewById<android.widget.Button>(R.id.arFovVPlus).setOnClickListener { v += FOV_STEP_DEG; apply() }
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("Calibrate AR field of view")
+            .setView(view)
+            .setPositiveButton("Done", null)
+            .setNeutralButton("Reset") { _, _ ->
+                ArSettings.resetFov(this)
+                toast("FOV reset to published specs")
+            }
+            .show()
+    }
+
+    /** AR pill on/off state: green pill when running (the colour this app already means
+     *  "on/good" with), plain dimmed pill when off. Size unchanged between states — a control
+     *  that grows on tap reads as a different control. */
+    private fun refreshArButton() {
+        val on = arOverlay.isRunning
+        arButton.alpha = if (on) 1f else 0.45f
+        arButton.setBackgroundResource(
+            if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
+        )
+        arButton.setTextColor(
+            if (on) Color.parseColor("#4CAF50") else Color.WHITE
+        )
+    }
+
+    /**
+     * Tap the reticle — drop the one quick marker at the look point, no dialog. If it already
+     * exists, say so rather than moving it: a tap that sometimes places and sometimes moves is
+     * a gesture the pilot can't predict the result of.
+     */
+    private fun onQuickDropTapped() {
+        AppLog.v(TAG, "tap: reticle (quick drop)")
+        if (TakDropMarkers.quickPin() != null) {
+            toast("${TakDropMarkers.QUICK_NAME} already placed — long-press the reticle to re-aim it")
+            return
+        }
+        val look = TakBridgeHolder.lookPoint()
+        if (look == null) {
+            AppLog.w(TAG, "quick drop refused — no look point (GPS/gimbal not ready)")
+            toast("Can't drop a marker yet — waiting on GPS + gimbal")
+            return
+        }
+        val (lat, lon, elev) = look
+        if (TakDropMarkers.placeQuick(lat, lon, elev)) {
+            showNotice("${TakDropMarkers.QUICK_NAME} dropped")
+        }
+    }
+
+    /**
+     * Long-press the reticle — re-aim the quick marker at whatever the camera is on now,
+     * keeping its uid so it moves in place on every other TAK client. Places it if there isn't
+     * one yet, rather than scolding the pilot for the wrong gesture: both gestures then mean
+     * "the marker belongs where I'm looking", which is the only thing this feature does.
+     */
+    private fun onQuickDropLongPressed() {
+        AppLog.v(TAG, "long-press: reticle (quick drop re-aim)")
+        val look = TakBridgeHolder.lookPoint()
+        if (look == null) {
+            AppLog.w(TAG, "quick drop re-aim refused — no look point (GPS/gimbal not ready)")
+            toast("Can't move the marker yet — waiting on GPS + gimbal")
+            return
+        }
+        val (lat, lon, elev) = look
+        if (TakDropMarkers.moveQuick(lat, lon, elev)) {
+            showNotice("${TakDropMarkers.QUICK_NAME} re-aimed")
+        } else if (TakDropMarkers.placeQuick(lat, lon, elev)) {
+            showNotice("${TakDropMarkers.QUICK_NAME} dropped")
+        }
+    }
+
+    /**
+     * Video re-sync — rebuilds the on-screen decode from scratch. The SDK offers no
+     * request-keyframe hook (DJI's requestResync asks the encoder for an IDR); the contained
+     * equivalent here is tearing the codec view down and constructing a fresh one, which
+     * restarts the decode session and picks up clean at the next keyframe. Expect a brief
+     * black gap, same as the blueprint's hard resync. Only affects the local picture — the
+     * RTSP push reads its own frame tap and is untouched.
+     */
+    private fun resyncVideo() {
+        val container = findViewById<FrameLayout>(R.id.videoContainer)
+        codecView?.let { container.removeView(it) }
+        runCatching { AutelCodecView.stopCodec() }
+            .onFailure { AppLog.w(TAG, "stopCodec during resync: ${it.message}") }
+        codecView = AutelCodecView(this).also { container.addView(it) }
+        AppLog.i(TAG, "video resync: codec view rebuilt")
+    }
+
+    /**
+     * Zoom — toggles the camera between 1X and 2X digital zoom. All writes are RELATIVE to the
+     * raw value read at camera connect ([AutelProductHolder.zoomBaseRaw]), because the SDK's
+     * int units are undocumented — baseline*2 means 2X whether the units are a multiplier or
+     * x100. Changes the actual encoded feed, so remote viewers see the zoom too, and feeds
+     * [TakBridgeHolder.setLiveZoom] so the published SPI FOV cone narrows to match.
+     */
+    private fun onZoomTapped() {
+        val cam = AutelProductHolder.xt706
+        if (cam == null) {
+            AppLog.w(TAG, "zoom ignored — camera not connected (or not an XT70x)")
+            toast("Aircraft camera not connected")
+            return
+        }
+        val base = AutelProductHolder.zoomBaseRaw
+        if (base == null || base <= 0) {
+            AppLog.w(TAG, "zoom ignored — baseline not learned yet (raw=$base)")
+            toast("Camera still initialising — try again in a moment")
+            return
+        }
+        val target = if (zoomedIn) base else base * 2
+        cam.setDigitalZoomScale(target, camCb("setDigitalZoomScale($target)") {
+            zoomedIn = !zoomedIn
+            zoomButton.text = if (zoomedIn) "2X" else "1X"
+            TakBridgeHolder.setLiveZoom(if (zoomedIn) 2.0 else 1.0)
+            AppLog.i(TAG, "zoom now ${if (zoomedIn) "2X" else "1X"} (raw=$target)")
+        })
+    }
+
+    /**
+     * ISO/shutter readout (read-only; the EV slider itself stays unwired — postponed by the
+     * operator until the camera's exposure behaviour is characterised on hardware). Polled,
+     * because this SDK pushes no exposure events; every ~2s is fresh enough for a readout
+     * whose job is "is the camera picking sane values".
+     */
+    private fun pollExposureReadout() {
+        val cam = AutelProductHolder.xt706 ?: return
+        cam.getISO(object : com.autel.common.CallbackWithOneParam<com.autel.common.camera.media.CameraISO> {
+            override fun onSuccess(iso: com.autel.common.camera.media.CameraISO?) {
+                lastIsoLabel = iso?.name?.removePrefix("ISO_")
+            }
+            override fun onFailure(error: AutelError?) { /* readout stays "—" */ }
+        })
+        cam.getShutter(object : com.autel.common.CallbackWithOneParam<com.autel.common.camera.media.ShutterSpeed> {
+            override fun onSuccess(sp: com.autel.common.camera.media.ShutterSpeed?) {
+                lastShutterLabel = sp?.let { shutterLabel(it.name) }
+            }
+            override fun onFailure(error: AutelError?) { /* readout stays "—" */ }
+        })
+    }
+
+    /** "ShutterSpeed_1_60" -> "1/60", "ShutterSpeed_3dot2" -> "3.2\"", "ShutterSpeed_15" -> "15\"". */
+    private fun shutterLabel(enumName: String): String? {
+        val s = enumName.removePrefix("ShutterSpeed_")
+        if (s == "UNKNOWN" || s == enumName) return null
+        return if (s.startsWith("1_")) "1/" + s.removePrefix("1_").replace("dot", ".")
+        else s.replace("dot", ".") + "\""
+    }
+
+    /** Log + toast-on-failure adapter for the camera's completion callbacks. */
+    private fun camCb(opName: String, onOk: (() -> Unit)? = null) = object : CallbackWithNoParam {
+        override fun onSuccess() {
+            AppLog.i(TAG, "$opName: OK")
+            onOk?.let { runOnUiThread { it() } }
+        }
+        override fun onFailure(error: AutelError?) {
+            AppLog.w(TAG, "$opName failed: ${error?.description}")
+            runOnUiThread { toast("$opName failed: ${error?.description ?: "unknown error"}") }
+        }
+    }
+
+    /**
+     * REC — start/stop recording to the aircraft's SD card. The pill's shown state is driven by
+     * the camera's own MediaStatus push events (via [AutelProductHolder.isRecording]), not by
+     * which button was pressed last — see updateHud().
+     *
+     * Recording needs the camera in VIDEO media mode; mirrored from the blueprint's mode dance
+     * (DJI needed a flat-mode switch first for the same reason). Mode checked per press rather
+     * than assumed, since a photo fallback (see [onShootPhotoTapped]) may have left it changed.
+     */
+    private fun onRecordToggleTapped() {
+        val cam = AutelProductHolder.camera
+        if (cam == null) {
+            AppLog.w(TAG, "REC ignored — camera not connected")
+            toast("Aircraft camera not connected")
+            return
+        }
+        if (AutelProductHolder.isRecording) {
+            cam.stopRecordVideo(camCb("stopRecordVideo"))
+            return
+        }
+        cam.getMediaMode(object : com.autel.common.CallbackWithOneParam<MediaMode> {
+            override fun onSuccess(mode: MediaMode?) {
+                AppLog.i(TAG, "media mode before record: $mode")
+                if (mode == MediaMode.VIDEO) {
+                    cam.startRecordVideo(camCb("startRecordVideo"))
+                } else {
+                    cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO)") {
+                        cam.startRecordVideo(camCb("startRecordVideo"))
+                    })
+                }
+            }
+            override fun onFailure(error: AutelError?) {
+                // Can't read the mode — try the record anyway rather than refusing; the
+                // camera's own rejection (surfaced by camCb) beats a guess about why.
+                AppLog.w(TAG, "getMediaMode failed (${error?.description}) — trying record directly")
+                cam.startRecordVideo(camCb("startRecordVideo"))
+            }
+        })
+    }
+
+    /**
+     * Photo — still to the aircraft's SD card. Confirmation comes from the camera's
+     * PHOTO_TAKEN_DONE event (surfaced as a notice by updateHud), not from the call returning.
+     *
+     * Tries [startTakePhoto] directly first — whether the XT709 accepts that while in VIDEO
+     * mode is unknown until hardware (plan step 2). If the camera rejects it, falls back to
+     * the blueprint's dance: switch to SINGLE, shoot, restore VIDEO.
+     */
+    private fun onShootPhotoTapped() {
+        val cam = AutelProductHolder.camera
+        if (cam == null) {
+            AppLog.w(TAG, "photo ignored — camera not connected")
+            toast("Aircraft camera not connected")
+            return
+        }
+        cam.startTakePhoto(object : CallbackWithNoParam {
+            override fun onSuccess() { AppLog.i(TAG, "startTakePhoto: OK (direct)") }
+            override fun onFailure(error: AutelError?) {
+                AppLog.i(TAG, "direct photo rejected (${error?.description}) — trying SINGLE-mode fallback")
+                cam.setMediaMode(MediaMode.SINGLE, camCb("setMediaMode(SINGLE)") {
+                    cam.startTakePhoto(camCb("startTakePhoto") {
+                        // Restore VIDEO so a later REC press isn't surprised. Best-effort.
+                        cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO restore)"))
+                    })
+                })
+            }
+        })
     }
 
     private fun refreshStreamToggle() {
@@ -897,6 +1251,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         /** How long a transient notice ("Home Point Set") stays up. */
         private const val NOTICE_MS = 3000L
+
+        /** One tap of the AR FOV calibration +/- buttons, degrees. */
+        private const val FOV_STEP_DEG = 0.5
 
         private const val REQUEST_CODE_LOCATION = 4302
     }

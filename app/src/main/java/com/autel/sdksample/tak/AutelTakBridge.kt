@@ -5,7 +5,9 @@ import android.os.Looper
 import com.taklite.util.AppLog
 import com.autel.common.CallbackWithOneParam
 import com.autel.common.battery.evo.EvoBatteryInfo
+import com.autel.common.dsp.evo.EvoDspInfo
 import com.autel.common.error.AutelError
+import com.autel.common.remotecontroller.RemoteControllerInfo
 import com.autel.common.flycontroller.evo.EvoFlyControllerInfo
 import com.autel.common.gimbal.evo.EvoAngleInfo
 import com.taklite.client.tak.TakManager
@@ -75,6 +77,29 @@ class AutelTakBridge(
     // height) are pushed exactly once per connect, off the first real telemetry report — a
     // reliable "the flight controller is actually up" signal, same pattern as the DJI sibling.
     @Volatile private var limitsApplied = false
+
+    // ---- Link quality ----
+    //
+    // The CONTROLLER reports its own link quality as a ready-made percentage:
+    // AutelRemoteController.setInfoDataListener -> RemoteControllerInfo
+    // .getControllerSignalPercentage(). Decompiled, it is a straight passthrough of the RC
+    // telemetry packet's data[1] — i.e. the same number the controller's own signal indicator
+    // draws, and the same provenance as DJI's AirLink.getUplinkSignalQuality(). Nothing is
+    // derived or invented here, so the bars can be shown honestly with no calibration.
+    //
+    // (An earlier pass concluded no percentage existed and planned an RSRP->bars calibration.
+    // That was wrong: it searched the DSP/radio path only and never opened the remote-controller
+    // interface. The raw RF metrics below are kept anyway — they're genuinely useful diagnostics
+    // and a cross-check if the percentage ever looks wrong — but they are no longer load-bearing.)
+    @Volatile private var rcSignalPct: Int? = null
+    @Volatile private var rcBatteryPct: Int? = null
+    @Volatile private var rcDspPct: Int? = null
+
+    // Raw RF metrics — diagnostics only, logged with the tick.
+    @Volatile private var rfRsrp: IntArray? = null
+    @Volatile private var rfMasterSnr: Int? = null
+    @Volatile private var rfAirSnr: Int? = null
+    @Volatile private var rfSeen = false
 
     // Sensor FOV cone state, embedded in the drone PLI so ATAK/taklite draw the cone
     // natively. -1 = omit.
@@ -187,6 +212,33 @@ class AutelTakBridge(
                 AppLog.w(TAG, "battery listener error: ${error?.description}")
             }
         })
+        evo.remoteController.setInfoDataListener(
+            object : CallbackWithOneParam<RemoteControllerInfo> {
+                override fun onSuccess(info: RemoteControllerInfo?) {
+                    info ?: return
+                    // Clamped, not trusted blindly: the field is a raw passthrough from the RC
+                    // packet, so an out-of-range value means the assumption that it's a 0-100
+                    // percentage is wrong — better to pin the bars than to draw nonsense.
+                    rcSignalPct = info.getControllerSignalPercentage().coerceIn(0, 100)
+                    rcBatteryPct = info.getBatteryCapacityPercentage().coerceIn(0, 100)
+                    rcDspPct = info.getDSPPercentage().coerceIn(0, 100)
+                }
+                override fun onFailure(error: AutelError?) {
+                    AppLog.w(TAG, "remote controller info listener error: ${error?.description}")
+                }
+            })
+        evo.dsp.setDspInfoListener(object : CallbackWithOneParam<EvoDspInfo> {
+            override fun onSuccess(info: EvoDspInfo?) {
+                val sig = info?.signalStrengthInfo ?: return
+                rfRsrp = runCatching { sig.rsrp }.getOrNull()
+                rfMasterSnr = runCatching { sig.masterSnr }.getOrNull()
+                rfAirSnr = runCatching { sig.airSnr }.getOrNull()
+                rfSeen = true
+            }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "dsp listener error: ${error?.description}")
+            }
+        })
         evo.gimbal.setAngleListener(object : CallbackWithOneParam<EvoAngleInfo> {
             override fun onSuccess(info: EvoAngleInfo?) {
                 info ?: return
@@ -205,6 +257,8 @@ class AutelTakBridge(
         runCatching { evo.flyController.setFlyControllerInfoListener(null) }
         runCatching { evo.battery.setBatteryStateListener(null) }
         runCatching { evo.gimbal.setAngleListener(null) }
+        runCatching { evo.dsp.setDspInfoListener(null) }
+        runCatching { evo.remoteController.setInfoDataListener(null) }
     }
 
     // ---- The 2 s report ----
@@ -241,6 +295,16 @@ class AutelTakBridge(
 
         AppLog.v(TAG, "PLI push: lat=$lat lon=$lon hae=${"%.1f".format(hae)} hdg=${"%.0f".format(headingDeg)} " +
                 "spd=${"%.1f".format(speedMs)} bat=$batteryPct% flying=$isFlying")
+
+        // Link diagnostics, one line per tick. The percentages are what the toolbar draws; the
+        // raw RSRP/SNR are logged alongside them so a range profile shows whether the controller's
+        // percentage tracks the actual radio, and so there's something to look at if it doesn't.
+        if (rfSeen || rcSignalPct != null) {
+            AppLog.v(TAG, "LINK: sig=${rcSignalPct ?: "-"}% dsp=${rcDspPct ?: "-"}% " +
+                    "rcBat=${rcBatteryPct ?: "-"}% | " +
+                    "rsrp=${rfRsrp?.joinToString(",") ?: "-"} " +
+                    "masterSnr=${rfMasterSnr ?: "-"} airSnr=${rfAirSnr ?: "-"}")
+        }
     }
 
     /**
@@ -300,8 +364,11 @@ class AutelTakBridge(
 
         val zoom = liveZoom
         val (baseH, baseV) = baseFov()
-        sensorFov = baseH / zoom
-        sensorVfov = baseV / zoom
+        // tan-based zoom correction (not base/zoom, which is a small-angle shortcut): FOV
+        // halves in tangent space, and the AR overlay projects with these same helpers — the
+        // published cone and the on-screen projection must agree.
+        sensorFov = zoomedFov(baseH, zoom)
+        sensorVfov = zoomedFov(baseV, zoom)
         sensorAzimuth = bearing
         sensorElevation = pitchAdj
         sensorRange = gp.rangeMeters
@@ -311,14 +378,44 @@ class AutelTakBridge(
             "agl=${"%.0f".format(aglMeters)} zoom=$zoom fov=${"%.1f".format(sensorFov)} range=${Math.round(gp.rangeMeters)}m")
     }
 
-    /** Base horizontal/vertical FOV (deg) for the active 640T camera, before zoom. */
+    /** Base horizontal/vertical FOV (deg) for the active 640T camera, before zoom. The EO base
+     *  comes from [TakBridgeHolder]'s calibratable values (AR FOV calibration adjusts them);
+     *  IR keeps its spec constants until it gets its own calibration in Phase 3. */
     private fun baseFov(): Pair<Double, Double> = when (activeLens) {
         Lens.IR -> IR_HFOV to IR_VFOV
-        else -> EO_HFOV to EO_VFOV
+        else -> TakBridgeHolder.currentHFovBase to TakBridgeHolder.currentVFovBase
     }
 
     private fun isValidLat(v: Double) = v.isFinite() && v != 0.0 && v >= -90.0 && v <= 90.0
     private fun isValidLon(v: Double) = v.isFinite() && v != 0.0 && v >= -180.0 && v <= 180.0
+
+    /** Where the camera is pointing: true-north bearing and pitch, both degrees. */
+    data class CameraPose(val bearingDeg: Double, val pitchDeg: Double)
+
+    /**
+     * Current camera pose, or null until gimbal state has arrived.
+     *
+     * Deliberately computed from the SAME [cameraBearing] + [PITCH_SIGN]/[PITCH_OFFSET_DEG]
+     * model that [lookPoint] uses, rather than handing out raw gimbal yaw for a caller to
+     * re-derive. The AR overlay projects markers with this, and marker DROPS are placed with
+     * [lookPoint] — if those two ever disagreed, a marker would render somewhere other than
+     * where it was placed, and the overlay would look plausible while being wrong. One model,
+     * one place.
+     */
+    fun cameraPose(): CameraPose? {
+        val pitch = liveGimbalPitch ?: return null
+        val yaw = liveGimbalYaw ?: return null
+        return CameraPose(cameraBearing(yaw, headingDeg), pitch * PITCH_SIGN + PITCH_OFFSET_DEG)
+    }
+
+    /**
+     * True if [candidate] is a uid THIS app publishes — our own aircraft PLI or its sensor
+     * point. The server echoes both back as ordinary contacts, but neither is a target: the
+     * aircraft is at its own position, and the SPI is by definition wherever the camera is
+     * pointing, so drawing it would pin a marker permanently under the crosshair.
+     */
+    fun isOwnPublishedUid(candidate: String?): Boolean =
+        candidate != null && (candidate == droneUid || candidate == spiUid)
 
     /**
      * One-shot ground point the camera is currently aimed at (for "drop marker at
@@ -346,9 +443,20 @@ class AutelTakBridge(
         val speedMs: Double, val headingDeg: Double, val batteryPct: Int,
         val sats: Int, val gimbalPitch: Double?, val hasFix: Boolean,
         val homeLat: Double, val homeLon: Double, val homeSet: Boolean,
+        /** Controller→aircraft link quality, 0-100, or null before the first RC info callback.
+         *  Named to match the DJI blueprint's field of the same name so the two HUD paths read
+         *  identically, even though the sources differ (AirLink vs RemoteControllerInfo). */
+        val uplinkSignalPct: Int?,
+        /** Controller's own battery, 0-100, or null. Not shown yet — the toolbar's battery gauge
+         *  is the AIRCRAFT's, and DJI's blueprint has no controller-battery readout. */
+        val rcBatteryPct: Int?,
+        /** DSP/video-link quality, 0-100, or null. Believed to be the downlink figure; unverified
+         *  against hardware, so nothing reads it yet. */
+        val dspPct: Int?,
     )
     fun hud(): Hud = Hud(lat, lon, relAlt, hae, speedMs, headingDeg, batteryPct, satCount,
-        liveGimbalPitch, isValidLat(lat) && isValidLon(lon), homeLat, homeLon, homeSet)
+        liveGimbalPitch, isValidLat(lat) && isValidLon(lon), homeLat, homeLon, homeSet,
+        rcSignalPct, rcBatteryPct, rcDspPct)
 
     /** Terrain-corrected AGL + MSL reading for the current telemetry snapshot (Phase 2 HUD
      *  wiring reads this); see [TerrainAgl]. Needs an app Context for the DTED lookup. */
@@ -374,23 +482,62 @@ class AutelTakBridge(
         private const val PITCH_OFFSET_DEG = 0.0
 
         // EVO II Dual 640T V3 per-camera FOV (deg) at 1x — CALIBRATION CONSTANTS.
-        // Start values from published specs; confirm against the live cone in ATAK.
-        private const val EO_HFOV = 79.0; private const val EO_VFOV = 62.0
+        // Start values from published specs; confirm against the live cone in ATAK. The EO pair
+        // seeds TakBridgeHolder.DEFAULT_HFOV/VFOV and is calibratable from the AR options
+        // dialog; IR stays a plain constant until Phase 3.
+        const val EO_HFOV = 79.0; const val EO_VFOV = 62.0
         private const val IR_HFOV = 42.0; private const val IR_VFOV = 34.0
+
+        /** Effective FOV at [zoom], from the calibrated EO base — what both the published
+         *  <sensor> cone and the AR projection read, so they cannot disagree. */
+        fun hFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentHFovBase, zoom)
+        fun vFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentVFovBase, zoom)
+
+        /** True-perspective zoom narrowing: FOV halves in tangent space, not linearly. */
+        fun zoomedFov(baseDeg: Double, zoom: Double): Double {
+            if (!zoom.isFinite() || zoom <= 1.0) return baseDeg
+            val halfRad = Math.toRadians(baseDeg / 2.0)
+            return 2.0 * Math.toDegrees(Math.atan(Math.tan(halfRad) / zoom))
+        }
     }
 }
 
 /** Process-wide holder so the bridge survives screen navigation (1:1 with TAKPilot2). */
 object TakBridgeHolder {
+    const val DEFAULT_HFOV = AutelTakBridge.EO_HFOV
+    const val DEFAULT_VFOV = AutelTakBridge.EO_VFOV
+    const val MIN_FOV = 5.0
+    const val MAX_FOV = 170.0
+
     private var bridge: AutelTakBridge? = null
     private var videoUrl: String? = null
     private var cameraPointEnabled = false
+    // Remembered so it survives bridge restarts (reconnect) and a start-before-connect order.
+    private var zoomFactor: Double = 1.0
+
+    // Calibrated EO field of view (degrees at 1x). Defaults are the published 640T specs; the
+    // real lens is whatever it is, which is what the AR FOV calibration measures. Held here so
+    // the published FOV cone and the AR projection always read the same numbers.
+    private var hFovBase: Double = DEFAULT_HFOV
+    private var vFovBase: Double = DEFAULT_VFOV
+
+    /** Set the calibrated 1x field of view. Clamped to sane bounds so a mis-tap can't drive
+     *  the projection somewhere absurd — an FOV near zero sends every marker to infinity. */
+    fun setFovBase(hDeg: Double, vDeg: Double) {
+        hFovBase = hDeg.coerceIn(MIN_FOV, MAX_FOV)
+        vFovBase = vDeg.coerceIn(MIN_FOV, MAX_FOV)
+    }
+
+    val currentHFovBase: Double get() = hFovBase
+    val currentVFovBase: Double get() = vFovBase
+    val currentZoomFactor: Double get() = zoomFactor
 
     fun start(droneUid: String, droneCallsign: String) {
         bridge?.stop()
         bridge = AutelTakBridge(droneUid, droneCallsign).also {
             it.videoUrl = videoUrl
             it.cameraPointEnabled = cameraPointEnabled
+            it.liveZoom = zoomFactor
             it.start()
         }
     }
@@ -414,9 +561,18 @@ object TakBridgeHolder {
         bridge?.cameraPointEnabled = enabled
     }
 
+    /** Live digital-zoom ratio (1.0 = none) — narrows the published SPI FOV cone so other
+     *  TAK clients see the camera's actual field of view, not the 1x width. */
+    fun setLiveZoom(ratio: Double) {
+        zoomFactor = ratio
+        bridge?.liveZoom = ratio
+    }
+
     val isCameraPointEnabled: Boolean get() = cameraPointEnabled
     val isRunning: Boolean get() = bridge != null
 
     fun lookPoint(): Triple<Double, Double, Double>? = bridge?.lookPoint()
     fun hud(): AutelTakBridge.Hud? = bridge?.hud()
+    fun cameraPose(): AutelTakBridge.CameraPose? = bridge?.cameraPose()
+    fun isOwnPublishedUid(uid: String?): Boolean = bridge?.isOwnPublishedUid(uid) ?: false
 }

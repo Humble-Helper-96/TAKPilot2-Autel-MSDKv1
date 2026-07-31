@@ -16,6 +16,15 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- AR marker overlay. BELOW the crosshair deliberately: the crosshair is the aiming
+         reference for marker drops and must never be occluded by a projected marker. Hidden
+         until the pilot turns it on. -->
+    <com.autel.sdksample.tak.ArOverlayView
+        android:id="@+id/flightArOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Centre reticle over the video: sighting reference, and its ring carries the
          marker-accuracy cue driven by gimbal pitch. Matches the DJI blueprint. -->
     <com.autel.sdksample.tak.CrosshairView

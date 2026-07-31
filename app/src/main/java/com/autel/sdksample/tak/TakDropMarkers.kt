@@ -49,6 +49,9 @@ object TakDropMarkers {
          * See [TakManager.sendMarkerWithUid].
          */
         var cotUid: String? = null,
+        /** The one reticle-tap pin — see [quickPin]. Identified by this flag, not its name,
+         *  so renaming it from the markers list can't quietly free the slot. */
+        val quick: Boolean = false,
         var marker: Marker? = null,
     )
 
@@ -205,6 +208,57 @@ object TakDropMarkers {
         ui?.toast("Pin deleted")
     }
 
+    /** True if [uid] is one of OUR dropped pins' CoT uids — the server echoes sent pins back
+     *  as ordinary contacts, and the AR overlay must not draw those twice. */
+    fun ownsUid(uid: String): Boolean {
+        for (p in pins.values) if (p.cotUid == uid) return true
+        return false
+    }
+
+    // ---- Quick drop (reticle tap) ----
+
+    /** The quick marker's fixed callsign — same string as the blueprint, so the team learns to
+     *  recognise one "what I'm looking at right now" marker across both airframes. */
+    const val QUICK_NAME = "E419"
+
+    /** The one reticle-tap pin, or null. Exactly one may exist at a time — that is the whole
+     *  point: it's a live pointer the pilot keeps re-aiming, not a trail of numbered pins. */
+    fun quickPin(): PinInfo? = pins.values.firstOrNull { it.quick }?.let {
+        PinInfo(it.key, it.name, it.affiliation, it.lat, it.lon, it.alt)
+    }
+
+    /**
+     * Place the quick-drop pin. No-op returning false if one already exists — the caller
+     * decides how to tell the pilot, since the answer ("long-press to re-aim it") is UI text.
+     * Always [Affiliation.UNKNOWN]: a marker placed in under a second is by definition
+     * unverified.
+     */
+    fun placeQuick(lat: Double, lon: Double, alt: Double): Boolean {
+        if (quickPin() != null) return false
+        val pin = Pin(
+            key = "quick-${System.nanoTime()}",
+            lat = lat, lon = lon, alt = alt,
+            affiliation = Affiliation.UNKNOWN, name = QUICK_NAME, transmitted = false,
+            cotUid = null, quick = true,
+        )
+        pins[pin.key] = pin
+        AppLog.i(TAG, "quick drop placed: ${pin.key} @ $lat,$lon alt=$alt")
+        draw(pin)
+        save()
+        sendPin(pin)
+        return true
+    }
+
+    /**
+     * Re-aim the quick-drop pin at the current look point, keeping its uid so every other TAK
+     * client moves the existing marker instead of collecting duplicates. False if there is none.
+     */
+    fun moveQuick(lat: Double, lon: Double, alt: Double): Boolean {
+        val pin = pins.values.firstOrNull { it.quick } ?: return false
+        moveToLookPoint(pin.key, lat, lon, alt)
+        return true
+    }
+
     // ---- Markers-list management API (drop-pin long-press panel) ----
 
     /** Newest first, matching the DJI blueprint's list order. */
@@ -314,6 +368,9 @@ object TakDropMarkers {
                     // it, the next re-send/move would mint a new uid and duplicate the marker
                     // on every other client instead of updating the one already there.
                     p.cotUid?.let { put("uid", it) }
+                    // Persisted so a restart can't demote the quick pin to an ordinary one —
+                    // which would silently make a SECOND quick drop possible.
+                    if (p.quick) put("qk", true)
                 })
             }
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -333,7 +390,8 @@ object TakDropMarkers {
                 val key = o.getString("key")
                 pins[key] = Pin(key, o.getDouble("lat"), o.getDouble("lon"), o.optDouble("alt", 0.0),
                     aff, o.optString("name", "Marker"), o.optBoolean("tx", false),
-                    cotUid = o.optString("uid", "").takeIf { it.isNotEmpty() })
+                    cotUid = o.optString("uid", "").takeIf { it.isNotEmpty() },
+                    quick = o.optBoolean("qk", false))
             }
         } catch (e: Exception) { AppLog.w(TAG, "load failed: ${e.message}") }
     }

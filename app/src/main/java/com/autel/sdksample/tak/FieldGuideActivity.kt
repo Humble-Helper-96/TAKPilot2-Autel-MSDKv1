@@ -25,13 +25,10 @@ import com.taklite.util.AppLog
  * driven into the state being described. Screenshots or hand-drawn copies would silently go
  * stale the next time an icon changes; these can't, because they ARE the icons.
  *
- * **Every control the blueprint has is documented, including the ones that don't work yet.**
- * The flight screen deliberately carries the full DJI toolbar so a pilot isn't learning two
- * layouts, with the not-yet-connected controls giving an explanatory toast when pressed. This
- * guide mirrors that: each such control keeps its own entry, marked "NOT WORKING YET" in the
- * heading and describing what it will do, and section 4 repeats them as one pre-flight scan
- * list. Two of them (the greyed signal bars and the inert REC badge) can actively mislead if
- * mistaken for live readings, so those carry a warning rather than a note.
+ * **Every control the blueprint has is documented, and as of the Phase 2.5 activation pass
+ * every one of them now works.** Anything that regresses to a placeholder should get a
+ * "NOT WORKING YET" marker back in its heading and a line in section 4, which exists as a
+ * single pre-flight scan rather than making a pilot re-read section 3.
  */
 class FieldGuideActivity : AppCompatActivity() {
 
@@ -129,9 +126,9 @@ class FieldGuideActivity : AppCompatActivity() {
 
         sub("4 · Video Streaming")
         body("Optional. If your team runs a video server, this is where its address, port, " +
-            "the broadcast name for this aircraft, and the login go. There's a low-bandwidth " +
-            "option that sends a smaller, smoother picture — turn it on if the link is " +
-            "marginal.")
+            "the broadcast name for this aircraft, and the login go. Quality is Low, Standard " +
+            "or High — lower quality survives a weak connection better. Standard is a good " +
+            "default; drop to Low if the link is marginal.")
         note("Setting this up here doesn't start streaming. You start and stop it in flight " +
             "with the LIVE button.")
 
@@ -200,14 +197,13 @@ class FieldGuideActivity : AppCompatActivity() {
                 signal(60) to "Usable",
                 signal(null) to "No data",
             ),
-            "Controller signal  — NOT WORKING YET",
-            "On the Mini 2 build this shows the strength of the link between the controller " +
-                "and the aircraft. On the EVO II it currently sits greyed out with \"—%\" " +
-                "beside it, because this app can't yet read a signal strength from the " +
-                "aircraft. Tap it and it will tell you the same.",
+            "Controller signal",
+            "Strength of the link between the controller and the aircraft — the same reading " +
+                "the controller's own signal indicator shows. Greyed out at \"—%\" until the " +
+                "aircraft connects. Tap it for the exact percentage.",
             listOf(
-                "Use the controller's OWN signal indicator to judge your link. Do not read " +
-                    "the greyed-out bars here as \"no signal\" — they mean \"not measured\".",
+                "Watch this on the way out. If the bars are dropping, turn back before they " +
+                    "run out — a lost link means the aircraft flies your failsafe, not you.",
             ),
         )
 
@@ -272,38 +268,51 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             listOf(arPill(on = false) to "Off", arPill(on = true) to "On"),
-            "AR — markers on the video  — NOT WORKING YET",
-            "On the Mini 2 build this draws markers onto the live picture where the things " +
-                "themselves are, so you can see which building or vehicle a marker refers to " +
-                "instead of working it out from the map.\n\n" +
-                "The button is here on the EVO II so the toolbar matches, but pressing it just " +
-                "tells you it isn't wired up yet.",
+            "AR — markers on the video",
+            "Draws markers onto the live picture where the things themselves are, so you can " +
+                "see which building, vehicle or hillside a marker refers to instead of working " +
+                "it out from the map. It goes GREEN while it's running.\n\n" +
+                "Anything outside the camera's view shows as a small arrow at the edge of the " +
+                "picture, pointing the way you'd have to turn to see it.\n\n" +
+                "Press and hold to choose what it draws — your own markers, the team's markers, " +
+                "the team's positions, air traffic, weather stations — and how far out to show " +
+                "air traffic (2.5, 5 or 15 miles). Turning something off clears it from the " +
+                "video straight away. Ground markers always show out to 5 miles.",
+            listOf(
+                "Markers will swim about while you swing the camera quickly and settle once " +
+                    "you stop. That's normal — the position data and the video don't arrive at " +
+                    "exactly the same moment.",
+                "This answers \"which of those is it\", not \"what are its coordinates\". For " +
+                    "a precise position, put the crosshair on it and drop a marker.",
+                "On the EVO II the camera's pointing direction and field of view have not yet " +
+                    "been checked in flight, so expect markers to sit off their targets until " +
+                    "that calibration is done — the press-and-hold menu has a Calibrate FOV " +
+                    "control for exactly that.",
+            ),
         )
 
         entry(
             listOf(image(R.drawable.ic_camera_shutter) to "Photo"),
-            "Photo  — NOT WORKING YET",
-            "On the Mini 2 build this takes a still photo to the card in the aircraft. Not " +
-                "wired up on the EVO II yet — pressing it says so.",
+            "Photo",
+            "Takes a still photo, saved to the card in the aircraft — not to the controller. " +
+                "A \"Photo Saved\" notice appears when the camera confirms it.",
         )
 
         entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "Zoomed"),
-            "Zoom  — NOT WORKING YET",
-            "On the Mini 2 build this switches the camera between normal and 2x, changing the " +
-                "actual picture everyone watching sees. Not wired up on the EVO II yet — it " +
-                "stays showing 1X and pressing it says so.",
+            "Zoom",
+            "Switches the camera between normal and 2x. This changes the actual picture, so " +
+                "anyone watching your video sees the zoom too.",
         )
 
         entry(
             listOf(image(R.drawable.ic_resync) to "Re-sync"),
-            "Video re-sync  — NOT WORKING YET",
-            "On the Mini 2 build this cleans up a video picture that has built up smearing or " +
-                "blocky patches. Not wired up on the EVO II yet — pressing it says so.",
-            listOf(
-                "If the picture does go bad on this build, leaving and re-entering the flight " +
-                    "screen rebuilds the video.",
-            ),
+            "Video re-sync",
+            "Cleans up the video picture. If the image builds up smearing or blocky patches — " +
+                "most likely when you've been holding still on one scene for a while — tap " +
+                "this and it rebuilds within a few seconds. Expect a brief black gap while it " +
+                "does. It only affects your picture; the aircraft keeps flying normally and " +
+                "the stream to your team is untouched.",
         )
 
         entry(
@@ -321,15 +330,12 @@ class FieldGuideActivity : AppCompatActivity() {
                 rec(recording = false) to "Stopped",
                 rec(recording = true) to "Recording",
             ),
-            "REC — record to the aircraft  — NOT WORKING YET",
-            "On the Mini 2 build this records full-quality video to the card in the aircraft, " +
-                "separately from streaming. Not wired up on the EVO II yet — it stays showing " +
-                "stopped and pressing it says so.",
-            listOf(
-                "Because it can't read the aircraft's real recording state either, do not " +
-                    "treat \"stopped\" here as proof the aircraft isn't recording. Use Autel's " +
-                    "own app or the controller to check.",
-            ),
+            "REC — record to the aircraft",
+            "Records video to the card in the aircraft. Separate from streaming: you can do " +
+                "either, both, or neither. Recording keeps the full-quality video even when " +
+                "the stream to your team is compressed.\n\n" +
+                "The pill shows what the CAMERA says it's doing — if recording stops by itself " +
+                "(card full, card removed), the pill goes back to stopped on its own.",
         )
 
         sub("On the video itself")
@@ -372,24 +378,40 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             emptyList(),
-            "Quick marker — tap the crosshair  — NOT WORKING YET",
-            "On the Mini 2 build, tapping the crosshair itself drops a single reusable " +
-                "\"what I'm looking at right now\" marker, moved by pressing and holding rather " +
-                "than dropping a second one.\n\n" +
-                "Not wired up on the EVO II yet — tapping the crosshair says so. Use the " +
-                "drop-marker button in the toolbar instead; it works, lets you set the type, " +
-                "and its press-and-hold list can move a marker to wherever you're now looking.",
+            "Quick marker — tap the crosshair",
+            "Tapping the crosshair itself drops a marker on the spot, with no questions asked. " +
+                "It always goes out as Unknown and always carries the same name, " +
+                "${TakDropMarkers.QUICK_NAME}, so the team learns to recognise it.\n\n" +
+                "There is only ever ONE of these. To point it at something else, aim the " +
+                "camera and press and hold the crosshair — it moves to where you're now " +
+                "looking, on everyone's screen. Tapping again does not drop a second one.\n\n" +
+                "Use it as a live pointer: \"what I am looking at right now\". For anything " +
+                "you want to keep a record of, use the drop-marker button instead, where you " +
+                "can set its type.",
+            listOf(
+                "To get the quick marker back to being unused, delete it from the marker list " +
+                    "(press and hold the drop-marker button). After that a tap will place a " +
+                    "fresh one.",
+                "It obeys the same rules as any other marker: deleting it only clears it from " +
+                    "your screen, and it stays on everyone else's until it ages out.",
+            ),
         )
 
         entry(
             emptyList(),
-            "Exposure slider (top right)  — NOT WORKING YET",
-            "On the Mini 2 build this makes the picture brighter or darker when the camera's " +
-                "automatic exposure gets it wrong, with the camera's chosen ISO and shutter " +
-                "shown underneath.\n\n" +
-                "The slider is here on the EVO II so the screen matches, but it doesn't yet " +
-                "change anything — sliding it says so, and the ISO/shutter line stays at " +
-                "\"—\".",
+            "Exposure slider (top right)",
+            "Makes the picture brighter or darker when the camera's automatic exposure gets " +
+                "it wrong — slide up for brighter, down for darker, over a range of two stops " +
+                "either way. Useful on snow, water, or a bright sky, where the camera tends to " +
+                "underexpose everything you actually care about.\n\n" +
+                "Your setting is remembered and re-applied whenever the camera reconnects, so " +
+                "you don't have to set it again after a battery swap.\n\n" +
+                "The ISO and shutter numbers underneath show what the camera is choosing in " +
+                "response, refreshed every couple of seconds.",
+            listOf(
+                "Put it back to the middle when the light changes. A slider left at -2 from " +
+                    "a snow field will leave you with a black picture in woodland.",
+            ),
         )
 
         entry(
@@ -446,28 +468,15 @@ class FieldGuideActivity : AppCompatActivity() {
      */
     private fun sectionFour() {
         section("4. What isn't working yet")
-        body("The screen deliberately shows the same controls as the Mini 2 version so you " +
-            "aren't learning two different layouts. These ones are present but not yet " +
-            "connected on the EVO II — pressing any of them tells you so:")
+        body("Everything on the flight screen now works on the EVO II. One thing elsewhere " +
+            "doesn't:")
 
-        bullet("Controller signal bars — greyed out, showing \"—%\".")
-        bullet("AR — markers drawn onto the live video.")
-        bullet("Photo.")
-        bullet("Zoom — stays on 1X.")
-        bullet("Video re-sync.")
-        bullet("REC — stays showing stopped.")
-        bullet("Exposure slider, and the ISO/shutter line under it.")
-        bullet("Tapping the crosshair for a quick marker.")
-        bullet("Satellite/hybrid map imagery (Pre-Flight Setup → Map Display).")
+        bullet("Satellite/hybrid map imagery (Pre-Flight Setup → Map Display) — street map " +
+            "and one custom source only.")
 
-        warn("Two of those can mislead you if you forget they're inert. The greyed signal " +
-            "bars are NOT telling you the link is bad — they're telling you nothing at all; " +
-            "judge your link on the controller. And REC showing stopped is NOT proof the " +
-            "aircraft isn't recording.")
-
-        note("Nothing in that list affects flying the aircraft or the shared TAK picture — " +
-            "position, camera look-point, marker drops, video streaming, the terrain-corrected " +
-            "altitude and the FAA ceilings all work here.")
+        note("The flight-screen controls — photo, zoom, recording, exposure, signal bars, " +
+            "video re-sync, the AR overlay, the quick marker — are all wired up, but none of " +
+            "them has flown against a real aircraft yet. Treat the first flight as a shakedown.")
     }
 
     // ------------------------------------------------------- content builders

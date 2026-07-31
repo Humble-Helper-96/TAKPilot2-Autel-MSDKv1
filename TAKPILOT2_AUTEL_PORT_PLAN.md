@@ -359,6 +359,10 @@ patched.
       calibrated RSRP/SNR→quality mapping that can only be tuned against real hardware —
       exactly a Phase 4 bring-up item, not something to fabricate now. Revisit there.
 
+      > **WRONG — superseded, see "Step 8 revised, 2026-07-30" below.** The audit looked at
+      > `EvoDsp`/`SignalInfo` only. `RemoteControllerInfo.getControllerSignalPercentage()`
+      > is a ready-made 0-100% figure and the bars are now live off it.
+
       **Increment 2 — locked mini-map: done 2026-07-30.** New `LockedMapView.kt` (osmdroid
       subclass) reproduces DJI's `uiSettings.setAllGesturesEnabled(false)`: no pan, fling,
       double-tap zoom, pinch zoom or zoom buttons; north-up (orientation never touched);
@@ -483,6 +487,8 @@ patched.
         strength isn't measured on this airframe — pointing the pilot at the controller's
         own indicator. The Field Guide carries this as a WARNING: greyed bars mean "not
         measured", NOT "link is bad".
+        *(Superseded — the bars are live as of the Step 8 revision; they now grey out only
+        before the aircraft connects.)*
       - **REC** is held visibly stopped and its guide entry warns that this is not proof the
         aircraft isn't recording, since the app can't read the real camera state either.
 
@@ -666,6 +672,119 @@ patched.
 
 ## Phase 2.5 — Flight-screen activation plan (written 2026-07-30, post-v1.3)
 
+> **STATUS: steps 0–8 IMPLEMENTED 2026-07-30, same day, in order.** All compile-verified;
+> none of it has run against an aircraft. Summary of what shipped vs the plan below:
+> - **0 done** — `AutelProductHolder` caches the camera via `setCameraChangeListener`, owns
+>   `setMediaStateListener` (drives `isRecording` + `photoTakenFlag`), and reads the zoom
+>   baseline at connect (raw units logged; assumes camera connects at 1x — QC item).
+> - **1–2 done** — REC pill driven by the camera's own `RECORD_*` events (the "stopped is
+>   not proof" caveat is retired); Photo tries direct `startTakePhoto`, falls back to the
+>   SINGLE→shoot→restore-VIDEO dance, "Photo Saved" notice on `PHOTO_TAKEN_DONE`.
+> - **3 done** — zoom toggles baseline↔baseline*2 (units cancel out), feeds
+>   `TakBridgeHolder.setLiveZoom` so the SPI cone narrows.
+> - **4 SPLIT per operator** — EV slider stays a placeholder (postponed until the camera's
+>   exposure behaviour is characterised); the read-only ISO/shutter readout IS live, polled
+>   ~2s.
+> - **5 done** — re-sync = codec-view teardown/rebuild (`stopCodec` + new `AutelCodecView`).
+> - **6 done** — quick marker (tap/long-press reticle), `QUICK_NAME`, quick flag persisted.
+> - **7 done** — `ArOverlayView` + `ArSettings` ported (gnomonic projection, edge arrows,
+>   categories, air-range, chrome insets, in-flight FOV calibration dialog); bridge gained
+>   `cameraPose()`/`isOwnPublishedUid()`; holder gained the calibratable FOV base; the
+>   published `<sensor>` cone switched from linear `base/zoom` to the same tan-based
+>   `zoomedFov` the overlay projects with, so the two can never disagree.
+> - **8 done and live** — see the revision below; the bars show the controller's own
+>   percentage, no calibration needed.
+> Field Guide updated throughout to match (only the EV slider still carries "NOT WORKING
+> YET"). Hardware shakedown items: photo-while-in-VIDEO acceptance, zoom units and
+> connect-at-1x assumption, resync black-gap length, AR pose/FOV calibration.
+
+### Step 4 revised, 2026-07-30 — exposure is fully settable; EV slider is live
+
+Operator asked whether the SDK offers anything more for the EV slider, specifically whether
+exposure mode can be set. It can, and the full exposure API was there all along on
+`AutelXT706` (which the 640T's `AutelXT709` extends):
+
+| Call | Notes |
+|---|---|
+| `setExposureMode(ExposureMode, cb)` | `Auto` / `Manual` / `ShutterPriority` / `AperturePriority` |
+| `setExposure(ExposureCompensation, cb)` | ±3.0 EV in 1/3 stops |
+| `setISO(CameraISO, cb)` | ISO 100 – 64000 |
+| `setShutter(ShutterSpeed, cb)` | 15s – 1/8000 |
+| `setAutoExposureLockState(AutoExposureLockState, cb)` | LOCK / UNLOCK / DISABLE |
+| `setSpotMeteringArea(x, y, cb)` | + `RangePair` bounds from the range manager |
+| `getExposureMode/getExposure/getISO/getShutter` | readback all works |
+
+New `AutelExposureController.kt` mirrors the DJI blueprint's `ExposureController`: sends
+`ExposureMode.Auto` (Autel's equivalent of DJI's PROGRAM — the mode the blueprint settled on
+after SHUTTER_PRIORITY silently failed to auto-expose on the Mini 2), then applies the saved
+EV. `FlightActivity`'s slider is wired to `setEvAt`; `AutelProductHolder`'s camera-change
+listener calls `applyDefaults` so a mid-flight camera reconnect restores the pilot's EV.
+
+Two things deliberately NOT ported:
+- **The hidden +2/3 EV bias.** DJI's `HIDDEN_BIAS_STEPS = 2` was derived from three Mini 2
+  field flights and is specific to that sensor plus the CENTER metering DJI forces. Set to 0
+  here and marked a calibration constant. Copying it would be inventing a calibration.
+- **Metering mode.** `MeteringMode` exists as an enum and `XT706StateInfo.getMeteringMode()`
+  reads it, but **no public setter anywhere in the SDK takes one** — verified by grepping the
+  constant pool of all 5,320 classes, not just the camera package. Only `setSpotMeteringArea`
+  is exposed, which is a different behaviour, not a substitute. Genuine gap vs DJI.
+
+**Enum-order trap worth remembering:** Autel declares `ExposureCompensation` DESCENDING
+(`POSITIVE_3p0` first → `NEGATIVE_3p0` last), the inverse of DJI's ascending `N_5_0 … P_5_0`.
+Porting the blueprint's ordinal arithmetic verbatim would have inverted the slider — up = darker
+— and it would have looked like it worked. The controller sorts by a parsed numeric value
+instead of trusting ordinal.
+
+### Also found, not yet acted on — `XT706CameraInfo` push feed
+
+`AutelXT706.setInfoListener(CallbackWithOneParam<XT706CameraInfo>)` is a **push** feed carrying
+a great deal that this port currently polls for, guesses at, or holds a calibration constant for:
+
+- `getISO()` / `getShutterSpeed()` / `getExposureCompensation()` — replaces the 2s
+  `pollExposureReadout()`.
+- `getZoomScale()` — real zoom, replacing the `zoomBaseRaw` "connect at 1x" assumption.
+- **`getHorizontalFOV()` / `getVerticalFOV()`** — the camera's actual live FOV, which the AR
+  overlay and the published CoT `<sensor>` cone currently derive from `DEFAULT_HFOV/VFOV`
+  constants plus a tan-based zoom narrowing. This would replace a hand-calibration with a
+  measurement.
+- `getWorkState()` (IDLE/CAPTURE/RECORD/…) — real camera state, which retires the REC
+  caveat that the app can't tell whether the aircraft is actually recording.
+- `getCurrentRecordTime()`, `getMediaMode()`, SD/MMC state and free space.
+- Thermal: center/high/low/touch temperature, `getFocalLength()`, `getPixelSize()` — directly
+  relevant to Phase 3.
+
+Deliberately left alone for now: it would rewrite already-reviewed AR/zoom/REC code and is a
+scope call for the operator, not a drive-by.
+
+### Step 8 revised, 2026-07-30 — the SDK *does* have a link percentage
+
+Re-audit at the operator's request ("look over the SDK and ensure we aren't missing an
+easier option"). It does, and the Step 8 conclusion below was wrong:
+
+`BaseProduct.getRemoteController()` → `AutelRemoteController.setInfoDataListener(
+CallbackWithOneParam<RemoteControllerInfo>)`, and `RemoteControllerInfo` exposes
+`getControllerSignalPercentage()`, `getDSPPercentage()`, `getBatteryCapacityPercentage()`.
+Decompiling the implementor (`RemoteController20$2$1`) shows `getControllerSignalPercentage()`
+is a straight passthrough of the RC telemetry packet's `data[1]` — i.e. **the number the
+controller's own signal indicator draws**. Same provenance as DJI's
+`AirLink.getUplinkSignalQuality()`, so it can be shown honestly with no calibration and the
+operator's "we have to calibrate and confirm" precondition no longer applies (it was premised
+on raw RF being all that existed).
+
+Wired: bridge caches all three into `Hud.uplinkSignalPct` / `rcBatteryPct` / `dspPct`;
+`FlightActivity.updateHud()` now feeds `toolbarSignal`/`toolbarSignalText` exactly as the DJI
+blueprint does, including the shared `bucketSignalPct()` (≤10% → 0, else nearest of
+25/50/75/100). Tap reports the uncoarsened figure. The raw RSRP/SNR are kept and logged
+alongside the percentages on one `LINK:` line as diagnostics/cross-check, no longer as a
+calibration dataset. `rcBatteryPct`/`dspPct` are cached but unread — the toolbar's battery is
+the AIRCRAFT's, and the blueprint has no controller-battery or downlink readout.
+
+**Third wrong "the SDK can't do this" this phase** (after the signal-loss failsafe and the RTH
+home point). Same root cause each time: searching one subsystem — here the DSP/radio path —
+and concluding absence, instead of searching the whole 5,320-class surface for the *capability*.
+The `javap`-verify rule already in force is necessary but not sufficient; it catches invented
+APIs, not missed ones.
+
 Turn every placeholder on the flight screen into a working control. Every SDK claim below
 was verified by `javap` against the bundled `autel-sdk-release.aar` (not guessed from
 method names — that mistake already happened twice, see the failsafe and RTH entries).
@@ -711,6 +830,12 @@ shutter-priority + auto-ISO on connect; on Autel leave `setExposureMode` alone i
 — EV compensation works within whatever auto mode the camera is in, and forcing modes on
 an uncharacterised camera risks trading a known-good picture for a theory.
 
+> **Partly superseded — see "Step 4 revised, 2026-07-30" above.** The slider now sets EV, and
+> `setExposureMode(ExposureMode.Auto)` IS sent on camera connect. The reasoning above wasn't
+> wrong about the risk, but "whatever auto mode the camera is in" turned out to mean "whatever
+> Autel Explorer last left it in", which is not a known-good baseline — it's an unknown one.
+> A push feed (`XT706CameraInfo`) also exists that would retire the 2s poll.
+
 **5 — Video re-sync.** No direct "request IDR" hook, but `AutelCodecView` exposes static
 `stopCodec()` / `startDecode(...)` / `pause()` / `resume()`. The contained approach,
 since FlightActivity already constructs the view in code: tear down and rebuild —
@@ -734,7 +859,9 @@ elsewhere: video-rect assumption, uncalibrated `PITCH_SIGN`/bearing offset, and 
 constants — AR will be *drawable* before it is *trustworthy*; the 6D-D FOV calibration
 flow exists on the DJI side for exactly that reason.
 
-**8 — Signal bars.** The only item without a ready-made value. `BaseProduct.getDsp()` →
+**8 — Signal bars.** *(This whole paragraph is WRONG — see "Step 8 revised, 2026-07-30"
+above. There IS a ready-made value; no calibration is needed and none was done.)*
+The only item without a ready-made value. `BaseProduct.getDsp()` →
 `EvoDsp.setDspInfoListener(EvoDspInfo)` → `EvoDspInfo.getSignalStrengthInfo()` returns
 `SignalInfo` with raw RF metrics: `getRsrp()[]`, `getMasterSnr()`, `getAirSnr()`,
 `getMeanPower()`. Wire the listener + cache NOW and log raw values every tick (that log
