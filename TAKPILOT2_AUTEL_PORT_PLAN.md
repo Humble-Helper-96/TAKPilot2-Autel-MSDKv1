@@ -44,13 +44,26 @@ looking identical to the Mini 2's, for this pass.
 > an unmistakable no-data state and say so when tapped, rather than showing a plausible
 > number (see the signal-bars and REC handling on the Flight screen).
 
-**Status (2026-07-30): Phases 0–2 complete.** Tree is under git (`c175d40`, tag
-`autel-baseline-v1.2`); ALL Phase 0/1/2 work is uncommitted in the working tree pending
-go-ahead. Every screen now matches the DJI blueprint: Home, Flight (full toolbar + locked
-mini-map + right-hand HUD column + marker suite), Pre-Flight Setup (all six sections),
-Field Guide, Debug Log, Data Sync. `./gradlew assembleDebug` clean throughout. The
-not-yet-functional controls ship as self-describing placeholders per the standing rule
-above. **Nothing has been run on hardware — see the QC note under Phase 4.**
+**Status (2026-07-30): Phases 0–2 complete, committed as v1.3.** Phase 0/1/2 work is
+committed (`380ba0e`, tag `autel-v1.3`) on top of the v1.2 baseline (`c175d40`, tag
+`autel-baseline-v1.2`). Every screen now matches the DJI blueprint: Home, Flight (full
+toolbar + locked mini-map + right-hand HUD column + marker suite), Pre-Flight Setup (all
+six sections), Field Guide, Debug Log, Data Sync. `./gradlew assembleDebug` clean
+throughout. The not-yet-functional controls ship as self-describing placeholders per the
+standing rule above. **Nothing has been run against an aircraft — see the QC note under
+Phase 4.**
+
+**Versioning.** The app's own version is now `versionCode 2` / `versionName "1.3"`,
+replacing the stock Autel sample's `V1.0.1.40` this project forked from — "v1.2" only ever
+existed as a directory name and a git tag, never in the app itself. Note `versionName` is
+not cosmetic: `TestApplication` reads it via `PackageManager` and reports it as
+`<takv version>` on every PLI, so it is what a TAK server's Connected Users panel shows for
+this client. Bump it when what goes on the wire changes. Debug/release APKs are now named
+`TAKPilot2-Autel_<version>` instead of the stock `NewSDK_<version>`.
+
+*(The project directory is still `takpilot-autel_v1-2/` — deliberately not renamed, since
+that path is referenced outside this repo. The folder name is not the version; build.gradle
+and the git tags are.)*
 
 *(Earlier status line, for history: Phases 0–1 complete as of 2026-07-29.)*
 `com.taklite.client.tak` diffed against current DJI and reconciled — see "Phase 0 status"
