@@ -23,11 +23,9 @@ import com.autel.sdk.widget.AutelCodecView
 import com.autel.sdksample.R
 import com.taklite.client.tak.TakManager
 import com.taklite.util.AppLog
-import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import java.io.File
 
 /**
  * FlightActivity — the Autel rebuild of TAKPilot2's flight screen.
@@ -99,13 +97,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppLog.v(TAG, "onCreate")
-        // osmdroid must be configured before the MapView inflates.
-        val osmBase = File(filesDir, "osmdroid").apply { mkdirs() }
-        Configuration.getInstance().apply {
-            userAgentValue = packageName
-            osmdroidBasePath = osmBase
-            osmdroidTileCache = File(osmBase, "tiles").apply { mkdirs() }
-        }
+        // osmdroid must be configured before the MapView inflates. Shared with Pre-Flight
+        // Setup so the cache budget and paths can't drift between the two screens.
+        MapTileCache.configure(this)
         setContentView(R.layout.activity_flight)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -155,7 +149,19 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         map.setMultiTouchControls(false)
         map.setBuiltInZoomControls(false)
         map.setFlingEnabled(false)
+        // Hard floor and ceiling on the zoom, not just a starting value. Blocking the gestures
+        // above stops a PILOT changing the zoom; this stops anything else — an osmdroid tile
+        // fallback, a future code path that calls zoomIn/zoomOut, a restored instance state.
+        // The mini-map's scale is the pilot's distance intuition, so it must not drift.
+        map.minZoomLevel = MAP_ZOOM
+        map.maxZoomLevel = MAP_ZOOM
         map.controller.setZoom(MAP_ZOOM)
+        // Center immediately, before any fix. Without this the map sits at osmdroid's (0, 0)
+        // default — open ocean off West Africa — because the per-tick recenter in updateHud()
+        // is gated behind hasFix. A pilot who opens the flight screen while the aircraft is
+        // still acquiring satellites would otherwise see a blank blue square and reasonably
+        // conclude the map is broken.
+        map.controller.setCenter(GeoPoint(DEFAULT_LAT, DEFAULT_LON))
 
         // Home→aircraft line, added before any marker so it renders underneath them. Empty and
         // hidden until both a home point and a live fix exist (see updateHud()).
@@ -1249,10 +1255,28 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     companion object {
         private const val TAG = "FlightActivity"
 
-        /** Fixed mini-map zoom. The map is locked, so this is the zoom for the whole flight —
-         *  matches the DJI sibling's MAP_ZOOM so both airframes frame the same amount of
-         *  ground around the aircraft. */
-        private const val MAP_ZOOM = 15.0
+        /**
+         * Fixed mini-map zoom. The map is locked, so this is the zoom for the whole flight.
+         *
+         * **16, not the DJI sibling's 15, and that is not a discrepancy — it is the same view.**
+         * Zoom numbers are only comparable between maps that use the same tile size. DJI's map
+         * is MapLibre, which uses 512px tiles; this one is osmdroid on MAPNIK, which is 256px
+         * (verified against the bundled osmdroid 6.1.14). A 512px tile at zoom z covers the
+         * same ground as a 256px tile at z+1, so MapLibre 15 == osmdroid 16. Copying the
+         * blueprint's literal 15 across made this map one step wider than the DJI one, which is
+         * what the operator saw in the field on 2026-07-30.
+         *
+         * If the two builds ever need to be re-matched, compare the ground covered, not the
+         * number. Keep the +1 offset for any 256px source.
+         */
+        private const val MAP_ZOOM = 16.0
+
+        /** Where the mini-map centers before the aircraft has a GPS fix. Town Square Park in
+         *  downtown Anchorage: a neutral public landmark, chosen deliberately so the default
+         *  view is neither an operator's home area nor a public-safety facility. Same point as
+         *  the DJI sibling's DEFAULT_CENTER and the UASFM center hint. */
+        private const val DEFAULT_LAT = 61.2170
+        private const val DEFAULT_LON = -149.8925
 
         /** How long a transient notice ("Home Point Set") stays up. */
         private const val NOTICE_MS = 3000L

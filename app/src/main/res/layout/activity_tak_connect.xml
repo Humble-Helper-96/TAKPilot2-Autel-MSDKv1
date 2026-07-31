@@ -166,6 +166,107 @@
             android:textColor="#FFFFFF"
             android:backgroundTint="#37474F" />
 
+        <!-- Offline map tiles. Same shape as the UASFM download below on purpose: centre,
+             radius, check the size, then download. A pilot who has done one already knows
+             how to do the other. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Offline map area"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tiles you view are cached automatically. This downloads an area in advance, so the map works over ground you have not flown yet. Check the size first — the tile count grows with the square of the radius."
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingBottom="10dp" />
+
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Centre latitude" />
+                <EditText
+                    android:id="@+id/mapCacheLat"
+                    style="@style/takFieldStyle"
+                    android:hint="61.2170"
+                    android:inputType="numberDecimal|numberSigned" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Centre longitude" />
+                <EditText
+                    android:id="@+id/mapCacheLon"
+                    style="@style/takFieldStyle"
+                    android:hint="-149.8925"
+                    android:inputType="numberDecimal|numberSigned" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Radius (mi)" />
+                <EditText
+                    android:id="@+id/mapCacheRadius"
+                    style="@style/takFieldStyle"
+                    android:hint="10"
+                    android:inputType="number" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout style="@style/takFormRow"
+            android:layout_marginTop="10dp">
+
+            <Button
+                android:id="@+id/mapCacheUseLocationButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Use My Location"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#37474F" />
+
+            <Button
+                android:id="@+id/mapCacheCheckButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Check Size"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#37474F" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/takFormRow"
+            android:layout_marginTop="8dp">
+
+            <Button
+                android:id="@+id/mapCacheDownloadButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Download Area"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#2E5C3A" />
+
+            <Button
+                android:id="@+id/mapCacheClearButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Clear Cache"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#5C2E2E" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/mapCacheStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#9AC4FF"
+            android:textSize="13sp"
+            android:paddingTop="10dp" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -587,7 +688,7 @@
                 <EditText
                     android:id="@+id/uasfmLat"
                     style="@style/takFieldStyle"
-                    android:hint="61.2181"
+                    android:hint="61.2170"
                     android:inputType="numberDecimal|numberSigned" />
             </LinearLayout>
 
@@ -596,7 +697,7 @@
                 <EditText
                     android:id="@+id/uasfmLon"
                     style="@style/takFieldStyle"
-                    android:hint="-149.9003"
+                    android:hint="-149.8925"
                     android:inputType="numberDecimal|numberSigned" />
             </LinearLayout>
 
