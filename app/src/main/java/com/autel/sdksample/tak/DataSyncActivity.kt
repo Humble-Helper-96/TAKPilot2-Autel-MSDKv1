@@ -144,7 +144,7 @@ class DataSyncActivity : AppCompatActivity() {
     }
 
     private fun promptPasswordThenJoin(name: String) {
-        val input = EditText(this).apply {
+        val input = dialogEditText().apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "Feed password"
         }
@@ -165,14 +165,55 @@ class DataSyncActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Dark-dialog widget helpers ----
+    //
+    // A view passed to AlertDialog.setView() is built with the ACTIVITY's context, so it
+    // inherits the activity theme, NOT the R.style.TakDialogTheme the builder was given. That
+    // theme only reaches the dialog's own frame, title and buttons. The result was a correctly
+    // dark card containing near-black text — readable in the layout inspector, invisible in the
+    // field. Both helpers below exist to close that gap; neither is cosmetic.
+
+    /** Text colours for dialog content. Hint is deliberately lighter than the theme's #777777,
+     *  which measured too dim against the dialog background on the RT3's screen. */
+    private val dialogTextColor = Color.parseColor("#FFFFFF")
+    private val dialogHintColor = Color.parseColor("#8A93A0")
+
+    /** EditText with explicit dark-dialog colours. */
+    private fun dialogEditText(): EditText = EditText(this).apply {
+        setTextColor(dialogTextColor)
+        setHintTextColor(dialogHintColor)
+    }
+
+    /**
+     * Spinner adapter that forces white text on both the closed view and the dropdown rows.
+     *
+     * Colours are set in code rather than via a themed ContextThemeWrapper because
+     * `simple_spinner_dropdown_item` resolves its colour through the *spinner popup's* theme,
+     * which is a separate resolution path from the dialog's — wrapping the context fixes the
+     * closed view and leaves the dropdown list unstyled. Setting it on the returned view is the
+     * one place both paths pass through.
+     */
+    private fun darkSpinnerAdapter(items: MutableList<String>) =
+        object : android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_spinner_dropdown_item, items) {
+            override fun getView(pos: Int, convert: android.view.View?, parent: android.view.ViewGroup) =
+                super.getView(pos, convert, parent).also {
+                    (it as? TextView)?.setTextColor(dialogTextColor)
+                }
+            override fun getDropDownView(pos: Int, convert: android.view.View?, parent: android.view.ViewGroup) =
+                super.getDropDownView(pos, convert, parent).also {
+                    (it as? TextView)?.setTextColor(dialogTextColor)
+                }
+        }
+
     private fun showCreateDialog() {
         val d = resources.displayMetrics.density
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), 0)
         }
-        val nameIn = EditText(this).apply { hint = "Feed name" }
-        val descIn = EditText(this).apply { hint = "Description (optional)" }
+        val nameIn = dialogEditText().apply { hint = "Feed name" }
+        val descIn = dialogEditText().apply { hint = "Description (optional)" }
         col.addView(nameIn); col.addView(descIn)
 
         // Default role for users who join this feed.
@@ -185,8 +226,7 @@ class DataSyncActivity : AppCompatActivity() {
         val roleLabels = arrayOf("Subscriber (add/edit items)", "Read-Only (view only)", "Owner (full admin)")
         val roleValues = arrayOf("MISSION_SUBSCRIBER", "MISSION_READONLY_SUBSCRIBER", "MISSION_OWNER")
         val roleSpinner = android.widget.Spinner(this).apply {
-            adapter = android.widget.ArrayAdapter(this@DataSyncActivity,
-                android.R.layout.simple_spinner_dropdown_item, roleLabels)
+            adapter = darkSpinnerAdapter(roleLabels.toMutableList())
             setSelection(0)
         }
         col.addView(roleSpinner)
@@ -203,8 +243,7 @@ class DataSyncActivity : AppCompatActivity() {
         // Populate with the cert's channels; first entry = default scope (no group param).
         val chanValues = ArrayList<String?>().apply { add(null) }
         val chanNames = ArrayList<String>().apply { add("Default (my scope)") }
-        chanSpinner.adapter = android.widget.ArrayAdapter(this,
-            android.R.layout.simple_spinner_dropdown_item, chanNames)
+        chanSpinner.adapter = darkSpinnerAdapter(chanNames)
         TakMissionManager.listGroups { groups ->
             for (g in groups) { chanValues.add(g); chanNames.add(g) }
             (chanSpinner.adapter as android.widget.ArrayAdapter<*>).notifyDataSetChanged()

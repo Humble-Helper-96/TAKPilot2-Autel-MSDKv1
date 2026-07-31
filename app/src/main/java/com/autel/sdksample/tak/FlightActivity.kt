@@ -1146,9 +1146,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     private fun onRenameMarkerTapped(pin: TakDropMarkers.PinInfo) {
+        // Colours set explicitly: a setView() child is built with the ACTIVITY's context and
+        // does NOT inherit TakDialogTheme, so it would otherwise render near-black on the dark
+        // card. Same reason as DataSyncActivity's dialogEditText().
         val field = android.widget.EditText(this).apply {
             setText(pin.name)
             setSelection(pin.name.length)
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#8A93A0"))
         }
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Rename Marker")
