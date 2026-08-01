@@ -984,6 +984,122 @@ Mirror the DJI app's now-proven validation checklist, adapted to Autel's aircraf
 
 ---
 
+## Target hardware — Autel Smart Controller (measured 2026-07-31)
+
+Read off the real controller over adb, not from a spec sheet. Everything here is
+`adb shell` output from the device itself. **First time this project has touched the actual
+deployment hardware** — every UI judgement before this date was made on an OUKITEL RT3
+(533 × 853 dp), which is a different shape entirely.
+
+### Identity
+
+| | |
+|---|---|
+| `ro.product.model` | `RCPad` |
+| `ro.product.device` / `name` | `sdm660_64_ms_01` |
+| `ro.product.manufacturer` / `brand` | `QUALCOMM` / `qti` (unbranded — do NOT match on "Autel") |
+| SoC | Qualcomm **SDM660** (Snapdragon 660), 8 cores, `arm64-v8a` |
+| ABI list | `arm64-v8a, armeabi-v7a, armeabi` |
+| Android | **11 / API 30** — confirms the API 30 assumption this port was built on |
+| Build | `RKQ1.210304.002 1.3.9.23`, **userdebug / test-keys**, built 2025-07-01 |
+| Security patch | 2021-02-05 (old — assume no modern platform fixes) |
+| Serial | `5554d34f` |
+| Autel Explorer | `com.autelrobotics.explorer` **V3.1.134** |
+| MaxiTools | `com.Autel.maxitools` 2.45 |
+
+`userdebug`/`test-keys` is useful: the build is more permissive than a production ROM for
+`logcat`, `dumpsys` and sideloading.
+
+### Screen — the big one
+
+| | |
+|---|---|
+| Physical | 2048 × 1536 @ 320 dpi (xhdpi) |
+| Full | **1024 dp × 768 dp** |
+| App area (`app=2048x1440`) | **1024 dp × 720 dp** — system bars take 48 dp |
+| Smallest width | **sw720dp** |
+| Aspect | 4:3 |
+
+**This invalidates every layout judgement made before 2026-07-31.** All UI review to date was
+on the RT3 at 533 × 853 dp. The controller is ~2× wider and 4:3 rather than tall. Consequences:
+
+- **`values-w820dp` now applies and has never been looked at.** It did not apply on the RT3.
+- `values-h440dp` applies (720 dp ≫ 440 dp), so `flight_map_size` = 160 dp — on a 720 dp-tall
+  screen that is proportionally about half the presence it had on the RT3, where it was judged
+  correct.
+- Pre-Flight Setup's 3-column rows, the flight toolbar, AR edge arrows and the Field Guide icon
+  strips were all sized against 533 dp of width. At 1024 dp they will be sparse, not clipped —
+  the opposite failure from the one the clipping audit hunted for.
+- The earlier ScrollView-clipping work was correct for the RT3 and is not evidence about this
+  device.
+
+### Location — controller GPS is real
+
+Relevant because RTH long-press sets the home point from **controller** GPS, and "Use My
+Location" in Pre-Flight Setup depends on the same.
+
+- Features declared: `android.hardware.location`, `.location.gps`, `.location.network`.
+- Providers: `gps` (enabled, allowed, `requires=satellite`, supports bearing/speed/altitude),
+  `fused` (enabled, allowed), `passive`.
+- `location_mode = 3` (high accuracy), `location_providers_allowed = gps`.
+- GNSS HAL present: `mTopHalCapabilities=0x41 (SCHEDULING MEASUREMENTS)`.
+
+So `lastKnownPhoneLocation()`'s comment is correct — this controller has its own GNSS.
+
+> **Indoors it reports `last location=null` with zero fixes**, so `getLastKnownLocation()`
+> returns null and both features correctly show "No GPS fix yet". That is the expected bench
+> behaviour, NOT a bug — do not "fix" it. Verify these outdoors only.
+
+### Sensors
+
+Accelerometer + gyro (InvenSense **MPU6500**, 200 Hz), magnetometer (ISENTEK **IST8310**,
+100 Hz), proximity, ambient light. Each has a wakeup twin.
+
+**No barometer** — controller-side pressure altitude is not available, which is fine: all
+altitude comes from the aircraft.
+
+**No cameras** (`Number of camera devices: 0`) — worth knowing before anything assumes a
+device camera exists.
+
+### Memory, storage, video
+
+| | |
+|---|---|
+| RAM | 3.7 GB total, ~2.3 GB available; 2 GB swap; **not** `low_ram` |
+| Dalvik heap | 512 MB max, **256 MB growth limit** — the per-app ceiling that matters |
+| `/data` | 109 GB, 5.7 GB used, **102 GB free** |
+| GPU | OpenGL ES 3.2 (`ro.opengles.version = 196610`) |
+| HW video | `OMX.qcom.video.decoder.avc` / `.hevc`, `encoder.avc` / `.hevc` |
+
+- The **2 GB tile cache is comfortable** against 102 GB free — no need to lower it, and room
+  to raise it if a region download needs more.
+- H.264 **and** H.265 hardware decode and encode are both present, so the FPV feed and the
+  screen-capture transcode both have hardware paths on this SoC.
+- 256 MB heap growth limit is the number to watch if tile cache, video buffers and the AR
+  overlay ever contend.
+
+### Connectivity / adb
+
+- `wlan0` only (plus loopback). No cellular interface — **the controller is wifi-only**, so
+  "download on wifi" guidance is the only option, not a preference.
+- **USB-C is a data port and does work for adb.** Correct orientation: **C end into the
+  controller, A end into the laptop.** A first attempt produced no USB enumeration at all
+  (nothing in `dmesg`, nothing in `lsusb`) — cable/orientation, not a device limitation.
+- The controller's **USB-A is a host port** (thumb drives work there). It cannot be used to
+  reach a laptop — host-to-host enumerates nothing. Not a cable problem; wrong direction.
+- **Wireless adb works and needed no pairing step**: `adb connect 192.168.3.127:43695`
+  connected straight to `device` state. Android 11 wireless debugging, port is
+  re-randomised per session.
+
+### Open questions for the next hardware session
+
+1. Screenshot every screen at 1024 × 720 dp and re-judge the layouts. Assume nothing carries
+   over from the RT3.
+2. Read what `values-w820dp` currently does to these screens — never inspected.
+3. Confirm GPS outdoors: does "Use My Location" fill, and does RTH long-press accept?
+4. Aircraft would not bind to the controller this session — unresolved, and separate from
+   anything in this app. Pull Explorer's logcat during a pairing attempt.
+
 ## Environment / Tooling
 
 - Project root: `/home/echos6/SynologyDrive/TAKServer/UAS_Apps/Autel/AutelTAKPilot2/takpilot-autel_v1-2/`.
@@ -1003,6 +1119,11 @@ Mirror the DJI app's now-proven validation checklist, adapted to Autel's aircraf
   `TestApplication.java`.
 - Build: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
   Install: `adb install -r <apk>`.
+- **Two test devices, and they are not interchangeable.** OUKITEL RT3 (`OUKITELRT349474`,
+  Android 13, 533 × 853 dp) is the convenience device; the Autel Smart Controller
+  (`5554d34f`, Android 11, 1024 × 720 dp) is the real target. Always pass `-s <serial>` when
+  both are attached. A layout verdict on the RT3 says nothing about the controller — see the
+  target-hardware section above.
 - Reference material to keep on hand: `TAKPilot2-source-V1.zip` (the original DJI
   TAKPilot2 source this v1.2 port was built against — useful for archaeology, but prefer
   the *current* `SampleCode-device-compat` tree as the parity target for anything UI or
