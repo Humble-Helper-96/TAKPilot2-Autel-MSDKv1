@@ -32,17 +32,45 @@ class LowBandwidthTranscoder(
      *  keep the behaviour this class shipped with. */
     private val profile: TranscodeProfile = TranscodeProfile.STANDARD,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
-    private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer) -> Unit,
+    /** Encoder parameter sets. [vps] is non-null for H.265 and is what makes the RTSP client
+     *  choose H265 packetisation — passing null there would silently produce an H.264 SDP for
+     *  an H.265 stream, which players accept and then render as garbage. */
+    private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) -> Unit,
 ) {
     /**
-     * The pilot-selectable video quality tiers, matching the DJI blueprint's
-     * `StreamTranscoder.TranscodeProfile` value-for-value so a given choice means the same
-     * thing on either airframe.
+     * The pilot-selectable video quality tiers.
+     *
+     * **Bitrates are identical to the DJI blueprint's, but each tier carries one resolution
+     * step MORE** (480/720/1080 here vs 360/480/720 there). That is the whole point of
+     * encoding H.265 on this airframe: it delivers roughly the same quality as H.264 at about
+     * half the bitrate, so the saving is spent on resolution rather than on bandwidth. A pilot
+     * on a marginal link gets the same number of bits either way — they just get a sharper
+     * picture for them. Deliberately NOT value-for-value with DJI, so do not "restore" it.
+     *
+     * `maxHeight` is a CEILING on the vertical dimension, not a format: the source aspect
+     * ratio is preserved and the width follows from it (see [ensureEncoder]). A 4:3 source at
+     * the 720 tier is 960x720, not 1280x720.
+     *
+     * **Bitrates are set from bits-per-pixel-per-frame, not picked round.** At 16:9 (the worst
+     * case, since 4:3 has fewer pixels for the same height) these give ~0.067 bpp for Low and
+     * ~0.058 for Standard and High. For live H.265 at these sizes 0.06-0.08 is comfortable,
+     * 0.04 workable, below 0.03 visibly soft in motion.
+     *
+     * The tuning that produced them (2026-07-31): the previous 275/550/1000 ladder was
+     * INVERTED in quality — 0.067 / 0.040 / 0.032 bpp — so climbing a tier bought pixels while
+     * losing per-pixel fidelity, and High looked mushier in motion than Standard despite
+     * costing twice the bandwidth. Low was already correctly proportioned and is unchanged;
+     * Standard and High were raised to match it.
+     *
+     * Screen capture (once ported) makes the top of this ladder matter more, not less: HUD
+     * text, map labels and AR callouts are sharp high-frequency edges that cost far more bits
+     * than camera video and smear first. An illegible altitude readout defeats the point of
+     * streaming the screen at all.
      */
     enum class TranscodeProfile(val maxHeight: Int, val fps: Int, val bitrateBps: Int) {
-        LOW(360, 10, 275_000),        // maximum survivability on marginal links
-        STANDARD(480, 15, 550_000),   // default — ~2x Low's bitrate, noticeably better
-        HIGH(720, 15, 1_000_000);     // ~2x again, plus higher resolution
+        LOW(480, 10, 275_000),        // maximum survivability on marginal links
+        STANDARD(720, 15, 800_000),   // default — ~3x Low's bitrate, noticeably better
+        HIGH(1080, 15, 1_800_000);    // ~2x again, plus higher resolution
 
         companion object {
             fun fromPref(name: String?): TranscodeProfile = when (name) {
@@ -160,19 +188,24 @@ class LowBandwidthTranscoder(
         var targetW = (srcW.toDouble() / srcH * targetH).toInt()
         targetW -= targetW % 2   // most encoders require even dimensions
         targetH -= targetH % 2
-        val format = MediaFormat.createVideoFormat("video/avc", targetW, targetH).apply {
+        // H.265 out, regardless of what the aircraft sent in. Verified on the Smart Controller:
+        // OMX.qcom.video.encoder.hevc is a hardware encoder good to 3840x2160, and it measures
+        // FASTER than the AVC one at our sizes (121fps vs 80-90 at 720x480), so this costs
+        // nothing in CPU. The RTSP client selects H.265 packetisation and SDP automatically
+        // once a non-null VPS reaches setVideoInfo — see handleCodecConfig.
+        val format = MediaFormat.createVideoFormat(OUT_MIME, targetW, targetH).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
             setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrateBps)
             setInteger(MediaFormat.KEY_FRAME_RATE, profile.fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
-            runCatching { setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline) }
+            runCatching { setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain) }
         }
         runCatching {
-            encoder = MediaCodec.createEncoderByType("video/avc").apply {
+            encoder = MediaCodec.createEncoderByType(OUT_MIME).apply {
                 configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
-            AppLog.i(TAG, "encoder [${profile.name}]: ${srcW}x$srcH -> ${targetW}x$targetH " +
+            AppLog.i(TAG, "encoder [${profile.name}] H.265: ${srcW}x$srcH -> ${targetW}x$targetH " +
                     "@ ${profile.fps}fps ${profile.bitrateBps / 1000}kbps")
         }.onFailure { AppLog.w(TAG, "encoder setup failed: ${it.message}") }
     }
@@ -260,24 +293,79 @@ class LowBandwidthTranscoder(
         }
     }
 
-    /** Splits the encoder's SPS+PPS codec-config buffer at the second Annex-B start code. */
+    /**
+     * Pulls the parameter sets out of the encoder's codec-config buffer.
+     *
+     * **H.265 emits THREE NALs (VPS + SPS + PPS), not H.264's two.** The previous version split
+     * at the second start code and handed back two halves, which for HEVC would have silently
+     * bundled VPS+SPS together as "sps" and produced an unplayable SDP. So this splits into
+     * every NAL and classifies each by its header type rather than assuming a count or order.
+     *
+     * NAL type lives in different bits per codec: HEVC uses `(b0 >> 1) & 0x3F` (VPS 32, SPS 33,
+     * PPS 34), H.264 uses `b0 & 0x1F` (SPS 7, PPS 8). Both are handled so flipping [OUT_MIME]
+     * back to AVC does not quietly break this.
+     *
+     * NALs are passed on WITH their start codes — verified against the RTSP library, whose
+     * `getData()` calls `getVideoStartCodeSize()` and strips them itself.
+     */
     private fun handleCodecConfig(buf: ByteBuffer, info: MediaCodec.BufferInfo) {
         val bytes = ByteArray(info.size)
         buf.get(bytes)
-        var splitAt = -1
-        var i = 4
+        val nals = splitAnnexB(bytes)
+        if (nals.isEmpty()) return
+
+        var vps: ByteArray? = null
+        var sps: ByteArray? = null
+        var pps: ByteArray? = null
+        for (nal in nals) {
+            val hdr = nal.getOrNull(startCodeLen(nal)) ?: continue
+            if (OUT_MIME == "video/hevc") {
+                when ((hdr.toInt() shr 1) and 0x3F) {
+                    32 -> vps = nal
+                    33 -> sps = nal
+                    34 -> pps = nal
+                }
+            } else {
+                when (hdr.toInt() and 0x1F) {
+                    7 -> sps = nal
+                    8 -> pps = nal
+                }
+            }
+        }
+        val s = sps; val p = pps
+        if (s == null || p == null) {
+            AppLog.w(TAG, "codec config had ${nals.size} NAL(s) but no SPS/PPS — not advertising")
+            return
+        }
+        AppLog.i(TAG, "encoder params ready: " +
+            (vps?.let { "vps=${it.size}B " } ?: "") + "sps=${s.size}B pps=${p.size}B")
+        onParamsReady(
+            ByteBuffer.wrap(s),
+            ByteBuffer.wrap(p),
+            vps?.let { ByteBuffer.wrap(it) },
+        )
+    }
+
+    /** Length of the Annex-B start code at the head of [nal] — 4 for 00 00 00 01, else 3. */
+    private fun startCodeLen(nal: ByteArray): Int =
+        if (nal.size >= 4 && nal[0] == Z && nal[1] == Z && nal[2] == Z && nal[3] == O) 4 else 3
+
+    /** Splits an Annex-B byte stream into its NALs, each still carrying its start code. */
+    private fun splitAnnexB(bytes: ByteArray): List<ByteArray> {
+        val starts = ArrayList<Int>()
+        var i = 0
         while (i < bytes.size - 3) {
-            if (bytes[i] == Z && bytes[i + 1] == Z &&
-                (bytes[i + 2] == O || (bytes[i + 2] == Z && bytes[i + 3] == O))) {
-                splitAt = i; break
+            if (bytes[i] == Z && bytes[i + 1] == Z) {
+                if (bytes[i + 2] == O) { starts.add(i); i += 3; continue }
+                if (bytes[i + 2] == Z && bytes[i + 3] == O) { starts.add(i); i += 4; continue }
             }
             i++
         }
-        if (splitAt <= 0) return
-        val sps = bytes.copyOfRange(0, splitAt)
-        val pps = bytes.copyOfRange(splitAt, bytes.size)
-        AppLog.i(TAG, "low-bandwidth encoder params ready: sps=${sps.size}B pps=${pps.size}B")
-        onParamsReady(ByteBuffer.wrap(sps), ByteBuffer.wrap(pps))
+        if (starts.isEmpty()) return emptyList()
+        return starts.mapIndexed { idx, from ->
+            val to = if (idx + 1 < starts.size) starts[idx + 1] else bytes.size
+            bytes.copyOfRange(from, to)
+        }
     }
 
     companion object {
@@ -285,6 +373,12 @@ class LowBandwidthTranscoder(
         private const val Z: Byte = 0
         private const val O: Byte = 1
         private const val QUEUE_CAPACITY = 6
+
+        /** Output codec. H.265 on this airframe — see the profile table for why. Changing this
+         *  back to "video/avc" is supported (handleCodecConfig classifies both), but the
+         *  profile resolutions were chosen on the assumption of H.265 efficiency and should
+         *  drop a step with it. */
+        private const val OUT_MIME = "video/hevc"
 
     }
 }

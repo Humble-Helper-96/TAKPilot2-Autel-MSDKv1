@@ -258,16 +258,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         streamToggle.setOnClickListener {
             if (VideoStreamerHolder.isActive) {
                 AppLog.v(TAG, "LIVE tapped: stopping")
+                ScreenCaptureService.stop(applicationContext)
                 VideoStreamerHolder.stop()
                 toast("Video stream stopped")
+                refreshStreamToggle()
             } else {
-                AppLog.v(TAG, "LIVE tapped: starting")
-                val ok = VideoStreamerHolder.startFromPrefs(applicationContext) { _, msg ->
-                    runOnUiThread { toast(msg) }
-                }
-                if (!ok) toast("Set up the stream in Pre-Flight Setup first")
+                onStartStreamTapped()
             }
-            refreshStreamToggle()
         }
 
         // Single drop-pin action, placed at the camera look-point. The mini-map is locked, so
@@ -310,14 +307,43 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         handler.removeCallbacks(refresh)
     }
 
+    /**
+     * Stops the outbound stream when the flight screen is no longer on display.
+     *
+     * **This is a privacy control, not housekeeping.** The stream is a mirror of the whole
+     * screen. Once the pilot leaves this activity — home screen, another app, Pre-Flight
+     * Setup — a capture that kept running would broadcast whatever they do next to the entire
+     * team. Nothing else in the app can leak like that, so it is stopped the moment this
+     * screen stops being visible.
+     *
+     * onStop, not onPause: a dialog (markers list, RTH confirm, AR options) only pauses the
+     * activity, and killing the stream every time a pilot opens a menu would make it unusable.
+     * onStop fires only when the screen is genuinely no longer shown.
+     *
+     * The TAK connection and telemetry bridge deliberately keep running — those belong to the
+     * foreground service and carry no screen contents.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (VideoStreamerHolder.isActive) {
+            AppLog.i(TAG, "flight screen no longer visible — stopping screen capture")
+            ScreenCaptureService.stop(applicationContext)
+            VideoStreamerHolder.stop()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         AppLog.v(TAG, "onDestroy")
         arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         TakMapMarkers.onMapDestroyed()
-        // NOTE: bridge + TAK connection + video stream deliberately keep running — they
-        // belong to the foreground service lifecycle, not this screen (same as TAKPilot2).
+        // Belt and braces on top of onStop() — a destroy without a stop shouldn't be possible,
+        // but leaving a screen capture alive would be the one leak worth being paranoid about.
+        ScreenCaptureService.stop(applicationContext)
+        VideoStreamerHolder.stop()
+        // NOTE: the bridge and TAK connection deliberately keep running — they belong to the
+        // foreground service lifecycle, not this screen (same as TAKPilot2).
     }
 
     private fun logHudSnapshot() {
@@ -522,6 +548,42 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      */
     private fun notImplemented(name: String, what: String) {
         toast("$name isn't available on the EVO II build yet — $what isn't wired up.")
+    }
+
+    /**
+     * LIVE tapped with no stream running. Checks the stream is configured, then asks for the
+     * screen-capture permission; [onActivityResult] starts the foreground service, which starts
+     * the push.
+     *
+     * The configured check happens BEFORE the permission prompt on purpose — making a pilot
+     * grant screen capture and only then telling them the video server is not set up would be
+     * two wasted taps and a confusing order.
+     */
+    private fun onStartStreamTapped() {
+        val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        if ((p.getString("video_host", "") ?: "").isEmpty() ||
+            (p.getString("video_streamid", "") ?: "").isEmpty()) {
+            toast("Set up the stream in Pre-Flight Setup first")
+            return
+        }
+        AppLog.i(TAG, "tap: LIVE — requesting screen-capture permission")
+        val mpm = getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE)
+            as android.media.projection.MediaProjectionManager
+        toast("Starting screen stream…")
+        startActivityForResult(mpm.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_MEDIA_PROJECTION) return
+        if (resultCode == RESULT_OK && data != null) {
+            AppLog.i(TAG, "screen-capture permission GRANTED — starting ScreenCaptureService")
+            ScreenCaptureService.start(this, resultCode, data)
+        } else {
+            AppLog.w(TAG, "screen-capture permission DENIED (resultCode=$resultCode)")
+            toast("Screen capture permission denied — no stream started")
+        }
+        refreshStreamToggle()
     }
 
     /** Bucket raw signal % into coarse steps for display (operator's spec): 0-10% shows as
@@ -977,9 +1039,19 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
+    /**
+     * Drives the LIVE pill from what the stream is ACTUALLY doing, not from whether a streamer
+     * object exists. LIVE means video is leaving the controller; amber means we are trying;
+     * off means nothing is running. A pilot uses this to decide whether the team can see what
+     * they see, so "an object was constructed" is not good enough.
+     */
     private fun refreshStreamToggle() {
         streamToggle.setState(
-            if (VideoStreamerHolder.isActive) LiveToggleView.State.LIVE else LiveToggleView.State.OFF
+            when (VideoStreamerHolder.state) {
+                VideoStreamerHolder.State.LIVE -> LiveToggleView.State.LIVE
+                VideoStreamerHolder.State.CONNECTING -> LiveToggleView.State.RECONNECTING
+                VideoStreamerHolder.State.OFF -> LiveToggleView.State.OFF
+            }
         )
     }
 
@@ -1290,6 +1362,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         /** How long a transient notice ("Home Point Set") stays up. */
         private const val NOTICE_MS = 3000L
+
+        /** Screen-capture permission request. Android will not let this grant be persisted, so
+         *  the pilot sees the system dialog on every stream start. */
+        private const val REQUEST_MEDIA_PROJECTION = 3001
 
         /** One tap of the AR FOV calibration +/- buttons, degrees. */
         private const val FOV_STEP_DEG = 0.5

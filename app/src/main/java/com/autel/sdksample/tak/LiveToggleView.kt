@@ -58,6 +58,10 @@ class LiveToggleView @JvmOverloads constructor(
     fun setLive(live: Boolean) = setState(if (live) State.LIVE else State.OFF)
 
     fun setState(newState: State) {
+        // No-op on an unchanged state. The flight screen now re-asserts this every 500ms HUD
+        // tick so the pill tracks the stream's real state, and without this guard that would
+        // be a needless invalidate() twice a second.
+        if (newState == state) return
         val wasReconnecting = state == State.RECONNECTING
         state = newState
         if (newState == State.RECONNECTING && !wasReconnecting) {

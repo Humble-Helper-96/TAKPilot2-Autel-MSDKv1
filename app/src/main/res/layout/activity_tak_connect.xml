@@ -529,21 +529,21 @@
                 style="@style/takColumnRadio"
                 android:buttonTint="#1565C0"
                 android:textSize="12sp"
-                android:text="Low\n360p · 10fps\n275 kbps" />
+                android:text="Low\n480 max · 10fps\n275 kbps" />
 
             <RadioButton
                 android:id="@+id/videoProfileStandard"
                 style="@style/takColumnRadio"
                 android:buttonTint="#1565C0"
                 android:textSize="12sp"
-                android:text="Standard\n480p · 15fps\n550 kbps" />
+                android:text="Standard\n720 max · 15fps\n800 kbps" />
 
             <RadioButton
                 android:id="@+id/videoProfileHigh"
                 style="@style/takColumnRadio"
                 android:buttonTint="#1565C0"
                 android:textSize="12sp"
-                android:text="High\n720p · 15fps\n1000 kbps" />
+                android:text="High\n1080 max · 15fps\n1800 kbps" />
 
         </RadioGroup>
 

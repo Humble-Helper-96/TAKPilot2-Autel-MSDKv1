@@ -16,12 +16,20 @@ import java.nio.ByteBuffer
  * AutelVideoStreamer — RTSP push of the EVO II camera. Port of TAKPilot2's
  * DroneVideoStreamer, but architecturally better on Autel:
  *
- * DJI MSDK v5 only exposes a decode surface, so the original had to RE-ENCODE the feed
- * (surface → MediaCodec encoder → RTSP). Autel MSDK v1.5's [AutelCodecListener] hands us
- * the aircraft's raw encoded Annex-B frames directly ([AutelCodecListener.onFrameStream]),
- * so we inject them straight into RootEncoder's [RtspClient] — zero transcode, zero
- * quality loss, near-zero CPU. This is also exactly the "passthrough" preference from the
- * project guide's Phase 2 capacity plan.
+ * **Current path: aircraft frames → decode → scale → H.265 re-encode → RTSP.** Autel MSDK
+ * v1.5's [AutelCodecListener] hands us the aircraft's encoded Annex-B frames directly
+ * ([AutelCodecListener.onFrameStream]) rather than only a decode surface, but every quality
+ * profile still transcodes them down to a link-friendly size via [LowBandwidthTranscoder].
+ *
+ * (An earlier revision of this class was a true passthrough and this doc still claimed "zero
+ * transcode, zero quality loss, near-zero CPU" long after profiles made that false. Corrected
+ * 2026-07-31. Do not trust that claim if it reappears.)
+ *
+ * **Known gap vs the DJI blueprint:** DJI streams a MediaProjection capture of the whole
+ * flight screen, so the team sees the FPV *plus* the HUD, AR markers and map. This build
+ * streams only the camera feed. That was not a deliberate difference — it came from treating
+ * DJI's screen capture as a workaround for an SDK limitation rather than the product decision
+ * it was. Porting `ScreenCaptureService`/`ScreenCaptureEncoder` is the fix; see the plan doc.
  *
  * SPS/PPS (and VPS if the feed turns out to be H.265) are sniffed out of the byte stream;
  * [RtspClient.connect] blocks its worker up to 5 s waiting for them, so we register the
@@ -35,6 +43,9 @@ class AutelVideoStreamer(
     private val context: Context,
     private val config: VideoConfig,
     private val onStatus: (Boolean, String) -> Unit,
+    /** When present, the stream is a capture of the flight screen rather than the aircraft's
+     *  camera feed. See [screenMode]. */
+    private val mediaProjection: android.media.projection.MediaProjection? = null,
 ) : ConnectCheckerRtsp {
 
     data class VideoConfig(
@@ -84,6 +95,7 @@ class AutelVideoStreamer(
     // Only present in low-bandwidth mode — decodes the source stream and re-encodes it
     // as a small H.264 stream instead of passing the source bytes straight through.
     private var transcoder: LowBandwidthTranscoder? = null
+    private var screenEncoder: ScreenCaptureEncoder? = null
 
     // Sniffed parameter sets (kept WITH their Annex-B start codes; RootEncoder strips them).
     private var sps: ByteArray? = null
@@ -91,13 +103,35 @@ class AutelVideoStreamer(
     private var vps: ByteArray? = null   // non-null only if the feed is H.265
     private var sawHevcNal = false
 
-    val isStreaming: Boolean get() = streaming
+    /**
+     * True only when the RTSP session is up **and** we have actually pushed video.
+     *
+     * Both halves are needed. [streaming] alone means the server accepted our session, which
+     * says nothing about whether the aircraft is producing frames — the transcoder does not
+     * even start until SPS/PPS have been sniffed out of the aircraft's stream. A pilot reads
+     * the LIVE pill to decide whether the team can see what they see, so it must mean bytes
+     * are leaving the controller, not that a socket opened.
+     */
+    val isLive: Boolean get() = streaming && frameCount > 0
 
-    fun start() {
+    /** Screen capture whenever a projection was granted; aircraft-camera passthrough otherwise. */
+    private val screenMode: Boolean get() = mediaProjection != null
+
+    /**
+     * Returns false if the stream could not even be attempted, so the caller can drop this
+     * instance instead of keeping a dead one. Without that, `streamer != null` stayed true
+     * after a failed start and the flight screen's LIVE pill lit up while nothing was being
+     * sent — the toolbar claiming the team had video when it did not.
+     */
+    fun start(): Boolean {
+        // Screen mode deliberately does NOT require the aircraft. Mirroring the screen is what
+        // makes the push survive a link drop or a battery change: the viewer keeps seeing the
+        // controller instead of the feed going dead, and a stream can be brought up before the
+        // aircraft is even powered. Requiring a codec here would throw that away.
         val c = AutelProductHolder.codec
-        if (c == null) {
+        if (!screenMode && c == null) {
             onStatus(false, "Aircraft not connected (no video source)")
-            return
+            return false
         }
         codec = c
         stopped = false
@@ -109,13 +143,33 @@ class AutelVideoStreamer(
         client.setOnlyVideo(true)
         client.setReTries(10)
 
-        // Register the frame tap BEFORE connect — connect()'s worker waits (≤5 s) for
-        // setVideoInfo, which fires as soon as we sniff SPS/PPS from the stream.
-        c.setCodecListener(codecListener, null)
+        // Whichever source is in play, it must be producing parameter sets BEFORE connect —
+        // connect()'s worker waits up to 5s for setVideoInfo.
+        if (screenMode) {
+            val enc = ScreenCaptureEncoder(
+                context, mediaProjection!!, config.transcodeProfile,
+                onEncoded = { buf, bufInfo ->
+                    client.sendVideo(buf, bufInfo)
+                    // Count here too, not just on the aircraft path: isLive gates the LIVE
+                    // pill on frameCount, so without this the pill would sit on amber forever
+                    // while a screen capture streamed perfectly well.
+                    frameCount++
+                },
+                onParamsReady = { spsB, ppsB, vpsB -> client.setVideoInfo(spsB, ppsB, vpsB) },
+            )
+            if (!enc.start()) {
+                onStatus(false, "Screen capture failed to start")
+                return false
+            }
+            screenEncoder = enc
+        } else {
+            c!!.setCodecListener(codecListener, null)
+        }
         client.connect(config.pushUrl())
         AppLog.i(TAG, "push=${config.pushUrl()}  advertise=${config.urlSafe()}" +
-                "  [${config.transcodeProfile.name}: transcoding]")
+                "  [${config.transcodeProfile.name}: ${if (screenMode) "screen capture" else "transcoding"}]")
         onStatus(true, "Starting RTSP push → ${config.urlSafe()}")
+        return true
     }
 
     fun stop() {
@@ -125,6 +179,8 @@ class AutelVideoStreamer(
         try { client.disconnect() } catch (t: Throwable) { AppLog.w(TAG, "disconnect: ${t.message}") }
         transcoder?.release()
         transcoder = null
+        screenEncoder?.release()
+        screenEncoder = null
         streaming = false
         paramsSet = false
         sps = null; pps = null; vps = null; sawHevcNal = false
@@ -148,7 +204,11 @@ class AutelVideoStreamer(
                                 isHevc = sawHevcNal,
                                 profile = config.transcodeProfile,
                                 onEncoded = { buf, bufInfo -> client.sendVideo(buf, bufInfo) },
-                                onParamsReady = { spsB, ppsB -> client.setVideoInfo(spsB, ppsB, null) },
+                                // The VPS is what tells RtspClient this is H.265 — it picks
+                                // H265Packet + the matching SDP only when this is non-null.
+                                onParamsReady = { spsB, ppsB, vpsB ->
+                                    client.setVideoInfo(spsB, ppsB, vpsB)
+                                },
                             )
                             AppLog.i(TAG, "transcoder started [${config.transcodeProfile.name}] (source " +
                                     "${if (sawHevcNal) "H.265" else "H.264"})")
@@ -245,6 +305,10 @@ class AutelVideoStreamer(
     override fun onConnectionSuccessRtsp() {
         streaming = true
         AppLog.i(TAG, "RTSP push connected")
+        // Arm the packetiser with a fresh IDR so a viewer joining now gets a picture without
+        // waiting out the 2s GOP. Only the screen encoder can be asked on demand — the
+        // aircraft's keyframe cadence is not ours to control.
+        screenEncoder?.requestSyncFrame()
         onStatus(true, "Streaming → ${config.urlSafe()}")
     }
     override fun onConnectionFailedRtsp(reason: String) {
@@ -279,14 +343,31 @@ object VideoStreamerHolder {
         android.os.Handler(android.os.Looper.getMainLooper()).post { onStateChanged?.run() }
     }
 
+    /**
+     * What the flight screen's LIVE pill should show.
+     *
+     *  - [OFF] — nothing running, including a start that failed outright.
+     *  - [CONNECTING] — a start was accepted and the RTSP client is connecting or retrying,
+     *    but no video has gone out yet.
+     *  - [LIVE] — video is genuinely being pushed.
+     */
+    enum class State { OFF, CONNECTING, LIVE }
+
+    /** Returns false if the stream could not be started at all. */
     fun start(
         context: Context,
         config: AutelVideoStreamer.VideoConfig,
         onStatus: (Boolean, String) -> Unit,
-    ) {
+        projection: android.media.projection.MediaProjection? = null,
+    ): Boolean {
         streamer?.stop()
-        streamer = AutelVideoStreamer(context.applicationContext, config, onStatus).also { it.start() }
+        val s = AutelVideoStreamer(context.applicationContext, config, onStatus, projection)
+        // Keep the instance ONLY if it started. A failed start used to leave a dead streamer
+        // parked here, which made isActive true and lit the LIVE pill with nothing streaming.
+        val ok = s.start()
+        streamer = if (ok) s else null
         notifyState()
+        return ok
     }
 
     fun stop() {
@@ -296,18 +377,39 @@ object VideoStreamerHolder {
         notifyState()
     }
 
-    val isRunning: Boolean get() = streamer?.isStreaming == true
+    val state: State
+        get() {
+            val s = streamer ?: return State.OFF
+            return if (s.isLive) State.LIVE else State.CONNECTING
+        }
+
+    /** True once video is actually going out — what the HUD's "VID" indicator means. */
+    val isRunning: Boolean get() = streamer?.isLive == true
+
+    /** A stream is set up and should be torn down by a second tap. NOT "is it working" —
+     *  use [state] for anything the pilot reads. */
     val isActive: Boolean get() = streamer != null
 
     /**
-     * Start streaming using the video settings saved by TakConnectActivity. Returns false
-     * if no stream is configured. Used by the flight-screen Start Video button.
+     * Why a start attempt did not result in a stream. Three outcomes, not a boolean: the
+     * caller must not tell a pilot to "set up the stream in Pre-Flight Setup" when the stream
+     * IS set up and the aircraft simply isn't connected.
      */
-    fun startFromPrefs(context: Context, onStatus: (Boolean, String) -> Unit): Boolean {
+    enum class StartResult { STARTED, NOT_CONFIGURED, FAILED }
+
+    /**
+     * Start streaming using the video settings saved by TakConnectActivity. Used by the
+     * flight-screen LIVE button.
+     */
+    fun startFromPrefs(
+        context: Context,
+        onStatus: (Boolean, String) -> Unit,
+        projection: android.media.projection.MediaProjection? = null,
+    ): StartResult {
         val p = context.getSharedPreferences("takpilot2_tak", Context.MODE_PRIVATE)
         val host = p.getString("video_host", "") ?: ""
         val streamId = p.getString("video_streamid", "") ?: ""
-        if (host.isEmpty() || streamId.isEmpty()) return false
+        if (host.isEmpty() || streamId.isEmpty()) return StartResult.NOT_CONFIGURED
         val cfg = AutelVideoStreamer.VideoConfig(
             host = host,
             port = p.getInt("video_port", 8554),
@@ -317,10 +419,19 @@ object VideoStreamerHolder {
             tcp = p.getBoolean("video_tcp", true),
             profile = p.getString("video_profile", "standard") ?: "standard",
         )
-        start(context, cfg) { ok, msg ->
-            if (ok) TakBridgeHolder.setVideoUrl(cfg.advertiseUrl())
-            onStatus(ok, msg)
-        }
-        return true
+        // Only advertise the URL in the drone CoT if the push actually started — telling the
+        // team where to watch a stream that never began is worse than saying nothing.
+        val ok = start(context, cfg, { st, msg ->
+            if (st) TakBridgeHolder.setVideoUrl(cfg.advertiseUrl())
+            onStatus(st, msg)
+        }, projection)
+        return if (ok) StartResult.STARTED else StartResult.FAILED
     }
+
+    /** Entry point for [ScreenCaptureService] once it holds a granted projection. */
+    fun startScreenCapture(
+        context: Context,
+        projection: android.media.projection.MediaProjection,
+        onStatus: (Boolean, String) -> Unit,
+    ): StartResult = startFromPrefs(context, onStatus, projection)
 }

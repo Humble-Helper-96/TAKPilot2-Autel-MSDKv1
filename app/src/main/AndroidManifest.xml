@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Only REQUIRED at targetSdk 34+; declared now so a future targetSdk bump does not
+         silently break screen capture. Harmless on this build (targetSdk 29 / Android 11). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -134,6 +137,13 @@
         <activity android:name=".tak.DataSyncActivity"
             android:label="Data Sync"
             android:screenOrientation="landscape" />
+        <!-- Hosts the MediaProjection for the outbound screen-capture stream. Android 10+
+             requires a foreground service of this type to be running BEFORE the projection
+             is used, so this cannot be folded into TakForegroundService (which is dataSync). -->
+        <service android:name=".tak.ScreenCaptureService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
         <service android:name=".tak.TakForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
