@@ -30,11 +30,12 @@ object TakMapMarkers {
     /** Air-track course is rounded to this before it reaches the icon cache — see [courseBucket]. */
     private const val COURSE_BUCKET_DEG = 15.0
 
-    /** Air-track symbol size. 24dp — 25% smaller than the 32dp used for ground MIL markers
-     *  (operator, 2026-07-31): traffic is context, not something the pilot acts on directly,
-     *  and at 32dp it crowded the mini-map. Kept separate from the MIL size on purpose so
-     *  tuning one does not silently move the other. */
-    private const val AIR_ICON_DP = 24f
+    /** Air-track symbol size. 18dp, against 32dp for ground MIL markers (operator, tuned on
+     *  hardware 2026-07-31: 32 -> 24 -> 18). Traffic is context, not something the pilot acts
+     *  on directly, and the mini-map is 180dp wide — a 32dp aircraft covered a meaningful
+     *  fraction of the ground it was meant to be seen against. Kept separate from the MIL size
+     *  on purpose so tuning one does not silently move the other. */
+    private const val AIR_ICON_DP = 18f
 
     private var map: MapView? = null
     private val markers = HashMap<String, Marker>()
@@ -227,6 +228,12 @@ object TakMapMarkers {
     private val density get() = (appContext?.resources?.displayMetrics?.density ?: 2.5f)
 
     private fun iconKeyFor(user: TakUser): String {
+        // Air tracks key on course alone. The symbol carries no callsign, team colour or stale
+        // treatment, so every aircraft at the same course bucket IS the same bitmap — one cache
+        // entry per bucket rather than one per aircraft.
+        if (isAirTrack(user.type)) {
+            return if (user.hasCourse()) "air|${courseBucket(user.course)}" else "air|nocourse"
+        }
         val team = (user.team ?: "Cyan").lowercase()
         val stale = if (user.isStale) "S" else "A"
         val drone = if (user.isDrone) "D" else "U"
@@ -311,7 +318,6 @@ object TakMapMarkers {
             isAirTrack(user.type) -> makeAirIcon(
                 if (user.hasCourse()) R.drawable.ic_air_track
                 else R.drawable.ic_air_track_nocourse,
-                user.callsign ?: user.uid,
                 if (user.hasCourse()) courseBucket(user.course).toDouble() else null,
             )
             res != null -> makeMilIcon(res, user.callsign ?: user.uid)
@@ -336,55 +342,40 @@ object TakMapMarkers {
 
     /** MIL-STD-2525 affiliation frame + callsign label below. */
     /**
-     * Air-track icon: the aircraft glyph turned to [courseDeg], with the callsign label left
-     * UPRIGHT beneath it.
+     * Air-track icon: the aircraft glyph turned to [courseDeg]. **No callsign label** — on a
+     * mini-map a pilot needs to see that traffic is there and which way it is going, not read
+     * its registration (operator, 2026-07-31). Dropping the text also stops a dozen ADS-B
+     * contacts covering the ground the map exists to show.
      *
-     * The rotation is baked into the bitmap rather than applied with `Marker.rotation`, because
-     * the marker's rotation would turn the whole bitmap — including the label, which would read
-     * upside down for anything on a southerly heading. Rotating only the glyph inside the
-     * bitmap keeps the text horizontal at every course.
+     * Rotation is baked into the bitmap rather than applied with `Marker.rotation`. That was
+     * originally to keep the label upright; with the label gone it still matters, because
+     * `Marker.rotation` would also turn the icon's anchor geometry, and baking it keeps the
+     * symbol pivoting cleanly about the aircraft's position.
      *
      * [courseDeg] null means the sender reported no course; the caller passes the ringed
      * non-directional drawable in that case and nothing is rotated.
      */
-    fun makeAirIcon(resId: Int, callsign: String, courseDeg: Double?): Bitmap {
+    fun makeAirIcon(resId: Int, courseDeg: Double?): Bitmap {
         val ctx = appContext
         val d = density
         val size = (AIR_ICON_DP * d).toInt()
         val icon = ctx?.let { drawableToBitmap(it, resId, size) }
+        // A rotated square needs its diagonal, or the wingtips clip at 45 degrees.
+        val box = if (courseDeg != null) (size * 1.42f).toInt() else size
 
-        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE; textSize = 10 * d; typeface = Typeface.DEFAULT_BOLD
-        }
-        val tw = text.measureText(callsign)
-        val fm = text.fontMetrics
-        val th = fm.descent - fm.ascent
-        val gap = (d * 3).toInt(); val padH = (4 * d).toInt(); val padV = (d * 2).toInt()
-        val labelW = tw.toInt() + padH * 2
-        val labelH = th.toInt() + padV * 2
-        // A rotated square needs its diagonal to avoid clipping the wingtips at 45 degrees.
-        val glyphBox = if (courseDeg != null) (size * 1.42f).toInt() else size
-        val w = maxOf(glyphBox, labelW)
-        val h = glyphBox + gap + labelH
-
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(box, box, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         if (icon != null) {
+            val left = (box - size) / 2f
             if (courseDeg != null) {
                 c.save()
-                c.rotate(courseDeg.toFloat(), w / 2f, glyphBox / 2f)
-                c.drawBitmap(icon, (w - size) / 2f, (glyphBox - size) / 2f, null)
+                c.rotate(courseDeg.toFloat(), box / 2f, box / 2f)
+                c.drawBitmap(icon, left, left, null)
                 c.restore()
             } else {
-                c.drawBitmap(icon, (w - size) / 2f, 0f, null)
+                c.drawBitmap(icon, left, left, null)
             }
         }
-
-        val labelLeft = (w - labelW) / 2f
-        val labelTop = (glyphBox + gap).toFloat()
-        c.drawRoundRect(labelLeft, labelTop, labelLeft + labelW, labelTop + labelH, d * 3, d * 3,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(160, 0, 0, 0) })
-        c.drawText(callsign, labelLeft + padH, labelTop + padV - fm.ascent, text)
         return bmp
     }
 
