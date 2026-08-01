@@ -352,6 +352,12 @@ object TakMapMarkers {
      * `Marker.rotation` would also turn the icon's anchor geometry, and baking it keeps the
      * symbol pivoting cleanly about the aircraft's position.
      *
+     * **Direction VERIFIED against live traffic, 2026-08-01** — watched an ADS-B contact turn
+     * on the mini-map and the symbol tracked it correctly. `Canvas.rotate(+course)` is
+     * clockwise, which matches compass course. Note this does NOT also verify the own-ship
+     * chevron in FlightActivity: that one goes through `Marker.rotation = -heading`, which
+     * osmdroid then applies as `-mBearing`, a different path with its own sign convention.
+     *
      * [courseDeg] null means the sender reported no course; the caller passes the ringed
      * non-directional drawable in that case and nothing is rotated.
      */

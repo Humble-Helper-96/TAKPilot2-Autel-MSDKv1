@@ -535,6 +535,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             aircraftMarker = this
         }
         mk.position = pos
+        // UNVERIFIED SIGN. osmdroid applies the marker's bearing to the canvas as -mBearing,
+        // so this double negation should turn the chevron clockwise with increasing heading —
+        // correct for compass heading. Traced in the 6.1.14 bytecode, never watched turning:
+        // it needs a live aircraft, which this build has not had.
+        //
+        // The ADS-B symbols were confirmed correct against live traffic on 2026-08-01, but that
+        // does NOT carry over — those bake rotation in with Canvas.rotate(+course) rather than
+        // going through Marker.rotation, so they exercise a different sign convention.
+        //
+        // To check: point the aircraft north, confirm the chevron points up the screen, then
+        // yaw right 90 degrees and confirm it points right. If it turns the wrong way, drop one
+        // of the two minus signs (here or in osmdroid's convention) — not both.
         mk.rotation = -hud.headingDeg.toFloat()
         // The locked map's only camera movement: keep the aircraft centred, zoom untouched.
         map.controller.setCenter(pos)
