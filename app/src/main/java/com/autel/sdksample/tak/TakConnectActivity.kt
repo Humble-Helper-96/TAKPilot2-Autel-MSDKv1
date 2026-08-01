@@ -269,8 +269,13 @@ class TakConnectActivity : AppCompatActivity() {
         host: String, cotPort: Int, trustStorePath: String, clientCertPath: String,
     ) {
         val certPw = "atakatak"
+        // 2nd arg is the CALLSIGN, not the username. Passing `username` here made the aircraft
+        // appear on the TAK server (and in the flight HUD, which reads TakManager.callsign)
+        // under the operator's login name instead of the callsign set in Pre-Flight Setup —
+        // so a team saw "0009anc" where they expected the aircraft's name. The username still
+        // identifies the account for enrollment; it is not what the team should see.
         TakManager.getInstance().connect(
-            uid, username, "Cyan", "Team Member",
+            uid, droneCallsign, "Cyan", "Team Member",
             host, cotPort, trustStorePath, certPw, clientCertPath, certPw,
         )
         runOnUiThread {

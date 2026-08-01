@@ -97,8 +97,11 @@ object TakAutoConnect {
         }
 
         Thread {
+            // 2nd arg is the CALLSIGN, not the username — see the same fix in
+            // TakConnectActivity.connectWithCerts. Both connect paths had it wrong, so the
+            // aircraft reported the operator's login name to the whole team either way.
             TakManager.getInstance().connect(
-                uid, username, "Cyan", "Team Member",
+                uid, callsign, "Cyan", "Team Member",
                 host, cotPort, ts, "atakatak", cc, "atakatak",
             )
             // Re-apply the saved channel routing selection.
