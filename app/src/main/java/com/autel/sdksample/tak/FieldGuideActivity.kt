@@ -222,7 +222,7 @@ class FieldGuideActivity : AppCompatActivity() {
             "TAK connection",
             "A green dot shows that your aircraft is on the TAK map of your team. A red dot " +
                 "shows that it is not on the map. You can fly, but your team cannot see the " +
-                "aircraft. Touch the icon to see the current state.",
+                "aircraft. Touch the icon to connect or disconnect.",
         )
 
         entry(

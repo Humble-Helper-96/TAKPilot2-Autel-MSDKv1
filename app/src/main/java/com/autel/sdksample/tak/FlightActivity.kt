@@ -4,7 +4,6 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -58,7 +57,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var zoomButton: TextView
     private lateinit var map: LockedMapView
     private lateinit var toolbarTakIcon: ImageView
-    private lateinit var toolbarTakDot: View
+    private lateinit var toolbarTakDot: ImageView
     private lateinit var toolbarBattery: BatteryGaugeView
     private lateinit var toolbarGps: TextView
     private lateinit var rthButton: ImageButton
@@ -226,6 +225,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.v(TAG, "tap: REC")
             onRecordToggleTapped()
         }
+        findViewById<View>(R.id.toolbarTakButton).setOnClickListener {
+            AppLog.v(TAG, "tap: TAK connection toggle")
+            TakAutoConnect.toggle(applicationContext) { _, msg ->
+                runOnUiThread { toast(msg) }
+            }
+        }
+
         toolbarSignal.setOnClickListener { signalDetail() }
         toolbarSignalText.setOnClickListener { signalDetail() }
         // NOT setOnClickListener: EvSliderView consumes ACTION_DOWN and returns true without
@@ -335,8 +341,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Instrument toolbar
         val takColor = if (takOk) Color.parseColor("#4CAF50") else Color.parseColor("#F44336")
         toolbarTakIcon.alpha = if (takOk) 1.0f else 0.4f
-        (toolbarTakDot.background as? GradientDrawable)?.setColor(takColor)
-            ?: toolbarTakDot.background?.setTint(takColor)
+        // setColorFilter on the SRC drawable, not the background. The dot is an ImageView with
+        // android:src and no background at all, so the previous background-tinting version was
+        // a no-op in both states and the dot rendered the shape's literal #FFFFFF — a white dot
+        // that never went green or red. Matches the DJI blueprint and our own FieldGuideActivity,
+        // both of which already do it this way.
+        toolbarTakDot.setColorFilter(takColor)
         toolbarBattery.setPercent(hud?.batteryPct?.takeIf { hud.hasFix || it > 0 })
         toolbarGps.text = if (hud?.hasFix == true) hud.sats.toString() else "—"
         val signalPct = hud?.uplinkSignalPct

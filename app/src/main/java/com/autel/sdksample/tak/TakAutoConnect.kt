@@ -34,19 +34,61 @@ object TakAutoConnect {
             Log.i(TAG, "User logged out — skipping auto-connect")
             return
         }
+        if (!hasSavedCerts(prefs)) {
+            Log.i(TAG, "No saved enrollment — skipping auto-connect")
+            return
+        }
+        reconnect(context)
+    }
+
+    /**
+     * Flight-screen TAK badge tap: disconnect if connected, otherwise reconnect. Ported from
+     * the DJI blueprint's `TakAutoConnect.toggle`.
+     *
+     * Deliberately does NOT set [KEY_LOGGED_OUT]. That flag means "the pilot signed out in
+     * Pre-Flight Setup, do not auto-connect again"; a badge tap is a temporary in-flight
+     * action, and treating it as a sign-out would silently stop the next launch from
+     * reconnecting.
+     */
+    fun toggle(context: Context, onResult: (ok: Boolean, msg: String) -> Unit) {
+        if (TakManager.getInstance().isConnected) {
+            Log.i(TAG, "TAK icon tap — disconnecting")
+            runCatching { TakManager.getInstance().disconnect() }
+            runCatching { TakForegroundService.stop(context.applicationContext) }
+            onResult(true, "TAK disconnected")
+            return
+        }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!hasSavedCerts(prefs)) {
+            onResult(false, "No saved TAK enrollment — set up the server in Pre-Flight Setup first")
+            return
+        }
+        Log.i(TAG, "TAK icon tap — reconnecting")
+        reconnect(context.applicationContext)
+        onResult(true, "Reconnecting to TAK…")
+    }
+
+    /** Enrollment present and the cert files still on disk. Checked before every connect —
+     *  a saved host with a deleted truststore would otherwise fail deep inside the socket. */
+    private fun hasSavedCerts(prefs: android.content.SharedPreferences): Boolean {
+        val host = prefs.getString(KEY_HOST, "") ?: ""
+        val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
+        return host.isNotEmpty() && ts.isNotEmpty() && cc.isNotEmpty() &&
+            File(ts).exists() && File(cc).exists()
+    }
+
+    /** The actual connect, on a background thread. Shared by [tryReconnect] and [toggle] so
+     *  the two paths can't drift — the channel routing and bridge startup below are easy to
+     *  forget in a second copy. */
+    private fun reconnect(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val host = prefs.getString(KEY_HOST, "") ?: ""
         val username = prefs.getString(KEY_USERNAME, "") ?: ""
         val cotPort = prefs.getInt(KEY_COT_PORT, 8089)
         val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
         val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
         val callsign = prefs.getString(KEY_CALLSIGN, "TAKPilot2-EVO2") ?: "TAKPilot2-EVO2"
-
-        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty() ||
-            !File(ts).exists() || !File(cc).exists()
-        ) {
-            Log.i(TAG, "No saved enrollment — skipping auto-connect")
-            return
-        }
 
         var uid = prefs.getString(KEY_UID, "") ?: ""
         if (uid.isEmpty()) {
