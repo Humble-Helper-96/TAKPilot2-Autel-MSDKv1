@@ -364,6 +364,25 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
+            listOf(zoomPill("IR") to "Thermal"),
+            "IR: the thermal camera",
+            "This button changes the image between the normal camera and the thermal camera. " +
+                "The button becomes green when the thermal camera is on. The image changes for " +
+                "your team also, because they see the same image.\n\n" +
+                "The thermal camera shows heat, not light. Thus it finds a person or a hot " +
+                "vehicle in the dark, in smoke, or in vegetation.\n\n" +
+                "When the thermal camera is on, a second button shows: WHOT or BHOT. It " +
+                "changes which colour is hot:\n" +
+                "WHOT (white hot) - hot is white, cold is black.\n" +
+                "BHOT (black hot) - hot is black, cold is white.",
+            listOf(
+                "The buttons show the state of the CAMERA. If you start the app when the " +
+                    "camera is already in thermal, the button is green immediately.",
+                "The thermal camera does not see through glass or water.",
+            ),
+        )
+
+        entry(
             listOf(image(R.drawable.ic_resync) to "Re-sync"),
             "Video re-sync",
             "This button corrects the video image. Blocks or marks can occur in the image, " +
@@ -469,8 +488,9 @@ class FieldGuideActivity : AppCompatActivity() {
                 "- its latitude and longitude\n" +
                 "- the distance and the direction from the home point\n" +
                 "- its height above the ground and above sea level\n" +
-                "- the angle of the camera\n" +
-                "- the state of the aircraft and of the TAK connection",
+                "- the angle of the camera\n\n" +
+                "To see the state of the aircraft and of the TAK connection, look at the " +
+                "toolbar at the top of the screen.",
             listOf(
                 "The height shows AGL if terrain data covers your position. AGL is the true " +
                     "height above the ground below the aircraft.",
@@ -487,16 +507,20 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             emptyList(),
             "FAA ceiling line",
-            "This line shows only if you downloaded the FAA data. It shows the published " +
-                "ceiling at the position of the aircraft. It becomes red if you fly above " +
-                "the ceiling.\n\n" +
+            "This line is above the small map. It shows the published ceiling at the position " +
+                "of the aircraft. It becomes red if you fly above the ceiling.\n\n" +
                 "The line shows AGL, because FAA ceilings are always heights above the " +
                 "ground. Compare this value with the AGL line of the readout. Do not compare " +
                 "it with the MSL line.\n\n" +
-                "Grey \"Class G\" shows that the FAA has no facility map at this position. " +
-                "The usual limit of 400 ft is applicable. Yellow \"no data here\" shows that " +
-                "you flew out of the area of your data. The app does not know the limit. " +
-                "This is not an approval to fly.",
+                "The line shows one of these:\n" +
+                "FAA 300 ft AGL - the published ceiling at this position.\n" +
+                "Class G - the FAA has no facility map here. The usual limit of 400 ft is " +
+                "applicable.\n" +
+                "FAA --- ft AGL - the app does not know the limit. Either you did not download " +
+                "FAA data, or you flew out of the area that you downloaded.\n" +
+                "FAA - no fix - the aircraft does not have its position yet.\n\n" +
+                "If the app does not know the limit, this is not an approval to fly. Get the " +
+                "limit for your area before you fly.",
         )
 
         entry(

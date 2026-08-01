@@ -3,4 +3,24 @@
          (such as screen margins) for screens with more than 820dp of available width. This
          would include 7" and 10" devices in landscape (~960dp and ~1280dp respectively). -->
 	<dimen name="activity_horizontal_margin">64dp</dimen>
+
+	<!-- Wide-screen flight mini-map. The Autel Smart Controller V3 measures 1024 x 720 dp
+	     (verified over adb, see the plan doc), where the 160dp square from values-h440dp is
+	     lost in the empty space either side of the video.
+
+	     Deliberately NOT square. Width drives the whole HUD column (EV slider, EV scale,
+	     exposure readout) and every dp of it is taken from the video, so it only goes to
+	     180dp. Height costs nothing but vertical room, of which there is a lot, so the map
+	     gets 240dp.
+
+	     Height budget re-checked, since the base entry warns that overflow here is SILENT —
+	     the map is the column's last child and simply gets clipped off the bottom. Above the
+	     map is ~233dp, so 240dp needs ~473dp of screen height against the V3's measured
+	     720dp. Comfortable. A hypothetical device wider than 820dp but under ~500dp tall
+	     would clip; no controller in this project's scope is that shape.
+
+	     Smaller hardware (e.g. a Smart Controller SE) does not reach 820dp of width and keeps
+	     the square 160dp from values-h440dp — that bucket must stay usable. -->
+	<dimen name="flight_map_size">180dp</dimen>
+	<dimen name="flight_map_height">240dp</dimen>
 </resources>

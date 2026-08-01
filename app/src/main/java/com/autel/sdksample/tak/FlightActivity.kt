@@ -16,7 +16,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.autel.common.CallbackWithNoParam
+import com.autel.common.CallbackWithOneParam
+import com.autel.common.camera.XT706.DisplayMode
 import com.autel.common.camera.base.MediaMode
+import com.autel.common.camera.XT706.IrColor
 import com.autel.common.error.AutelError
 import com.autel.sdk.widget.AutelCodecView
 import com.autel.sdksample.R
@@ -55,7 +58,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var toolbarSignalText: TextView
     private lateinit var arButton: TextView
     private lateinit var zoomButton: TextView
+    private lateinit var irButton: TextView
+    private lateinit var irPaletteButton: TextView
+
+    /** Thermal state. Both are re-read from the camera on connect rather than assumed — see
+     *  syncIrStateFromCamera(). The buttons must never claim a mode the camera isn't in. */
+    private var irOn = false
+    private var irBlackHot = false
     private lateinit var map: LockedMapView
+    private lateinit var mapZoomButton: TextView
+
+    /** Mini-map zoom mode. Persisted, so a pilot who settles on one keeps it across a battery
+     *  swap. Defaults to WIDE: it is the only level that keeps the home point on the map at the
+     *  full max-distance limit, which is the safer state to be in if nobody ever touches this. */
+    private var mapWide = true
     private lateinit var toolbarTakIcon: ImageView
     private lateinit var toolbarTakDot: ImageView
     private lateinit var toolbarBattery: BatteryGaugeView
@@ -129,7 +145,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         toolbarSignalText = findViewById(R.id.toolbarSignalText)
         arButton = findViewById(R.id.flightArButton)
         zoomButton = findViewById(R.id.flightZoomButton)
+        irButton = findViewById(R.id.flightIrButton)
+        irPaletteButton = findViewById(R.id.flightIrPaletteButton)
+        irButton.setOnClickListener { onIrTapped() }
+        irPaletteButton.setOnClickListener { onIrPaletteTapped() }
         map = findViewById(R.id.flightMap)
+        // Must be resolved before the map setup below, which calls applyMapZoom() and labels
+        // this button.
+        mapZoomButton = findViewById(R.id.flightMapZoomButton)
         toolbarTakIcon = findViewById(R.id.toolbarTakIcon)
         toolbarTakDot = findViewById(R.id.toolbarTakDot)
         toolbarBattery = findViewById(R.id.toolbarBattery)
@@ -141,20 +164,21 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         // Locked TAK mini-map. Pan/fling/double-tap-zoom are blocked inside [LockedMapView];
         // these two calls kill the remaining interactive affordances (pinch-zoom and the
-        // built-in +/- buttons). Orientation is never touched, so north stays up, and the zoom
-        // set here is the zoom for the whole flight — updateHud()'s recenter is the only thing
-        // that ever moves the camera.
+        // built-in +/- buttons). Orientation is never touched, so north stays up, and the only
+        // things that ever move the camera are updateHud()'s recenter and the zoom toggle.
+        mapWide = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+            .getBoolean(KEY_MAP_WIDE, true)
         map.setTileSource(MapStyle.tileSource(this))
         map.setMultiTouchControls(false)
         map.setBuiltInZoomControls(false)
         map.setFlingEnabled(false)
-        // Hard floor and ceiling on the zoom, not just a starting value. Blocking the gestures
-        // above stops a PILOT changing the zoom; this stops anything else — an osmdroid tile
-        // fallback, a future code path that calls zoomIn/zoomOut, a restored instance state.
-        // The mini-map's scale is the pilot's distance intuition, so it must not drift.
-        map.minZoomLevel = MAP_ZOOM
-        map.maxZoomLevel = MAP_ZOOM
-        map.controller.setZoom(MAP_ZOOM)
+        // Zoom is clamped to exactly the two levels the toggle offers. Blocking the gestures
+        // above stops a PILOT dragging the zoom around; this stops everything else — an
+        // osmdroid tile fallback, a stray zoomIn/zoomOut, a restored instance state. The map
+        // still only ever sits at MAP_ZOOM_WIDE or MAP_ZOOM_NEAR; nothing lands in between.
+        map.minZoomLevel = MAP_ZOOM_WIDE
+        map.maxZoomLevel = MAP_ZOOM_NEAR
+        applyMapZoom(persist = false)
         // Center immediately, before any fix. Without this the map sits at osmdroid's (0, 0)
         // default — open ocean off West Africa — because the per-tick recenter in updateHud()
         // is gated behind hasFix. A pilot who opens the flight screen while the aircraft is
@@ -179,10 +203,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         findViewById<ImageButton>(R.id.flightBackButton).setOnClickListener {
             AppLog.v(TAG, "Back tapped"); finish()
-        }
-        findViewById<View>(R.id.toolbarTakButton).setOnClickListener {
-            AppLog.v(TAG, "TAK icon tapped")
-            toast(if (TakManager.getInstance().isConnected) "TAK: Connected" else "TAK: Disconnected — check Pre-Flight Setup")
         }
         rthButton = findViewById(R.id.flightRthButton)
         rthButton.setOnClickListener {
@@ -225,11 +245,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.v(TAG, "tap: REC")
             onRecordToggleTapped()
         }
+        // NOTE: this REPLACED an earlier listener on the same view that only toasted the
+        // current state. Two setOnClickListener calls on one view is silent — the last one
+        // wins — so the old handler was dead code that read as live. Removed.
         findViewById<View>(R.id.toolbarTakButton).setOnClickListener {
             AppLog.v(TAG, "tap: TAK connection toggle")
             TakAutoConnect.toggle(applicationContext) { _, msg ->
                 runOnUiThread { toast(msg) }
             }
+        }
+
+        mapZoomButton.setOnClickListener {
+            mapWide = !mapWide
+            AppLog.v(TAG, "tap: mini-map zoom -> ${if (mapWide) "WIDE" else "NEAR"}")
+            applyMapZoom(persist = true)
         }
 
         toolbarSignal.setOnClickListener { signalDetail() }
@@ -296,6 +325,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         super.onResume()
         AppLog.v(TAG, "onResume")
         AutelProductHolder.install()   // reclaim the global product listener (see holder docs)
+        // Re-read the camera's real thermal state each time this screen comes up. Autel's own
+        // app can have left the camera in IR, and the buttons must reflect the camera rather
+        // than a default. No-ops when no camera is attached.
+        syncIrStateFromCamera()
         map.onResume()
         handler.post(refresh)
     }
@@ -361,7 +394,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun updateHud() {
         val hud = TakBridgeHolder.hud()
         val takOk = TakManager.getInstance().isConnected
-        val vidOn = VideoStreamerHolder.isRunning
         val acOk = AutelProductHolder.isConnected
 
         // Instrument toolbar
@@ -468,13 +500,19 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             append("  ·  ")
             val msl = aglReading.mslMeters
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
-            append('\n')
-            // Aircraft/TAK/SPI state. DJI shows a flight timer here; the Autel SDK's
-            // EvoFlyControllerInfo exposes no flight-time field (checked against the bundled
-            // aar), so this line carries link state instead of inventing a timer.
-            append(if (acOk) "AC ✓" else "AC ✗")
-            append("  TAK ").append(if (takOk) "✓" else "✗")
-            if (TakBridgeHolder.isCameraPointEnabled) append("  SPI ✓")
+            // AC and TAK state used to be appended here and were removed (operator, 2026-07-31)
+            // as redundant: the toolbar already carries both — the TAK badge's green/red dot,
+            // and the aircraft through the battery gauge, GPS count and signal bars, which all
+            // go blank without one. Losing the line also lets the FAA ceiling sit directly
+            // above the mini-map, which is where a pilot looks for it.
+            //
+            // SPI stays: nothing else on the screen says whether the camera look-point is being
+            // published to TAK. It gets its own line only when it is actually on, so the
+            // readout does not carry a permanently blank row.
+            if (TakBridgeHolder.isCameraPointEnabled) {
+                append('\n')
+                append("SPI ✓")
+            }
         }
 
         if (hud == null || !hud.hasFix) return
@@ -584,6 +622,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             toast("Screen capture permission denied — no stream started")
         }
         refreshStreamToggle()
+    }
+
+    /**
+     * Applies [mapWide] to the map and the button, optionally saving it.
+     *
+     * The button is labelled with what a tap WOULD DO, not with the state it is in — the
+     * standard toggle convention (a media button shows "pause" while playing). At NEAR it
+     * reads WIDE, and vice versa.
+     *
+     * Recentring is left to the HUD tick, which runs every 500ms and calls setCenter; there is
+     * no need to re-centre here and doing so would fight it.
+     */
+    private fun applyMapZoom(persist: Boolean) {
+        val zoom = if (mapWide) MAP_ZOOM_WIDE else MAP_ZOOM_NEAR
+        map.controller.setZoom(zoom)
+        mapZoomButton.text = if (mapWide) "NEAR" else "WIDE"
+        if (persist) {
+            getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+                .edit().putBoolean(KEY_MAP_WIDE, mapWide).apply()
+        }
+        AppLog.i(TAG, "mini-map zoom = $zoom (${if (mapWide) "WIDE" else "NEAR"})")
     }
 
     /** Bucket raw signal % into coarse steps for display (operator's spec): 0-10% shows as
@@ -906,6 +965,85 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * x100. Changes the actual encoded feed, so remote viewers see the zoom too, and feeds
      * [TakBridgeHolder.setLiveZoom] so the published SPI FOV cone narrows to match.
      */
+    /**
+     * Switches the FPV between the visible camera and the 640T's thermal sensor.
+     *
+     * `setDisplayMode` also offers PICTURE_IN_PICTURE and OVERLAP; this button is deliberately
+     * a two-way VISIBLE/IR toggle (operator's spec). The other modes are a settings-screen
+     * question, not something to cycle through blind in flight.
+     *
+     * State flips only in the success callback. If the camera rejects the change the buttons
+     * keep showing what the camera is actually doing, rather than what we asked for.
+     */
+    private fun onIrTapped() {
+        val cam = AutelProductHolder.xt706
+        if (cam == null) {
+            AppLog.w(TAG, "IR ignored — camera not connected (or not an XT70x)")
+            toast("Aircraft camera not connected")
+            return
+        }
+        val target = if (irOn) DisplayMode.VISIBLE else DisplayMode.IR
+        cam.setDisplayMode(target, camCb("setDisplayMode($target)") {
+            irOn = !irOn
+            refreshIrButtons()
+            AppLog.i(TAG, "display mode now ${if (irOn) "IR" else "VISIBLE"}")
+        })
+    }
+
+    /** White hot / black hot. Only reachable while [irOn] — the button is hidden otherwise. */
+    private fun onIrPaletteTapped() {
+        val cam = AutelProductHolder.xt706 ?: return
+        val target = if (irBlackHot) IrColor.WhiteHot else IrColor.BlackHot
+        cam.setIrColor(target, camCb("setIrColor($target)") {
+            irBlackHot = !irBlackHot
+            refreshIrButtons()
+            AppLog.i(TAG, "IR palette now ${if (irBlackHot) "BlackHot" else "WhiteHot"}")
+        })
+    }
+
+    /** IR button highlighted when thermal is live; palette button shown only then. */
+    private fun refreshIrButtons() {
+        irButton.setBackgroundResource(
+            if (irOn) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
+        )
+        irButton.setTextColor(if (irOn) Color.parseColor("#4CAF50") else Color.WHITE)
+        irPaletteButton.visibility = if (irOn) View.VISIBLE else View.GONE
+        // Spelled out, not "WHOT"/"BHOT": in the HUD column it has the full column width, and
+        // the abbreviations only existed to fit a narrow toolbar pill.
+        irPaletteButton.text = if (irBlackHot) "BLACK HOT" else "WHITE HOT"
+    }
+
+    /**
+     * Reads the camera's ACTUAL display mode and palette so the buttons start truthful.
+     *
+     * Without this the toggle would assume VISIBLE/WhiteHot at every launch, and a camera left
+     * in thermal by Autel's own app — or by a previous flight — would show an unlit IR button
+     * over a thermal picture, with the first tap switching it to visible while the label
+     * implied the opposite.
+     */
+    private fun syncIrStateFromCamera() {
+        val cam = AutelProductHolder.xt706 ?: return
+        cam.getDisplayMode(object : CallbackWithOneParam<DisplayMode> {
+            override fun onSuccess(mode: DisplayMode?) {
+                irOn = mode == DisplayMode.IR
+                runOnUiThread { refreshIrButtons() }
+                AppLog.i(TAG, "camera display mode at connect: $mode")
+            }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "getDisplayMode failed: ${error?.description}")
+            }
+        })
+        cam.getIrColor(object : CallbackWithOneParam<IrColor> {
+            override fun onSuccess(c: IrColor?) {
+                irBlackHot = c == IrColor.BlackHot
+                runOnUiThread { refreshIrButtons() }
+            }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "getIrColor failed: ${error?.description}")
+            }
+        })
+    }
+
     private fun onZoomTapped() {
         val cam = AutelProductHolder.xt706
         if (cam == null) {
@@ -1110,8 +1248,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * marks itself `~` so the pilot can see the warning is only as good as flat ground.
      */
     private fun updateFaaCeiling(hud: AutelTakBridge.Hud?, agl: TerrainAgl.Reading) {
+        // No UASFM data imported at all. This used to hide the line entirely, which left the
+        // pilot unable to tell "no ceiling data loaded" from "this build has no FAA feature" —
+        // a blank space says nothing. Dashes in the slot the ceiling would occupy say the
+        // number is unknown (operator, 2026-07-31).
         if (!UasfmIndex.hasCoverage(this)) {
-            fpvFaaCeiling.visibility = View.GONE
+            showFaaUnknown()
             return
         }
         if (hud == null || !hud.hasFix) {
@@ -1157,13 +1299,22 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                     if (aglFt > part107) Color.parseColor("#EF5350") else Color.parseColor("#B0B0B0")
                 )
             }
-            // Outside the downloaded box entirely — we genuinely don't know. Amber, because
-            // silently implying 400 ft here would be a guess dressed up as information.
-            else -> {
-                fpvFaaCeiling.text = "FAA — no data here"
-                fpvFaaCeiling.setTextColor(Color.parseColor("#FFB74D"))
-            }
+            // Outside the downloaded box entirely — we genuinely don't know. Shown identically
+            // to "nothing downloaded" (operator, 2026-07-31): an earlier version made this
+            // amber and worded it differently on the grounds that flying OUT of coverage is
+            // more surprising than never having had it. But the pilot can do exactly the same
+            // thing about both — nothing, in the air — so two treatments for one meaning was
+            // noise. Both now read as an unknown ceiling.
+            else -> showFaaUnknown()
         }
+    }
+
+    /** The ceiling is unknown: no data downloaded, or the aircraft is outside what was. Dashes
+     *  in the number's own slot, grey — it must not read as a limit of any kind. */
+    private fun showFaaUnknown() {
+        fpvFaaCeiling.visibility = View.VISIBLE
+        fpvFaaCeiling.text = "FAA --- ft AGL"
+        fpvFaaCeiling.setTextColor(Color.parseColor("#B0B0B0"))
     }
 
     // ---- Markers list (drop-pin long-press) ----
@@ -1340,18 +1491,51 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         /**
          * Fixed mini-map zoom. The map is locked, so this is the zoom for the whole flight.
          *
-         * **16, not the DJI sibling's 15, and that is not a discrepancy — it is the same view.**
-         * Zoom numbers are only comparable between maps that use the same tile size. DJI's map
-         * is MapLibre, which uses 512px tiles; this one is osmdroid on MAPNIK, which is 256px
-         * (verified against the bundled osmdroid 6.1.14). A 512px tile at zoom z covers the
-         * same ground as a 256px tile at z+1, so MapLibre 15 == osmdroid 16. Copying the
-         * blueprint's literal 15 across made this map one step wider than the DJI one, which is
-         * what the operator saw in the field on 2026-07-30.
+         * **Not comparable to the DJI sibling's 15, and that is not a discrepancy.** Zoom
+         * numbers only compare between maps with the same tile size. DJI's map is MapLibre with
+         * 512px tiles; this is osmdroid on MAPNIK at 256px (verified against the bundled
+         * osmdroid 6.1.14). A 512px tile at zoom z covers the same ground as a 256px tile at
+         * z+1, so MapLibre 15 == osmdroid 16. Copying the blueprint's literal 15 made this map
+         * one step wider than DJI's, which is what the operator saw on 2026-07-30.
+         * If the two builds ever need re-matching, compare ground covered, not the number.
          *
-         * If the two builds ever need to be re-matched, compare the ground covered, not the
-         * number. Keep the +1 offset for any 256px source.
+         * **16.5, chosen on hardware** (operator, 2026-07-31), after the map grew to 180x240dp.
+         * On the Smart Controller's xhdpi screen that covers about 293 x 390 m — roughly three
+         * downtown blocks across — against 414 x 552 m at 16.
+         *
+         * The half-step is deliberate but not free: tiles exist only at integer zooms, so
+         * osmdroid renders 16.5 by upscaling z16 tiles ~1.41x and street labels are softer than
+         * at a native level. 17 would be sharp and tighter (~207 x 276 m). If labels ever read
+         * as too soft, 17 is the fix, not 16.5 with sharper tiles — there is no such thing.
+         *
+         * **Two levels, toggled by the button on the map** (operator, 2026-07-31), replacing a
+         * single compromise level. They serve different jobs and the numbers, on the Smart
+         * Controller's 180x240dp map at xhdpi, are why these two:
+         *
+         *  - WIDE (13) covers ~3312 x 4416 m (about 2 x 2.7 miles), so the home point stays on
+         *    the map out to ~1656 m laterally — more than three times the 1600 ft (488 m)
+         *    max-distance limit. This is the "where am I relative to home and the team" view,
+         *    and the default for that reason. Was 14 (~1656 x 2208 m) until 2026-07-31; the
+         *    operator wanted more surrounding context, and 14 already cleared the distance
+         *    limit so the extra margin costs nothing operationally. Anything at 15 or tighter
+         *    loses home at full extension and would defeat the point of this mode.
+         *  - NEAR (17) covers ~207 x 276 m: the "what is directly below the aircraft" view.
+         *
+         * Both are NATIVE zoom levels, so both render sharp. The single-level 16.5 this
+         * replaced had to upscale z16 tiles ~1.41x and softened street labels; there is no
+         * fractional level that avoids that, because tiles only exist at integers.
+         *
+         * At NEAR the home point and red way-back line leave the view past ~104 m — that is
+         * expected, and the reason WIDE exists rather than something to fix. The HUD's numeric
+         * HOME distance and bearing remain correct in both modes.
+         *
+         * Not comparable to the DJI sibling's single 15 — see the tile-size note above. This
+         * toggle has no DJI counterpart at all; it is the first place this build is
+         * deliberately ahead of the blueprint rather than catching up to it.
          */
-        private const val MAP_ZOOM = 16.0
+        private const val MAP_ZOOM_WIDE = 13.0
+        private const val MAP_ZOOM_NEAR = 17.0
+        private const val KEY_MAP_WIDE = "flight_map_wide"
 
         /** Where the mini-map centers before the aircraft has a GPS fix. Town Square Park in
          *  downtown Anchorage: a neutral public landmark, chosen deliberately so the default

@@ -11,12 +11,22 @@
     <!-- No ActionBar — the TAKPilot2 screens draw their own chrome (the flight screen's
          instrument toolbar, the home screen's cards), so the platform bar is dead space that
          also breaks the side-by-side match with the DJI blueprint. Mirrors DJI's styles of the
-         same names. -->
+         same names.
+
+         The status bar is SOLID BLACK, not transparent. It was transparent, on the stated
+         premise that "the flight screen goes immersive/fullscreen" — it does not, and never
+         did: FlightActivity sets no system-UI flags at all. So the content was inset below the
+         bar, nothing painted that strip, and the platform's light default showed through as a
+         white band with unreadable icons over an otherwise black screen.
+
+         This is the identical fault that AppTheme.NoActionBar.SolidStatusBar below was created
+         to fix for the home screen; the flight screen was simply missed. Black matches the
+         flight layout's own #000000 root, so the bar and the screen are continuous. -->
     <style name="AppTheme.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">#000000</item>
     </style>
 
     <!-- Home screen: no ActionBar/title, but a SOLID status bar (not transparent) — the home

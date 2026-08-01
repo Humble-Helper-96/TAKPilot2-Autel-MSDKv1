@@ -167,7 +167,6 @@
             android:id="@+id/flightDropPinButton"
             android:layout_width="56dp"
             android:layout_height="46dp"
-            android:layout_marginEnd="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Drop a TAK marker at the camera crosshair"
             android:padding="1dp"
@@ -177,53 +176,79 @@
         <!-- Tap toggles the AR overlay; long-press opens AR options. -->
         <TextView
             android:id="@+id/flightArButton"
-            android:layout_width="36dp"
-            android:layout_height="26dp"
-            android:layout_marginEnd="10dp"
+            android:layout_marginStart="16dp"
+            android:layout_width="46dp"
+            android:layout_height="34dp"
             android:background="@drawable/bg_zoom_pill"
             android:contentDescription="Toggle AR marker overlay"
             android:gravity="center"
             android:text="AR"
             android:textColor="#FFFFFF"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
 
+        <!-- Framed like the AR / zoom / IR pills rather than a bare icon: it sits in the same
+             run of camera controls, and a borderless glyph next to three outlined pills read
+             as a different class of control than it is. Keeps the shutter glyph — the action
+             is recognised faster from the icon than from a word. -->
         <ImageButton
             android:id="@+id/flightShootPhotoButton"
-            android:layout_width="40dp"
+            android:layout_marginStart="16dp"
+            android:layout_width="46dp"
             android:layout_height="34dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/bg_zoom_pill"
             android:contentDescription="Take photo (saves to aircraft SD card)"
-            android:padding="4dp"
+            android:padding="6dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_camera_shutter" />
 
         <TextView
             android:id="@+id/flightZoomButton"
-            android:layout_width="36dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="16dp"
+            android:layout_width="46dp"
+            android:layout_height="34dp"
             android:background="@drawable/bg_zoom_pill"
             android:contentDescription="Toggle camera zoom (1x/2x)"
             android:gravity="center"
             android:text="1X"
             android:textColor="#FFFFFF"
-            android:textSize="12sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
 
+        <!-- Thermal: switches the FPV between the visible camera and the 640T's IR sensor.
+             Sits next to the zoom pill because both change what the camera is showing rather
+             than what the app does with it. -->
+        <TextView
+            android:id="@+id/flightIrButton"
+            android:layout_marginStart="16dp"
+            android:layout_width="46dp"
+            android:layout_height="34dp"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Toggle thermal (IR) camera"
+            android:gravity="center"
+            android:text="IR"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+
+        <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
+             image controls and a bare glyph among framed ones reads as a different class of
+             control. Same 46x34 as the rest. -->
         <ImageButton
             android:id="@+id/flightResyncButton"
-            android:layout_width="40dp"
+            android:layout_marginStart="16dp"
+            android:layout_width="46dp"
             android:layout_height="34dp"
-            android:layout_marginStart="8dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/bg_zoom_pill"
             android:contentDescription="Video re-sync"
-            android:padding="0dp"
+            android:padding="5dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_resync" />
 
         <com.autel.sdksample.tak.LiveToggleView
             android:id="@+id/flightStreamButton"
+            android:layout_marginStart="16dp"
             android:layout_width="82dp"
             android:layout_height="34dp"
             android:layout_marginHorizontal="6dp"
@@ -232,10 +257,10 @@
 
         <com.autel.sdksample.tak.RecordToggleView
             android:id="@+id/flightRecordButton"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="6dp"
             android:layout_width="74dp"
             android:layout_height="34dp"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Start/stop recording to the aircraft SD card" />
 
@@ -308,6 +333,31 @@
             android:gravity="center"
             android:text="ISO —   —" />
 
+        <!-- Thermal palette, under the exposure block (operator's placement, 2026-07-31).
+             It belongs with the image-quality controls rather than in the toolbar: it changes
+             how the picture looks, like EV does, and the toolbar is for actions.
+
+             Practical reason too — this appears and disappears with the IR mode, and in the
+             toolbar's horizontal row that shoved re-sync, LIVE and REC sideways every time
+             thermal was toggled. Here it grows the column downward into space the weighted
+             spacer already absorbs, so nothing a pilot reaches for moves.
+
+             Column width, matching the slider and readout above it, so the exposure block
+             stays one aligned unit. -->
+        <TextView
+            android:id="@+id/flightIrPaletteButton"
+            android:layout_width="@dimen/flight_map_size"
+            android:layout_height="30dp"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_zoom_pill"
+            android:contentDescription="Toggle thermal palette (white hot / black hot)"
+            android:gravity="center"
+            android:text="WHITE HOT"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <!-- Absorbs leftover height so the readouts stay pinned above the map. -->
         <View
             android:layout_width="1dp"
@@ -344,10 +394,33 @@
              or rotate — north-up, fixed zoom, recentred on the aircraft each telemetry tick,
              with a red home→aircraft line as the "which way back" reference. Tapping an inbound
              contact still works (see LockedMapView). -->
-        <com.autel.sdksample.tak.LockedMapView
-            android:id="@+id/flightMap"
+        <!-- The map is wrapped so the zoom toggle can sit ON it. The button is a SIBLING of the
+             map, not a child: LockedMapView swallows every touch by design, so anything that
+             needs to be tappable has to be layered above it rather than inside it. -->
+        <FrameLayout
             android:layout_width="@dimen/flight_map_size"
-            android:layout_height="@dimen/flight_map_size" />
+            android:layout_height="@dimen/flight_map_height">
+
+            <com.autel.sdksample.tak.LockedMapView
+                android:id="@+id/flightMap"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <TextView
+                android:id="@+id/flightMapZoomButton"
+                android:layout_width="48dp"
+                android:layout_height="32dp"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="6dp"
+                android:gravity="center"
+                android:background="@drawable/bg_map_zoom_button"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:contentDescription="Mini-map zoom"
+                android:text="WIDE" />
+
+        </FrameLayout>
 
     </LinearLayout>
 </FrameLayout>

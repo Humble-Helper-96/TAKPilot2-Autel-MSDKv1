@@ -600,12 +600,27 @@
 	     no error, no crash, just a half-map (the same failure class as the v1.1 Home-screen
 	     bug in TAKPilot2-Autel-HANDOFF.md).
 
-	     Budget: everything above the map is ~249dp, so 130dp needs 379dp of height and 160dp
-	     needs 409dp. A Pixel 8 Pro in landscape is ~448dp; the Smart Controller V3 ~600dp.
+	     Budget: everything above the map is ~233dp, or ~269dp while the IR palette button is
+	     showing (it is in this column, below the exposure readout, and only visible in thermal
+	     mode — so the worst case is thermal ON). At 269dp, a 130dp map needs 399dp of height,
+	     160dp needs 429dp and the wide-screen 240dp needs 509dp. A Pixel 8 Pro in
+	     landscape is ~448dp; the Smart Controller V3 is MEASURED at 720dp (see the plan doc's
+	     target-hardware section — an earlier estimate here guessed ~600dp).
 	     This was briefly set to 200dp during the port (needing 449dp) which overflowed the
 	     Pixel by a hair — caught in the layout sweep, not on a device. Don't raise it without
-	     redoing that arithmetic. -->
+	     redoing that arithmetic.
+
+	     NOTE the 429dp figure for the 160dp bucket sits only ~19dp under a Pixel-class 448dp
+	     screen, and that headroom exists only while thermal is off. Anything further added to
+	     this column will overflow small screens FIRST, and silently — the map just loses its
+	     bottom. Measure before adding, and prefer the wide-screen bucket for new controls.
+
+	     flight_map_size is the COLUMN width: it also sizes the EV slider, the EV scale row and
+	     the exposure readout, so changing it moves more than the map. flight_map_height is the
+	     map alone. They are equal here and in values-h440dp (square map, as the DJI blueprint
+	     has it); only the wide-screen bucket makes the map taller than it is wide. -->
 	<dimen name="flight_map_size">130dp</dimen>
+	<dimen name="flight_map_height">130dp</dimen>
 
 	<dimen name="margin_84dp">84dp</dimen>
 	<dimen name="margin_30dp">30dp</dimen>
