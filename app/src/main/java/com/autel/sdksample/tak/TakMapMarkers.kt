@@ -27,6 +27,15 @@ import org.osmdroid.views.overlay.Marker
 object TakMapMarkers {
     private const val TAG = "TakMapMarkers"
 
+    /** Air-track course is rounded to this before it reaches the icon cache — see [courseBucket]. */
+    private const val COURSE_BUCKET_DEG = 15.0
+
+    /** Air-track symbol size. 24dp — 25% smaller than the 32dp used for ground MIL markers
+     *  (operator, 2026-07-31): traffic is context, not something the pilot acts on directly,
+     *  and at 32dp it crowded the mini-map. Kept separate from the MIL size on purpose so
+     *  tuning one does not silently move the other. */
+    private const val AIR_ICON_DP = 24f
+
     private var map: MapView? = null
     private val markers = HashMap<String, Marker>()
     private val iconKeys = HashMap<String, String>()
@@ -222,8 +231,35 @@ object TakMapMarkers {
         val stale = if (user.isStale) "S" else "A"
         val drone = if (user.isDrone) "D" else "U"
         val mil = milMarkerRes(user.type) ?: 0
-        return "$team|$stale|$drone|$mil|${user.callsign}"
+        // Air tracks bake their course into the bitmap (see makeAirIcon), so the key has to
+        // include it — but BUCKETED to COURSE_BUCKET_DEG. Keying on the raw course would mint a
+        // fresh bitmap on every position report, since ADS-B course jitters by fractions of a
+        // degree; that is an unbounded cache of near-identical bitmaps on the HUD tick.
+        val air = when {
+            !isAirTrack(user.type) -> "-"
+            user.hasCourse() -> "A${courseBucket(user.course)}"
+            else -> "AN"
+        }
+        return "$team|$stale|$drone|$mil|$air|${user.callsign}"
     }
+
+    /**
+     * An inbound contact that is airborne — the CoT type's third field is `A` (air) rather than
+     * `G` (ground), e.g. `a-f-A-C-F` from an ADS-B gateway.
+     *
+     * Same discriminator [ArSettings.categoryFor] uses for the AR overlay's Air Traffic layer,
+     * so a contact drawn as an aircraft on the map is the same set the overlay calls air
+     * traffic. If one of these changes, change both.
+     */
+    fun isAirTrack(type: String?): Boolean {
+        val parts = type?.split("-").orEmpty()
+        return parts.size >= 3 && parts[0] == "a" && parts[2] == "A"
+    }
+
+    /** Course rounded to [COURSE_BUCKET_DEG], for the icon cache key. 15 degrees is finer than
+     *  a 32px symbol can express and caps the cache at 24 rotations per callsign. */
+    private fun courseBucket(course: Double): Int =
+        (Math.round(course / COURSE_BUCKET_DEG) * COURSE_BUCKET_DEG).toInt() % 360
 
     /**
      * MIL-STD-2525 affiliation MARKERS (a-{f,h,n,u}-G, NOT the …-G-U-… unit/PLI form) →
@@ -269,8 +305,18 @@ object TakMapMarkers {
     private fun iconFor(key: String, user: TakUser): BitmapDrawable {
         iconCache[key]?.let { return it }
         val res = milMarkerRes(user.type)
-        val bmp = if (res != null) makeMilIcon(res, user.callsign ?: user.uid)
-                  else makeIcon(user.callsign ?: user.uid, user.team, user.isStale)
+        val bmp = when {
+            // Checked BEFORE milMarkerRes so an air track can never fall through to the plain
+            // team dot, which is what made ADS-B traffic indistinguishable from a TAK client.
+            isAirTrack(user.type) -> makeAirIcon(
+                if (user.hasCourse()) R.drawable.ic_air_track
+                else R.drawable.ic_air_track_nocourse,
+                user.callsign ?: user.uid,
+                if (user.hasCourse()) courseBucket(user.course).toDouble() else null,
+            )
+            res != null -> makeMilIcon(res, user.callsign ?: user.uid)
+            else -> makeIcon(user.callsign ?: user.uid, user.team, user.isStale)
+        }
         val d = BitmapDrawable(appContext?.resources, bmp)
         iconCache[key] = d
         return d
@@ -289,6 +335,59 @@ object TakMapMarkers {
     } catch (e: Exception) { null }
 
     /** MIL-STD-2525 affiliation frame + callsign label below. */
+    /**
+     * Air-track icon: the aircraft glyph turned to [courseDeg], with the callsign label left
+     * UPRIGHT beneath it.
+     *
+     * The rotation is baked into the bitmap rather than applied with `Marker.rotation`, because
+     * the marker's rotation would turn the whole bitmap — including the label, which would read
+     * upside down for anything on a southerly heading. Rotating only the glyph inside the
+     * bitmap keeps the text horizontal at every course.
+     *
+     * [courseDeg] null means the sender reported no course; the caller passes the ringed
+     * non-directional drawable in that case and nothing is rotated.
+     */
+    fun makeAirIcon(resId: Int, callsign: String, courseDeg: Double?): Bitmap {
+        val ctx = appContext
+        val d = density
+        val size = (AIR_ICON_DP * d).toInt()
+        val icon = ctx?.let { drawableToBitmap(it, resId, size) }
+
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = 10 * d; typeface = Typeface.DEFAULT_BOLD
+        }
+        val tw = text.measureText(callsign)
+        val fm = text.fontMetrics
+        val th = fm.descent - fm.ascent
+        val gap = (d * 3).toInt(); val padH = (4 * d).toInt(); val padV = (d * 2).toInt()
+        val labelW = tw.toInt() + padH * 2
+        val labelH = th.toInt() + padV * 2
+        // A rotated square needs its diagonal to avoid clipping the wingtips at 45 degrees.
+        val glyphBox = if (courseDeg != null) (size * 1.42f).toInt() else size
+        val w = maxOf(glyphBox, labelW)
+        val h = glyphBox + gap + labelH
+
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        if (icon != null) {
+            if (courseDeg != null) {
+                c.save()
+                c.rotate(courseDeg.toFloat(), w / 2f, glyphBox / 2f)
+                c.drawBitmap(icon, (w - size) / 2f, (glyphBox - size) / 2f, null)
+                c.restore()
+            } else {
+                c.drawBitmap(icon, (w - size) / 2f, 0f, null)
+            }
+        }
+
+        val labelLeft = (w - labelW) / 2f
+        val labelTop = (glyphBox + gap).toFloat()
+        c.drawRoundRect(labelLeft, labelTop, labelLeft + labelW, labelTop + labelH, d * 3, d * 3,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(160, 0, 0, 0) })
+        c.drawText(callsign, labelLeft + padH, labelTop + padV - fm.ascent, text)
+        return bmp
+    }
+
     fun makeMilIcon(resId: Int, callsign: String): Bitmap {
         val ctx = appContext
         val d = density

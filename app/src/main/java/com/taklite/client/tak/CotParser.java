@@ -55,6 +55,7 @@ public class CotParser {
             String videoAlias = null;
             String sensorModel = null;
             double sensorFov = -1, sensorAzimuth = -1, sensorRange = -1;
+            double course = -1;   // <track course>, degrees true; -1 = not reported
             String operatorUid = null;
 
             for (int eventType = parser.getEventType(); eventType != XmlPullParser.END_DOCUMENT; eventType = parser.next()) {
@@ -103,6 +104,11 @@ public class CotParser {
                         sensorFov = parseDouble(parser.getAttributeValue(null, "fov"));
                         sensorAzimuth = parseDouble(parser.getAttributeValue(null, "azimuth"));
                         sensorRange = parseDouble(parser.getAttributeValue(null, "range"));
+                    } else if ("track".equals(tag)) {
+                        // Course of an inbound track. ADS-B gateways populate this; it is what
+                        // lets the map draw an aircraft symbol pointing where the aircraft is
+                        // actually going instead of an arbitrary direction.
+                        course = parseDouble(parser.getAttributeValue(null, "course"));
                     } else if ("link".equals(tag)) {
                         String relation = parser.getAttributeValue(null, "relation");
                         if ("p-p".equals(relation)) {
@@ -134,6 +140,7 @@ public class CotParser {
             if (sensorFov > 0) user.setSensorFov(sensorFov);
             if (sensorAzimuth >= 0) user.setSensorAzimuth(sensorAzimuth);
             if (sensorRange > 0) user.setSensorRange(sensorRange);
+            if (course >= 0) user.setCourse(course);
             if (operatorUid != null) user.setOperatorUid(operatorUid);
 
             return user;

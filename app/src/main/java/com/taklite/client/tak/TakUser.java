@@ -23,6 +23,9 @@ public class TakUser {
     private boolean drone;
     private String operatorUid;
     private String type;   // raw CoT type (e.g. a-f-G-U-C, b-m-p-s-m), for map symbol resolution
+    /** <track course> in degrees true, or -1 when the sender did not report one. ADS-B
+     *  gateways populate it; most hand-placed markers and many PLIs do not. */
+    private double course = -1;
 
     public TakUser(String uid, String callsign, double lat, double lon, double alt, String team, String role, long staleTime) {
         this.uid = uid;
@@ -88,4 +91,9 @@ public class TakUser {
     public String getOperatorUid() { return operatorUid; }
     public void setOperatorUid(String operatorUid) { this.operatorUid = operatorUid; }
     public boolean hasVideo() { return videoUrl != null && !videoUrl.isEmpty(); }
+
+    public double getCourse() { return course; }
+    public void setCourse(double course) { this.course = course; }
+    /** True when a real course was reported, so callers never rotate a symbol to a default. */
+    public boolean hasCourse() { return course >= 0; }
 }
