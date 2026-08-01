@@ -283,6 +283,8 @@
             android:paddingTop="16dp"
             android:paddingBottom="16dp" />
 
+
+
         <TextView style="@style/takLabelStyle" android:text="Server host" />
         <EditText
             android:id="@+id/takHost"
@@ -350,6 +352,24 @@
                     android:inputType="text" />
             </LinearLayout>
         </LinearLayout>
+
+        <!-- Placed AFTER the fields it protects: a pilot reaches for this having just finished
+             typing, not before starting (operator, 2026-07-31).
+
+             Locking also disables Log Out, which CLEARS the saved enrollment — destructive, and
+             exactly the kind of thing a lock should stand in front of. Enroll & Connect stays
+             live: reconnecting is safe, and needing to reconnect is when a pilot must not be
+             fighting a lock. -->
+        <CheckBox
+            android:id="@+id/takLockConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="#9AC4FF"
+            android:text="Lock configuration (fields read-only)"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -462,6 +482,8 @@
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
 
+
+
         <LinearLayout style="@style/takFormRow">
             <LinearLayout style="@style/takColumn">
                 <TextView style="@style/takLabelStyle" android:text="Server host" />
@@ -508,6 +530,20 @@
                     android:inputType="textPassword" />
             </LinearLayout>
         </LinearLayout>
+
+        <!-- After the fields it protects, same reasoning as the TAK section's lock. Quality and
+             transport below stay editable: those are link decisions a pilot legitimately makes
+             in the field, not server configuration. -->
+        <CheckBox
+            android:id="@+id/videoLockConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="#9AC4FF"
+            android:text="Lock configuration (fields read-only)"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
 
         <TextView style="@style/takLabelStyle" android:text="Video quality (on-device transcode)" />
         <TextView

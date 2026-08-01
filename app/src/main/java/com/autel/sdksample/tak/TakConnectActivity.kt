@@ -145,6 +145,11 @@ class TakConnectActivity : AppCompatActivity() {
         }
 
         setupVideoControls(prefs)
+
+        // LAST, deliberately: every other setup call above populates or rebinds these fields,
+        // and the lock has to be the final word on whether they are editable. Applying it
+        // earlier would leave a later setText/rebind free to quietly re-enable a locked field.
+        setupConfigLocks()
     }
 
     /**
@@ -475,6 +480,117 @@ class TakConnectActivity : AppCompatActivity() {
     /** Flight mini-map tile source. Street or a custom XYZ template — see [MapStyle] for why
      *  there's no Hybrid/satellite option on this airframe. Takes effect next time the flight
      *  screen opens (it reads [MapStyle.tileSource] in onCreate). */
+    // ---- Configuration locks ----
+
+    /**
+     * What each lock covers.
+     *
+     * The TAK list includes **Log Out**, which is not a field: it clears the saved enrollment,
+     * so it is destructive and belongs behind the lock (operator, 2026-07-31). Enroll & Connect
+     * is deliberately NOT here — reconnecting is safe, and needing to reconnect is exactly when
+     * a pilot must not be fighting a lock.
+     */
+    private val takLockedFields = listOf(
+        R.id.takHost, R.id.takEnrollPort, R.id.takCotPort,
+        R.id.takUsername, R.id.takPassword, R.id.takCallsign,
+        R.id.takDisconnectButton,
+    )
+    private val videoLockedFields = listOf(
+        R.id.videoHost, R.id.videoPort, R.id.videoStreamId,
+        R.id.videoUser, R.id.videoPassword,
+    )
+
+    /**
+     * "Lock configuration" for the TAK and video server sections: a working server setup should
+     * not be one stray tap away from being edited on a tailgate.
+     *
+     * **Locks the TEXT FIELDS only.** Enroll & Connect, Log Out and the video quality/transport
+     * choices stay live: needing to reconnect, or to drop to Low on a marginal link, is exactly
+     * when a pilot must not be fighting a lock. The lock guards what the server IS, not what
+     * you do with it.
+     *
+     * Unlocking asks for confirmation; locking does not. The asymmetry is deliberate — locking
+     * is the safe direction and gating it would just train people to dismiss dialogs.
+     */
+    private fun setupConfigLocks() {
+        setupOneLock(
+            R.id.takLockConfig, KEY_TAK_LOCKED, takLockedFields,
+            "Unlock TAK server settings?",
+            "These fields and the Log Out button are locked so a working server configuration " +
+                "is not changed by accident. Editing them can stop this aircraft reaching " +
+                "your team.",
+        )
+        setupOneLock(
+            R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
+            "Unlock video server settings?",
+            "These fields are locked so a working stream configuration is not changed by " +
+                "accident. Editing them can stop your team seeing the video.",
+        )
+    }
+
+    private fun setupOneLock(
+        checkBoxId: Int,
+        prefKey: String,
+        fieldIds: List<Int>,
+        confirmTitle: String,
+        confirmBody: String,
+    ) {
+        val box = findViewById<android.widget.CheckBox>(checkBoxId)
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        // Default LOCKED once a config exists, unlocked on a fresh install — a first-run pilot
+        // must not have to discover a lock before they can type anything.
+        val locked = prefs.getBoolean(prefKey, false)
+        box.isChecked = locked
+        applyLock(fieldIds, locked)
+
+        box.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                prefs.edit().putBoolean(prefKey, true).apply()
+                applyLock(fieldIds, true)
+                AppLog.v(TAG, "config locked: $prefKey")
+                return@setOnCheckedChangeListener
+            }
+            // Unlocking: confirm first, and put the box BACK if they decline. Using
+            // setOnCheckedChangeListener means our own revert would re-enter this listener,
+            // so the listener is detached around it.
+            android.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+                .setTitle(confirmTitle)
+                .setMessage(confirmBody)
+                .setPositiveButton("Unlock") { _, _ ->
+                    prefs.edit().putBoolean(prefKey, false).apply()
+                    applyLock(fieldIds, false)
+                    AppLog.i(TAG, "config UNLOCKED: $prefKey")
+                }
+                .setNegativeButton("Cancel") { _, _ ->
+                    box.setOnCheckedChangeListener(null)
+                    box.isChecked = true
+                    setupConfigLocks()
+                }
+                .setOnCancelListener {
+                    box.setOnCheckedChangeListener(null)
+                    box.isChecked = true
+                    setupConfigLocks()
+                }
+                .show()
+        }
+    }
+
+    /**
+     * Greys out and disables a set of views. `isEnabled = false` also makes them unfocusable, so
+     * the keyboard can't be raised on a locked field — read-only in the way a pilot means it —
+     * and a disabled Button stops responding to taps.
+     *
+     * Typed as View, not EditText: the TAK lock covers the Log Out button as well as fields.
+     */
+    private fun applyLock(fieldIds: List<Int>, locked: Boolean) {
+        for (id in fieldIds) {
+            findViewById<android.view.View>(id)?.apply {
+                isEnabled = !locked
+                alpha = if (locked) 0.45f else 1.0f
+            }
+        }
+    }
+
     private fun setupMapDisplaySection() {
         val group = findViewById<android.widget.RadioGroup>(R.id.mapStyleGroup)
         val customUrl = findViewById<EditText>(R.id.mapCustomUrl)
@@ -992,6 +1108,11 @@ class TakConnectActivity : AppCompatActivity() {
         private const val REQUEST_CODE_DTED_PICK = 4301
         private const val REQUEST_CODE_LOCATION = 4302
         private const val PREFS = "takpilot2_tak"
+
+        /** Per-section configuration locks — see setupConfigLocks(). */
+        private const val KEY_TAK_LOCKED = "tak_config_locked"
+        private const val KEY_VIDEO_LOCKED = "video_config_locked"
+
         private const val KEY_HOST = "host"
         private const val KEY_ENROLL_PORT = "enroll_port"
         private const val KEY_COT_PORT = "cot_port"
