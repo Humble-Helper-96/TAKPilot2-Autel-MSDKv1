@@ -110,10 +110,10 @@ class TakPilotHomeActivity : AppCompatActivity() {
 
     private fun doQuit() {
         AppLog.i(TAG, "STOP/QUIT — tearing down and killing process")
-        runCatching { VideoStreamerHolder.stop() }
-        runCatching { TakBridgeHolder.stop() }
-        runCatching { TakManager.getInstance().disconnect() }
-        runCatching { TakForegroundService.stop(applicationContext) }
+        // Same teardown a swipe now performs — see AppTeardown. These two paths previously did
+        // different subsets of the work, which is how the SDK ended up never being released on
+        // task removal.
+        runCatching { AppTeardown.releaseAll(applicationContext) }
         handler.removeCallbacksAndMessages(null)
         finishAffinity()
         Handler(Looper.getMainLooper()).postDelayed({

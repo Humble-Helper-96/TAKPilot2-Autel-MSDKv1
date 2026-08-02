@@ -142,6 +142,18 @@ object AutelProductHolder {
                 // registrations don't survive a product cycle.
                 TakBridgeHolder.onProductConnected()
                 installCameraListener()
+                // Bring the foreground service up as soon as we hold the aircraft, whether or
+                // not TAK is connected. This is NOT about keeping anything alive: Android only
+                // delivers onTaskRemoved to RUNNING services, and that callback is the only
+                // hook for "the pilot swiped the app away". Without a service here, holding the
+                // aircraft without TAK meant a swipe released nothing and the cached process
+                // kept the camera and video channels — see AppTeardown.
+                com.autel.sdksample.TestApplication.getInstance()?.let { ctx ->
+                    val callsign = ctx.getSharedPreferences("takpilot2_tak", android.content.Context.MODE_PRIVATE)
+                        .getString("callsign", "TAKPilot2-EVO2") ?: "TAKPilot2-EVO2"
+                    runCatching { TakForegroundService.start(ctx, callsign) }
+                        .onFailure { AppLog.w(TAG, "foreground service start failed: ${it.message}") }
+                }
                 notifyAll(true)
             }
 
@@ -160,6 +172,30 @@ object AutelProductHolder {
     fun install() {
         Autel.setProductConnectListener(connectListener)
         installCameraListener()
+    }
+
+    /**
+     * Releases the aircraft link: drops every listener and tears the SDK down via
+     * [Autel.destroy], which calls SDKInitHelper.detach() internally.
+     *
+     * **This is what makes "closed" mean closed.** The SDK's connection lives at PROCESS scope,
+     * not activity scope, so an app whose task has been swiped away keeps holding the aircraft's
+     * camera and video channels while Android caches the process. Those channels are
+     * single-client: Autel Explorer showed a grey screen because our swiped-away app still owned
+     * the camera (observed 2026-08-02). Nothing on either screen tells the pilot why.
+     */
+    @Synchronized
+    fun release() {
+        AppLog.i(TAG, "releasing aircraft link (listeners + SDK)")
+        runCatching { product?.cameraManager?.setCameraChangeListener(null) }
+        runCatching { camera?.setMediaStateListener(null) }
+        runCatching { Autel.setProductConnectListener(null) }
+        runCatching { Autel.destroy() }
+        camera = null
+        product = null
+        zoomBaseRaw = null
+        isRecording = false
+        synchronized(listeners) { listeners.clear() }
     }
 
     fun addListener(l: (Boolean) -> Unit) { synchronized(listeners) { listeners.add(l) } }
