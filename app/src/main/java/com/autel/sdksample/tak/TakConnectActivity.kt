@@ -61,6 +61,7 @@ class TakConnectActivity : AppCompatActivity() {
         // Camera look-point toggle (applies live to the running bridge + persists).
         val cameraPoint = findViewById<android.widget.CheckBox>(R.id.takCameraPoint)
         wireAvoidanceSection()
+        wireControlRatesSection()
         cameraPoint.isChecked = prefs.getBoolean(KEY_CAMERA_POINT, false)
         cameraPoint.setOnCheckedChangeListener { _, isOn ->
             AppLog.v(TAG, "camera point toggle -> $isOn")
@@ -1181,11 +1182,13 @@ class TakConnectActivity : AppCompatActivity() {
         fun render() {
             val connected = AutelProductHolder.isConnected
             val known = AutelAvoidance.systemEnabled != null
+            // Simplified Technical English, as with the field guide: short sentences, active
+            // voice, one idea each. A pilot reads this on the ground in a hurry.
             status.text = when {
-                !connected -> "Aircraft not connected"
-                !known -> "Aircraft connected — waiting for avoidance state…"
-                AutelAvoidance.systemEnabled == true -> "Avoidance is ON"
-                else -> "Avoidance is OFF"
+                !connected -> "The aircraft is not connected."
+                !known -> "Wait. The aircraft did not send the state yet."
+                AutelAvoidance.systemEnabled == true -> "Obstacle avoidance is ON."
+                else -> "Obstacle avoidance is OFF."
             }
             status.setTextColor(
                 when {
@@ -1206,10 +1209,17 @@ class TakConnectActivity : AppCompatActivity() {
         fun toggle(which: com.autel.common.flycontroller.visual.VisualSettingSwitchblade,
                    enabled: Boolean) {
             boxes.forEach { it.isEnabled = false }        // no double-taps mid-flight
+            // Record the INTENT as well as applying it. This is what gets enforced on every
+            // future connect — without it the pilot's choice would last only until Autel's app
+            // changed it back.
+            AutelAvoidance.saveIntent(this,
+                if (which == com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM) enabled else system.isChecked,
+                if (which == com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE) enabled else rth.isChecked,
+                if (which == com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT) enabled else landing.isChecked)
             AutelAvoidance.setSwitch(which, enabled) { ok ->
                 runOnUiThread {
                     if (!ok) android.widget.Toast.makeText(this@TakConnectActivity,
-                        "Aircraft did not accept the change", android.widget.Toast.LENGTH_SHORT).show()
+                        "The aircraft did not accept the change.", android.widget.Toast.LENGTH_SHORT).show()
                     render()
                 }
             }
@@ -1239,6 +1249,94 @@ class TakConnectActivity : AppCompatActivity() {
             }
         }
         h.postDelayed(poll, 1000)
+    }
+
+    /**
+     * Control response (Normal / Precision) and the read-only stick mode.
+     *
+     * Same discipline as the avoidance block above: live values, disabled until the controller
+     * reports, changed only on an explicit tap, nothing persisted and nothing pushed at connect.
+     *
+     * The stick mode is DISPLAY ONLY. The SDK reports USA/CHINA/JAPAN and the mapping to
+     * "Mode 1/2/3" is convention rather than anything confirmed on this aircraft — and a wrong
+     * mode number in front of a pilot is the sort of error that swaps throttle and pitch.
+     */
+    private fun wireControlRatesSection() {
+        val group = findViewById<android.widget.RadioGroup>(R.id.ratesGroup)
+        val normal = findViewById<android.widget.RadioButton>(R.id.ratesNormal)
+        val precision = findViewById<android.widget.RadioButton>(R.id.ratesPrecision)
+        val status = findViewById<android.widget.TextView>(R.id.ratesStatus)
+        val stick = findViewById<android.widget.TextView>(R.id.stickModeStatus)
+
+        val stickGroup = findViewById<android.widget.RadioGroup>(R.id.stickModeGroup)
+        val stickIds = mapOf("1" to R.id.stickMode1, "2" to R.id.stickMode2, "3" to R.id.stickMode3)
+
+        fun render() {
+            val connected = AutelProductHolder.isConnected
+            val known = AutelControlRates.precisionActive != null
+            // SEED FROM THE AIRCRAFT the first time. The app must not invent a stick mode — that
+            // would swap throttle and pitch for a pilot who never opened this screen — but once
+            // seeded it is enforced on every connect so Autel's app cannot change it behind them.
+            if (AutelControlRates.savedStickModeId(this).isEmpty() && AutelControlRates.stickMode != null) {
+                AutelControlRates.saveStickModeId(this, AutelControlRates.idFor(AutelControlRates.stickMode))
+            }
+            val chosen = AutelControlRates.savedStickModeId(this)
+            stickGroup.setOnCheckedChangeListener(null)
+            stickIds[chosen]?.let { stickGroup.check(it) }
+            stickIds.values.forEach { findViewById<android.widget.RadioButton>(it).isEnabled = connected }
+            stick.text = if (chosen.isEmpty()) "Waiting for the controller."
+                else "The controller reports ${AutelControlRates.stickModeLabel()}."
+            stickGroup.setOnCheckedChangeListener { _, id ->
+                val pick = stickIds.entries.firstOrNull { it.value == id }?.key ?: return@setOnCheckedChangeListener
+                AutelControlRates.saveStickModeId(this, pick)
+                AutelControlRates.pushStickMode(this) { ok ->
+                    runOnUiThread {
+                        if (!ok) android.widget.Toast.makeText(this,
+                            "The controller did not accept the stick mode.",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                        render()
+                    }
+                }
+            }
+            // Set the radio WITHOUT its listener, or drawing the controller's state would look
+            // like a pilot tap and be sent straight back at it.
+            group.setOnCheckedChangeListener(null)
+            group.check(if (AutelControlRates.precisionActive == true) R.id.ratesPrecision else R.id.ratesNormal)
+            normal.isEnabled = connected && known
+            precision.isEnabled = connected && known
+            status.text = when {
+                !connected -> "The aircraft is not connected."
+                !known -> "Wait. The controller did not send the values yet."
+                else -> "Gimbal wheel ${AutelControlRates.dialSpeed}, yaw ${"%.2f".format(AutelControlRates.yawCoefficient)}."
+            }
+            group.setOnCheckedChangeListener { _, id ->
+                normal.isEnabled = false; precision.isEnabled = false
+                AutelControlRates.setPrecision(this, id == R.id.ratesPrecision) { ok ->
+                    runOnUiThread {
+                        if (!ok) android.widget.Toast.makeText(this,
+                            "The controller did not accept the change.",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                        render()
+                    }
+                }
+            }
+        }
+
+        render()
+        AutelControlRates.refresh(this) { runOnUiThread { render() } }
+        // Values arrive after the controller syncs, so keep re-reading for a short while rather
+        // than leaving "wait…" on screen until the pilot navigates away and back.
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        var ticks = 0
+        val poll = object : Runnable {
+            override fun run() {
+                if (AutelControlRates.precisionActive == null && AutelProductHolder.isConnected) {
+                    AutelControlRates.refresh(this@TakConnectActivity) { runOnUiThread { render() } }
+                }
+                if (++ticks < 20 && !isFinishing) h.postDelayed(this, 1500)
+            }
+        }
+        h.postDelayed(poll, 1500)
     }
 
     private var attachListeners: () -> Unit = {}

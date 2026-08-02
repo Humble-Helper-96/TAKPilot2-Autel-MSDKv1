@@ -138,7 +138,16 @@ class FieldGuideActivity : AppCompatActivity() {
             "controller: Return Home, Hover or Land. The aircraft does this action without " +
             "the app. It works if your controller stops during the flight. Usually, select " +
             "Return Home.")
+        bullet("Obstacle avoidance - the switches show the state in the aircraft. Connect " +
+            "the aircraft first. If you touch a switch, the app changes the aircraft " +
+            "immediately.")
         note("To keep the value that is already in the aircraft, leave the field empty.")
+        note("The other settings in this section go to the aircraft at each connection. " +
+            "The obstacle avoidance switches do not. The app does not change obstacle " +
+            "avoidance without your command.")
+        warn("Make sure that obstacle avoidance is ON before you fly. A different app can " +
+            "turn it off, and the aircraft keeps that state. The ENTER FLIGHT card on the " +
+            "home screen shows the state.")
 
         sub("2. Map Display")
         body("This sets the map type for the small map on the flight screen. Select Street, " +

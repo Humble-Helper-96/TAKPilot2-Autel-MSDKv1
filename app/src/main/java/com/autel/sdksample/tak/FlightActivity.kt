@@ -212,6 +212,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         TakDropMarkers.ui = this
         TakMapMarkers.install(applicationContext)
         TakDropMarkers.init(applicationContext)
+        // Point the battery gauge at what the AIRCRAFT will actually do. Red starts where
+        // it begins returning home; amber is the pilot caution above that. Hard-coded band
+        // edges here would drift from the thresholds every time they were retuned.
+        val rthPct = FlightLimitsController.savedLowBatteryPct(this).toFloatOrNull() ?: 15f
+        toolbarBattery.setBands(rthPct, rthPct + 10f)
         TakMapMarkers.onMapReady(map)
 
         findViewById<ImageButton>(R.id.flightBackButton).setOnClickListener {

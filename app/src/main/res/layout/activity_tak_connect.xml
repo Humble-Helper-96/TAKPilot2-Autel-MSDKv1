@@ -104,6 +104,187 @@
             android:textSize="12sp"
             android:paddingTop="6dp" />
 
+        <!-- Obstacle avoidance. A SUBSECTION of Drone Settings, placed under the signal-loss
+             failsafe because both describe what the aircraft does on its own.
+
+             DIFFERENT FROM EVERYTHING ELSE ON THIS SCREEN, deliberately. Every other control
+             here stores a value and PUSHES it to the aircraft on connect. This one stores
+             nothing and pushes nothing: it shows the aircraft's live state and changes it only
+             when the pilot touches a switch.
+
+             The reason is that a stale saved checkbox pushing "avoidance off" at connect would
+             disable a safety system without anyone deciding to, and the pilot would have no
+             reason to suspect it. The rest of this screen pushes LIMITS; this is a sensor
+             system, which is a different category of risk. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Obstacle avoidance"
+            android:paddingTop="16dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="The aircraft sends these settings to the app. Connect the aircraft to see them. If you change a switch, the app sends the change to the aircraft immediately. The app does not keep these settings, and it does not change them when it connects."
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:id="@+id/avoidStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:textColor="#FFB300"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="The aircraft is not connected." />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/avoidSystem"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:buttonTint="#2E7D32" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Obstacle avoidance system"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/avoidRth"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:buttonTint="#2E7D32" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Avoid obstacles in Return to Home"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/avoidLanding"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:buttonTint="#2E7D32" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Landing protection"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <!-- Control feel. Both values live on the REMOTE CONTROLLER, not the aircraft, and both
+             are read live. "Normal" is LEARNED from the controller rather than hard-coded: there
+             is no documented default and the pilot may have tuned these in Autel's own app, so a
+             hard-coded number would quietly overwrite their setting. Like obstacle avoidance
+             above, nothing here is saved and pushed at connect. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Control response"
+            android:paddingTop="16dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Precision makes the gimbal wheel and the yaw of the aircraft move more slowly. Use it to point the camera accurately, or to make a smooth video. It does not change the speed of the aircraft. Connect the aircraft to use this control."
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <RadioGroup
+            android:id="@+id/ratesGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <RadioButton
+                android:id="@+id/ratesNormal"
+                style="@style/takColumnRadio"
+                android:enabled="false"
+                android:text="Normal" />
+            <RadioButton
+                android:id="@+id/ratesPrecision"
+                style="@style/takColumnRadio"
+                android:enabled="false"
+                android:text="Precision" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/ratesStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingTop="6dp" />
+
+        <!-- Stick mode: READ-ONLY. The SDK names these USA/CHINA/JAPAN and the mapping to
+             "Mode 1/2/3" is convention, not something confirmed on this aircraft. A wrong mode
+             number in front of a pilot swaps throttle and pitch, so the app reports what the
+             controller says and changes nothing. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Stick mode"
+            android:paddingTop="16dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="The app sends this mode to the controller each time it connects. Thus the sticks always do what you select here, even if a different app changed them. The ENTER FLIGHT card shows the mode before you fly."
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <RadioGroup
+            android:id="@+id/stickModeGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <RadioButton
+                android:id="@+id/stickMode1"
+                style="@style/takColumnRadio"
+                android:enabled="false"
+                android:text="Mode 1" />
+            <RadioButton
+                android:id="@+id/stickMode2"
+                style="@style/takColumnRadio"
+                android:enabled="false"
+                android:text="Mode 2" />
+            <RadioButton
+                android:id="@+id/stickMode3"
+                style="@style/takColumnRadio"
+                android:enabled="false"
+                android:text="Mode 3" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/stickModeStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:paddingTop="6dp"
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:text="" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -807,106 +988,6 @@
             android:textColor="#B0B0B0"
             android:textSize="13sp"
             android:text="" />
-
-        <!-- 7. Obstacle Avoidance.
-
-             DIFFERENT FROM EVERY OTHER SECTION HERE, and deliberately so. Sections 1-6 store a
-             value and PUSH it to the aircraft on connect. This one does not: it shows the
-             aircraft's CURRENT state and only changes it when the pilot touches a switch.
-
-             The reason is that a stale saved checkbox pushing "avoidance off" onto an aircraft
-             at connect would disable a safety system without anyone deciding to, and the pilot
-             would have no reason to suspect it. Sections 1-6 push limits; this is a sensor
-             system, which is a different category of risk. Nothing is remembered between
-             sessions on purpose. -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="7. Obstacle Avoidance"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:paddingTop="16dp"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Live state read from the aircraft. Connect the aircraft first — these switches are disabled until it reports. Changes apply immediately to the aircraft and are NOT saved: this app never turns avoidance on or off by itself."
-            android:textColor="#909090"
-            android:textSize="12sp"
-            android:paddingBottom="10dp" />
-
-        <TextView
-            android:id="@+id/avoidStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:textColor="#FFB300"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:text="Aircraft not connected" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="6dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/avoidSystem"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:buttonTint="#2E7D32" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Obstacle avoidance system"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="6dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/avoidRth"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:buttonTint="#2E7D32" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Avoid obstacles during Return to Home"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="6dp"
-            android:paddingBottom="24dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/avoidLanding"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:buttonTint="#2E7D32" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Landing protection"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>

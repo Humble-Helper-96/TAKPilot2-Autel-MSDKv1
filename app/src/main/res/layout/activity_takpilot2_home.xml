@@ -189,6 +189,26 @@
             <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="6dp" android:textStyle="bold" />
+            <!-- What the sticks and the gimbal wheel will actually do. These are ENFORCED from
+                 Pre-Flight at connect, so this is a statement of fact, not a hope — and it is
+                 here rather than on the flight screen because the pilot needs it BEFORE they
+                 start flying, not after. -->
+            <TextView android:id="@+id/homeStickMode" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="6dp" android:textStyle="bold" />
+            <TextView android:id="@+id/homeControlResponse" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" android:textStyle="bold" />
+            <!-- Shown while the connect-time pushes are still landing. The card refuses taps
+                 until it clears, so a pilot cannot reach the flight screen before the aircraft
+                 has actually been configured — see TakPilotHomeActivity.startInitializing. -->
+            <TextView android:id="@+id/homeInitializing" style="@style/homeCardSub"
+                android:text="INITIALIZING"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="10dp"
+                android:textStyle="bold"
+                android:letterSpacing="0.15"
+                android:visibility="gone" />
         </LinearLayout>
 
         <!-- Aircraft picture. Fills the dead space between the SDK line and the tap hint, and

@@ -39,6 +39,9 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var aircraft: TextView
     private lateinit var aircraftImage: ImageView
     private lateinit var avoidance: TextView
+    private lateinit var stickMode: TextView
+    private lateinit var controlResponse: TextView
+    private lateinit var initializing: TextView
     private lateinit var sdk: TextView
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
@@ -63,6 +66,9 @@ class TakPilotHomeActivity : AppCompatActivity() {
         aircraft = findViewById(R.id.homeAircraft)
         aircraftImage = findViewById(R.id.homeAircraftImage)
         avoidance = findViewById(R.id.homeAvoidance)
+        stickMode = findViewById(R.id.homeStickMode)
+        controlResponse = findViewById(R.id.homeControlResponse)
+        initializing = findViewById(R.id.homeInitializing)
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
@@ -71,6 +77,13 @@ class TakPilotHomeActivity : AppCompatActivity() {
         // below it was removed — it duplicated the card's own click and cost ~56dp of a
         // height budget that was already over on shorter screens (see the layout comment).
         findViewById<android.view.View>(R.id.homeEnterFlight).setOnClickListener {
+            if (initializingUntilMs > System.currentTimeMillis()) {
+                AppLog.v(TAG, "Enter Flight tapped during initialise — ignored")
+                android.widget.Toast.makeText(this,
+                    "Wait. The app is setting up the aircraft.",
+                    android.widget.Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             AppLog.v(TAG, "Enter Flight tapped")
             startActivity(Intent(this, FlightActivity::class.java))
         }
@@ -140,6 +153,50 @@ class TakPilotHomeActivity : AppCompatActivity() {
         handler.removeCallbacks(refresh)
     }
 
+    /**
+     * Holds the pilot on this screen while the connect-time pushes land.
+     *
+     * The settings that decide how the aircraft handles — stick mode, control response,
+     * obstacle avoidance — are enforced a few seconds AFTER the product connects. A pilot who
+     * taps straight through lands on the flight screen mid-push and cannot know what was
+     * applied. Five seconds is not about the pushes needing exactly that long; it is about the
+     * pilot's eyes being on the card that states what they are about to fly with.
+     *
+     * The word PULSES rather than sitting still on purpose: a frozen label on a screen that
+     * refuses taps reads as a crash, and a pilot who thinks the app has hung will force-quit it.
+     */
+    private fun startInitializing() {
+        initializingUntilMs = System.currentTimeMillis() + INITIALIZING_MS
+        initializing.visibility = View.VISIBLE
+        initializing.alpha = 1f
+        initializing.animate().cancel()
+        pulseInitializing()
+        handler.removeCallbacks(endInitializing)
+        handler.postDelayed(endInitializing, INITIALIZING_MS)
+    }
+
+    private fun pulseInitializing() {
+        if (initializingUntilMs <= System.currentTimeMillis()) return
+        initializing.animate().alpha(0.25f).setDuration(700L).withEndAction {
+            if (initializingUntilMs <= System.currentTimeMillis()) return@withEndAction
+            initializing.animate().alpha(1f).setDuration(700L)
+                .withEndAction { pulseInitializing() }.start()
+        }.start()
+    }
+
+    private val endInitializing = Runnable {
+        initializingUntilMs = 0L
+        initializing.animate().cancel()
+        initializing.visibility = View.GONE
+        AppLog.v(TAG, "initialise hold released")
+    }
+
+    /** Long enough for the connect-time pushes AND for the pilot to read the card. */
+    private val INITIALIZING_MS = 5000L
+
+    private var initializingUntilMs = 0L
+    private var sawProduct = false
+
     private fun updateStatus() {
         val product = AutelProductHolder.product
         aircraft.text = product?.type?.toString() ?: "Not connected"
@@ -166,6 +223,29 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 false -> Color.parseColor("#F44336")
                 null -> Color.parseColor("#FFB300")
             })
+
+        // Sticks and control feel. Both are enforced from Pre-Flight at connect, so these state
+        // what the aircraft WILL do rather than what it happens to be set to.
+        // The hold starts when the aircraft first appears — that is when the connect-time
+        // pushes are scheduled, so that is when there is something to wait for.
+        if (product != null && !sawProduct) {
+            sawProduct = true
+            startInitializing()
+        } else if (product == null) {
+            sawProduct = false
+        }
+
+        stickMode.text = if (product == null) "" else "STICKS: ${AutelControlRates.stickModeLabel()}"
+        controlResponse.text = when {
+            product == null -> ""
+            AutelControlRates.precisionActive == true -> "CONTROL RESPONSE: PRECISION"
+            AutelControlRates.precisionActive == false -> "CONTROL RESPONSE: NORMAL"
+            else -> "CONTROL RESPONSE: —"
+        }
+        val settled = AutelControlRates.precisionActive != null
+        val infoColor = if (settled) Color.parseColor("#9AC4FF") else Color.parseColor("#FFB300")
+        stickMode.setTextColor(infoColor)
+        controlResponse.setTextColor(infoColor)
         sdk.text = "Autel MSDK " + (runCatching { Autel.getSdkVersion() }.getOrNull() ?: "1.5")
 
         val connected = TakManager.getInstance().isConnected

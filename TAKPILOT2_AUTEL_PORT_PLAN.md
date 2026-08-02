@@ -1494,6 +1494,48 @@ This presents as **random, unreproducible mid-flight link loss with no pilot act
 on a schedule Explorer chooses. A pilot cannot prevent it by "not opening Explorer" — they never
 opened it. `am force-stop` clears it only until the next scheduled wake.
 
+### CONFIRMED KILLING A LIVE FLIGHT (2026-08-02)
+
+No longer a log curiosity. Watched end to end while the operator was flying, with the aircraft
+video dropping in front of them:
+
+```
+13:42:21.971  Start proc 19230:com.autelrobotics.explorer/1000
+              for service {…/com.google.android.gms.measurement.AppMeasurementJobService}
+13:42:25.764  camera changed: UNKNOWN (UnknownCamera)
+13:42:25.770  AutelProductHolder: productDisconnected      <- 3.8s after Explorer started
+13:43:33.489  AUTEL_USB: com.autel.maxifly.usb.reset       <- delivered to BOTH pids
+```
+
+**3.8 seconds from analytics job to lost aircraft.** The `usb.reset` broadcast reaching both our
+pid (28190) and Explorer's (19230) is the two apps fighting over the same USB link. The pilot
+never opened Explorer and had no way to know what happened — the symptom is simply that video
+stops.
+
+`am force-stop com.autelrobotics.explorer` recovers it immediately, and it stays fixed only
+until the next scheduled wake.
+
+### THE INTENDED FIX (operator, 2026-08-02 — deferred, not abandoned)
+
+**Have TAKPilot suppress Explorer for as long as TAKPilot is running**: disable or block it at
+launch, prevent it starting at all while we hold the aircraft, and restore it on exit. That is
+the right shape — it makes the two apps mutually exclusive by design rather than relying on a
+pilot to remember, and it survives whatever schedule Google's analytics job runs on.
+
+Not yet designed. Things that will need answering when it is picked up:
+- Explorer is a SYSTEM app (uid `system`), so `run-as` cannot touch it and an ordinary app
+  cannot stop another app. `pm disable-user` needs shell/root, which an APK does not have.
+  So this likely needs either a privileged helper, an ADB-time provisioning step performed once
+  per controller, or device-owner/DPM APIs.
+- **Restoring it matters as much as disabling it.** A pilot who can never open Autel's own app
+  cannot do firmware updates, compass calibration or aircraft registration — all of which the
+  field guide already tells them to do there. Whatever suppresses Explorer must reliably undo
+  itself, including after a crash.
+- The narrower `pm disable-user` of just
+  `com.google.android.gms.measurement.AppMeasurementJobService` remains the cheap interim, and is
+  reversible with `pm enable`. It does not cover other wake paths (a Mapbox flusher alarm fires
+  from Explorer's package every 3 minutes).
+
 ### Candidate mitigations — TEST, none of these are validated
 
 1. Disable just the waking component, narrower than disabling Explorer (a system app the

@@ -16,11 +16,19 @@ import com.taklite.util.AppLog
  * the same class of problem as the low-battery RTH the app could not see: the aircraft behaves
  * differently and the pilot has no way to know.
  *
- * NEVER CHANGES ANYTHING BY ITSELF. It reports state continuously, and it can set a switch —
- * but [setSwitch] is only ever reached from an explicit pilot action in Pre-Flight. Nothing
- * here runs on connect, on resume, or from a saved preference, because an app that silently
- * disabled a safety system from a stale checkbox would look exactly like the aircraft doing it,
- * and the pilot would have no reason to look.
+ * PRE-FLIGHT IS THE SOURCE OF TRUTH, PUSHED AT CONNECT (operator, 2026-08-02).
+ *
+ * This deliberately REVERSED an earlier rule that said the app must never push a saved avoidance
+ * state. That rule was protecting against a stale checkbox silently disabling a safety system —
+ * a real hazard, but it left a worse one in place: Autel's own app can set avoidance to anything
+ * it likes, and a pilot launching TAKPilot had no idea what they were about to fly with. Leaving
+ * "whatever was there" is not neutral, it is unknown.
+ *
+ * So the settings are now enforced from Pre-Flight on every connect, AND shown on the Enter
+ * Flight card before the pilot can reach the flight screen. Enforcement plus visibility beats
+ * non-interference — the pilot can always see what was applied, which is what makes pushing
+ * safe. The defaults are all ON, so an install that has never been configured errs toward
+ * protection rather than away from it.
  *
  * Two independent feeds, both from the fly controller's visual interface:
  *  - [VisualSettingInfo]  — the SETTINGS (is avoidance on, is it on during RTH, etc.)
@@ -46,6 +54,7 @@ object AutelAvoidance {
         private set
 
     private var radarLogCount = 0
+    @Volatile private var loggedConnectState: Boolean? = null
 
     /** Wired from [AutelProductHolder] on every (re)connect — listener registrations do not
      *  survive a product cycle. */
@@ -79,8 +88,14 @@ object AutelAvoidance {
                     systemEnabled = info.isAvoidanceSystemEnable
                     avoidDuringRth = info.isDetectObstacleEnableWhenReturn
                     landingProtect = info.isLandingProtectEnable
-                    AppLog.i(TAG, "avoidance at connect: enabled=$systemEnabled " +
-                        "rth-avoid=$avoidDuringRth landing-protect=$landingProtect")
+                    // Logged only on CHANGE. getVisualSettingInfo LOOKS like a one-shot read
+                    // but its callback fires about twice a second on this firmware, so an
+                    // unconditional line here buried the rest of the flight log.
+                    if (loggedConnectState != systemEnabled) {
+                        loggedConnectState = systemEnabled
+                        AppLog.i(TAG, "avoidance at connect: enabled=$systemEnabled " +
+                            "rth-avoid=$avoidDuringRth landing-protect=$landingProtect")
+                    }
                 }
                 override fun onFailure(error: AutelError?) {
                     AppLog.w(TAG, "getVisualSettingInfo failed: ${error?.description}")
@@ -100,10 +115,30 @@ object AutelAvoidance {
         }.onFailure { AppLog.w(TAG, "avoidance listener install failed: ${it.message}") }
     }
 
+    /** Re-reads live state, then invokes [then] whether or not the read succeeded. */
+    fun refresh(then: (() -> Unit)? = null) {
+        val fc = AutelProductHolder.evo2?.flyController ?: run { then?.invoke(); return }
+        runCatching {
+            fc.getVisualSettingInfo(object : CallbackWithOneParam<VisualSettingInfo> {
+                override fun onSuccess(info: VisualSettingInfo?) {
+                    info?.let {
+                        systemEnabled = it.isAvoidanceSystemEnable
+                        avoidDuringRth = it.isDetectObstacleEnableWhenReturn
+                        landingProtect = it.isLandingProtectEnable
+                    }
+                    then?.invoke()
+                }
+                override fun onFailure(error: AutelError?) { then?.invoke() }
+            })
+        }.onFailure { then?.invoke() }
+    }
+
     fun onProductDisconnected() {
         systemEnabled = null; avoidDuringRth = null; landingProtect = null
         radar = null
         radarLogCount = 0
+        loggedConnectState = null
+        appliedForThisConnect = false
     }
 
     /**
@@ -130,13 +165,63 @@ object AutelAvoidance {
 
     private const val RADAR_LOG_SAMPLES = 20
 
+    // ---- Pre-Flight's saved intent, enforced on every connect ----
+
+    private const val PREFS = "takpilot2_avoid"
+    private const val KEY_SYSTEM = "avoid_system"
+    private const val KEY_RTH = "avoid_rth"
+    private const val KEY_LANDING = "avoid_landing"
+
+    /** Defaults are ON. An install nobody has configured must err toward protection. */
+    fun savedSystem(c: android.content.Context) = prefs(c).getBoolean(KEY_SYSTEM, true)
+    fun savedRth(c: android.content.Context) = prefs(c).getBoolean(KEY_RTH, true)
+    fun savedLanding(c: android.content.Context) = prefs(c).getBoolean(KEY_LANDING, true)
+
+    fun saveIntent(c: android.content.Context, system: Boolean, rth: Boolean, landing: Boolean) {
+        prefs(c).edit().putBoolean(KEY_SYSTEM, system).putBoolean(KEY_RTH, rth)
+            .putBoolean(KEY_LANDING, landing).apply()
+    }
+
+    private fun prefs(c: android.content.Context) =
+        c.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+    @Volatile private var appliedForThisConnect = false
+
+    /**
+     * Enforces the Pre-Flight selection on the aircraft, once per connect.
+     *
+     * Only writes switches that are actually WRONG. Every needless write costs a round trip and,
+     * on the controller side, an audible acknowledgement — the same mistake that produced a burst
+     * of beeps when the control-rate push went unguarded.
+     */
+    fun applyAtConnect(context: android.content.Context) {
+        if (appliedForThisConnect) return
+        appliedForThisConnect = true
+        refresh {
+            val want = listOf<Triple<com.autel.common.flycontroller.visual.VisualSettingSwitchblade, Boolean, Boolean?>>(
+                Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM,
+                    savedSystem(context), systemEnabled),
+                Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE,
+                    savedRth(context), avoidDuringRth),
+                Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT,
+                    savedLanding(context), landingProtect),
+            )
+            var changed = 0
+            for ((which, desired, actual) in want) {
+                if (actual == desired) continue
+                changed++
+                AppLog.i(TAG, "enforcing $which -> $desired (aircraft had $actual)")
+                setSwitch(which, desired) { }
+            }
+            if (changed == 0) AppLog.i(TAG, "avoidance already matches Pre-Flight — no writes")
+        }
+    }
+
     /**
      * Applies ONE avoidance switch on the aircraft, right now.
      *
-     * Only ever called from an explicit pilot action in Pre-Flight. Nothing in this app calls it
-     * on connect, on resume, or from a saved preference — see the layout note on section 7. An
-     * app that silently disabled a safety system from a stale checkbox would be indistinguishable
-     * from the aircraft doing it, and the pilot would have no reason to look.
+     * Called from the Pre-Flight toggles AND from [applyAtConnect]. See the class note for why
+     * pushing a saved state is the right trade here.
      *
      * @param onDone true if the aircraft accepted it. The caller re-reads the real state rather
      *   than assuming the switch took, because this SDK returns success for things it does not
@@ -168,7 +253,7 @@ object AutelAvoidance {
     }
 
     /** Re-reads the live state from the aircraft. */
-    fun refresh(then: (() -> Unit)? = null) {
+    fun refreshUnused(then: (() -> Unit)? = null) {
         val fc = AutelProductHolder.evo2?.flyController ?: run { then?.invoke(); return }
         runCatching {
             fc.getVisualSettingInfo(object : CallbackWithOneParam<VisualSettingInfo> {

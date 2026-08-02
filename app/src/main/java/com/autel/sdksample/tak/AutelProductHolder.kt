@@ -260,6 +260,20 @@ object AutelProductHolder {
                 installCameraListener()
                 unlockUpwardGimbal()
                 AutelAvoidance.onProductConnected()
+                // Push the pilot's saved control response and stick mode. THIS is what
+                // was missing: the values were only applied when the Pre-Flight toggle was
+                // touched, so a fresh boot flew with whatever the controller happened to
+                // hold. Delayed for the same not-ready-yet window the camera calls hit.
+                com.autel.sdksample.TestApplication.getInstance()?.let { ctx ->
+                    mainHandler.postDelayed({
+                        AutelControlRates.applyAtConnect(ctx)
+                        AutelAvoidance.applyAtConnect(ctx)
+                    }, 4500)
+                }
+                // Read-only snapshot of everything the SDK exposes, logged once per
+                // connect. Delayed so the fly controller and RC are actually answering —
+                // the same not-ready-yet window the camera calls hit.
+                mainHandler.postDelayed({ AircraftSettingsDump.dumpOnce() }, 4000)
                 // Bring the foreground service up as soon as we hold the aircraft, whether or
                 // not TAK is connected. This is NOT about keeping anything alive: Android only
                 // delivers onTaskRemoved to RUNNING services, and that callback is the only
@@ -282,6 +296,8 @@ object AutelProductHolder {
                 isRecording = false
                 TakBridgeHolder.onProductDisconnected()
                 AutelAvoidance.onProductDisconnected()
+                AutelControlRates.onProductDisconnected()
+                AircraftSettingsDump.onProductDisconnected()
                 notifyAll(false)
             }
         }

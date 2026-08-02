@@ -49,6 +49,8 @@ object FlightLimitsController {
     private const val KEY_MAX_RADIUS_FT = "limit_max_radius_ft"
     private const val KEY_RTH_ALT_FT = "limit_rth_altitude_ft"
     private const val KEY_FAILSAFE = "limit_failsafe_behavior"
+    private const val KEY_LOW_BATT_PCT = "limit_low_battery_pct"
+    private const val KEY_CRIT_BATT_PCT = "limit_critical_battery_pct"
 
     private const val FT_PER_M = 3.28084
 
@@ -78,6 +80,23 @@ object FlightLimitsController {
     fun savedMaxAltitudeFt(context: Context): String = pref(context, KEY_MAX_ALT_FT, "200")
     fun savedMaxRadiusFt(context: Context): String = pref(context, KEY_MAX_RADIUS_FT, "5280")
     fun savedRthAltitudeFt(context: Context): String = pref(context, KEY_RTH_ALT_FT, "150")
+
+    /**
+     * Battery thresholds, percent.
+     *
+     * THESE ARE THE AIRCRAFT'S OWN AUTOMATIC ACTIONS, not app warnings. Measured on this
+     * airframe 2026-08-02: it shipped with low=25 / critical=15, and its behaviour matched
+     * exactly — a return-to-home began near 24%, and a forced descent near 14%. So Low is the
+     * level the aircraft brings itself home at, and Critical is the level it puts itself down at.
+     *
+     * The defaults below (15 / 10) are the OPERATOR'S choice, not Autel's: more usable flight
+     * time, with a smaller reserve. That is a deliberate trade and it is theirs to make.
+     *
+     * ⚠ Do not set Low at or below Critical. The aircraft would begin its return and force a
+     * landing in the same moment, which is worse than either alone.
+     */
+    fun savedLowBatteryPct(context: Context): String = pref(context, KEY_LOW_BATT_PCT, "15")
+    fun savedCriticalBatteryPct(context: Context): String = pref(context, KEY_CRIT_BATT_PCT, "10")
 
     private fun pref(context: Context, key: String, default: String): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, default) ?: default
@@ -128,6 +147,9 @@ object FlightLimitsController {
         // casually verify in the air (confirming it for real means deliberately dropping the RC
         // link mid-flight), and unlike the DJI side there's no getter to read it back — so this
         // log line is the only evidence the aircraft accepted it.
+        applyBatteryThresholds(context)
+        applyRfPower(context)
+
         val failsafe = savedFailsafe(context)
         fc.doEmergencyAction(failsafe.sdk, object : com.autel.common.CallbackWithNoParam {
             override fun onSuccess() {
@@ -146,4 +168,67 @@ object FlightLimitsController {
         val ft = feetStr.trim().toDoubleOrNull() ?: return null
         return Math.round(ft / FT_PER_M).toInt()
     }
+
+    /**
+     * Pushes the battery thresholds. See [savedLowBatteryPct] for what they actually do.
+     *
+     * The SDK takes a FRACTION (0.15), not a percent — the aircraft reported 0.25/0.15 for its
+     * 25%/15% settings. Sent low-first so that if only one call lands, the aircraft is left with
+     * a return level below its landing level rather than the other way round.
+     */
+    private fun applyBatteryThresholds(context: Context) {
+        val bat = AutelProductHolder.evo2?.battery ?: return
+        val low = savedLowBatteryPct(context).trim().toFloatOrNull()
+        val crit = savedCriticalBatteryPct(context).trim().toFloatOrNull()
+        if (low == null || crit == null) {
+            AppLog.w(TAG, "battery thresholds not configured — leaving the aircraft's own values")
+            return
+        }
+        if (low <= crit) {
+            AppLog.e(TAG, "REFUSING battery thresholds: low ($low%) is not above critical ($crit%) " +
+                "— the aircraft would return home and force-land at the same moment")
+            return
+        }
+        bat.setLowBatteryNotifyThreshold(low / 100f, object : com.autel.common.CallbackWithNoParam {
+            override fun onSuccess() { AppLog.i(TAG, "low battery threshold set to $low%: OK") }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "low battery threshold $low% failed: ${error?.description}")
+            }
+        })
+        bat.setCriticalBatteryNotifyThreshold(crit / 100f, object : com.autel.common.CallbackWithNoParam {
+            override fun onSuccess() { AppLog.i(TAG, "critical battery threshold set to $crit%: OK") }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "critical battery threshold $crit% failed: ${error?.description}")
+            }
+        })
+    }
+
+    /**
+     * Pushes the controller's RF power region.
+     *
+     * ⚠ THIS IS A REGULATORY SETTING, not a performance one. FCC permits higher transmit power
+     * than CE and gives more range; which is LAWFUL depends on where the aircraft is flown, and
+     * that is the operator's responsibility, not the app's.
+     *
+     * Default is FCC because this airframe operates in Alaska (operator, 2026-08-02) and the
+     * controller was found set to CE, which was costing link margin for no reason. Anyone flying
+     * this build elsewhere must revisit it.
+     */
+    private fun applyRfPower(context: Context) {
+        val rc = AutelProductHolder.evo2?.remoteController ?: return
+        val want = savedRfPower(context)
+        rc.setRFPower(want, object : com.autel.common.CallbackWithNoParam {
+            override fun onSuccess() { AppLog.i(TAG, "RF power set to $want: OK") }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "RF power $want failed: ${error?.description}")
+            }
+        })
+    }
+
+    private const val KEY_RF_POWER = "limit_rf_power"
+
+    fun savedRfPower(context: Context): com.autel.common.remotecontroller.RFPower =
+        if (pref(context, KEY_RF_POWER, "FCC") == "CE")
+            com.autel.common.remotecontroller.RFPower.CE
+        else com.autel.common.remotecontroller.RFPower.FCC
 }
