@@ -517,11 +517,25 @@ class ArOverlayView @JvmOverloads constructor(
         val halfV = Math.toRadians(AutelTakBridge.vFovDeg(zoom) / 2.0)
         val nx = tan(Math.toRadians(dBearingDeg)) / tan(halfH)
         val ny = tan(Math.toRadians(dElevDeg)) / tan(halfV)
-        if (abs(nx) > 1.0 || abs(ny) > 1.0) return null   // off-frame; edge arrows come in 6D-C
+        if (abs(nx) > 1.0 || abs(ny) > 1.0) return null   // outside the camera's field of view
 
         val x = videoRect.centerX() + (nx * videoRect.width() / 2.0).toFloat()
         // Screen Y grows downward, camera elevation grows upward — hence the subtraction.
         val y = videoRect.centerY() - (ny * videoRect.height() / 2.0).toFloat()
+
+        // TWO DIFFERENT TESTS, and conflating them was a bug.
+        //
+        // The check above asks "is this inside the camera's FIELD OF VIEW" and must be measured
+        // against videoRect, which is the whole video frame. The check below asks "can the pilot
+        // actually SEE it", which is a different question as soon as the frame is cropped to fill
+        // the screen: videoRect deliberately overflows the view, so a target in a cropped-away
+        // side band passes the first test and lands at a coordinate like x=-232.
+        //
+        // Without this it was drawn there — invisibly — instead of becoming an edge arrow, so
+        // contacts in the crop bands silently vanished while the log cheerfully counted them as
+        // "drawn". Returning null hands them to the same edge-arrow path as anything else the
+        // pilot cannot see, which is what an arrow is FOR: it points at what is off screen.
+        if (x < 0f || y < 0f || x > width || y > height) return null
         return x to y
     }
 
