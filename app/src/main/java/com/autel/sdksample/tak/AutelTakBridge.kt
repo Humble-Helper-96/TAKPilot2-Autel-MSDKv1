@@ -320,6 +320,9 @@ class AutelTakBridge(
         }
 
         val isFlying = relAlt.isFinite() && (relAlt > 0.5 || speedMs > 0.5)
+        // Published so other subsystems can refuse to write aircraft settings while airborne.
+        // See AutelAvoidance.applyAtConnect: a safety switch must not be rewritten mid-flight.
+        airborne = isFlying
 
         // north reference stays 0.0 — <sensor azimuth> is an ABSOLUTE true-north bearing
         // (the DJI original calibrated this the hard way; see its 2026-07 comment).
@@ -523,6 +526,17 @@ class AutelTakBridge(
 
     companion object {
         private const val TAG = "AutelTakBridge"
+
+        /** True once the aircraft is off the ground, by the same test the PLI reports.
+         *
+         *  On the companion rather than the instance because the readers are process-wide
+         *  singletons with no handle on the bridge, and there is only ever one aircraft.
+         *
+         *  Conservative by design: false until the first telemetry tick, so a caller that has
+         *  heard nothing treats the aircraft as grounded — which is the only state in which
+         *  writing settings is permitted anyway, and the state it is genuinely in at connect. */
+        @Volatile var airborne: Boolean = false
+            internal set
 
         /** GNSS accuracy raw units → meters. Believed mm (÷1000); bench-verify. */
         private const val ACC_DIVISOR = 1000.0

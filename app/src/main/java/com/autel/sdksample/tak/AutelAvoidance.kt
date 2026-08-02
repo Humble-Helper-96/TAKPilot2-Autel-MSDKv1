@@ -53,7 +53,6 @@ object AutelAvoidance {
     @Volatile var radar: AvoidanceRadarInfo? = null
         private set
 
-    private var radarLogCount = 0
     @Volatile private var loggedConnectState: Boolean? = null
 
     /** Wired from [AutelProductHolder] on every (re)connect — listener registrations do not
@@ -115,9 +114,30 @@ object AutelAvoidance {
         }.onFailure { AppLog.w(TAG, "avoidance listener install failed: ${it.message}") }
     }
 
-    /** Re-reads live state, then invokes [then] whether or not the read succeeded. */
-    fun refresh(then: (() -> Unit)? = null) {
-        val fc = AutelProductHolder.evo2?.flyController ?: run { then?.invoke(); return }
+    /**
+     * Invokes [then] EXACTLY ONCE, after the aircraft's live state is known.
+     *
+     * ⚠ THIS IS THE BUG THAT PUT AN AIRCRAFT INTO A WALL (2026-08-02). The previous version
+     * passed [then] straight to `getVisualSettingInfo`'s callback, on the assumption that a
+     * getter calls back once. It does not — on this firmware that callback fires about twice a
+     * second, forever, a fact this very file already documented a few lines above. So the
+     * "apply once at connect" enforcement actually ran at 2 Hz for the whole flight, and because
+     * each write's completion handler kicked off ANOTHER perpetual reader, every write added a
+     * new 2 Hz stream on top of the last. The fly-controller channel — the same one carrying
+     * vision positioning and obstacle data — ended up saturated. The flight log shows the shape
+     * of it: fourteen enforcement attempts, six acknowledgements inside one 700 ms burst, then
+     * the channel timing out. The hover went unstable and avoidance did not stop an impact.
+     *
+     * So: latch on the first callback and never call back again. Do NOT "simplify" this by
+     * handing the lambda to the SDK callback directly.
+     *
+     * No new listener is needed for the cached values themselves — [onProductConnected] already
+     * arms a continuous one. This exists only for callers that need a "state is known now" edge.
+     */
+    private fun readOnce(then: () -> Unit) {
+        val fc = AutelProductHolder.evo2?.flyController ?: run { then(); return }
+        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun once() { if (fired.compareAndSet(false, true)) then() }
         runCatching {
             fc.getVisualSettingInfo(object : CallbackWithOneParam<VisualSettingInfo> {
                 override fun onSuccess(info: VisualSettingInfo?) {
@@ -126,44 +146,80 @@ object AutelAvoidance {
                         avoidDuringRth = it.isDetectObstacleEnableWhenReturn
                         landingProtect = it.isLandingProtectEnable
                     }
-                    then?.invoke()
+                    once()
                 }
-                override fun onFailure(error: AutelError?) { then?.invoke() }
+                override fun onFailure(error: AutelError?) { once() }
             })
-        }.onFailure { then?.invoke() }
+        }.onFailure { once() }
     }
 
     fun onProductDisconnected() {
         systemEnabled = null; avoidDuringRth = null; landingProtect = null
         radar = null
-        radarLogCount = 0
+        lastRadarLogMs = 0L
         loggedConnectState = null
         appliedForThisConnect = false
     }
 
     /**
-     * Logs the first few raw radar samples verbatim.
+     * Logs radar samples, biased toward the ones that matter.
      *
-     * DELIBERATELY RAW AND DELIBERATELY LIMITED. Nothing documents what these floats mean:
-     * whether they are metres or centimetres, whether 0 means "clear" or "no reading", or
-     * whether larger is nearer or further. An on-screen obstacle warning built on a guessed
-     * sign would show DANGER when the path is clear, which is worse than showing nothing at
-     * all — so the numbers get characterised against a real flight first.
+     * REPLACED A 20-SAMPLE CAP (2026-08-02). The cap was written to characterise the feed on a
+     * bench and it did that job, but it made the feed useless for the question that actually
+     * mattered — why avoidance did not brake near an obstacle. All twenty samples were spent in
+     * the first two seconds after connect, on the ground, and the flight itself logged nothing.
      *
-     * Capped at [RADAR_LOG_SAMPLES] because this feed pushes continuously and the point is a
-     * characterisation sample, not a permanent trace.
+     * So the rule is now "log what is close, and a slow heartbeat otherwise":
+     *  - any face reporting a real obstacle nearer than [LOG_NEAR] is logged immediately, rate
+     *    limited to [NEAR_MIN_GAP_MS] so a sustained approach does not flood
+     *  - otherwise one heartbeat line every [IDLE_GAP_MS], to prove the feed is still alive
+     *
+     * READING A SAMPLE. Each face is a float[6] of sub-sectors. Two sentinel values, both
+     * confirmed against live data: 0 means "this face was not in this push" (the aircraft sends
+     * one face at a time, round-robin), and 10000 means "clear, nothing detected". Anything else
+     * is a real distance. Units are believed CENTIMETRES and are still not confirmed — see
+     * [nearestCm].
      */
     private fun logRadarSample(info: AvoidanceRadarInfo) {
-        if (radarLogCount >= RADAR_LOG_SAMPLES) return
-        radarLogCount++
-        fun f(a: FloatArray?) = a?.joinToString(",") { "%.2f".format(it) } ?: "null"
-        AppLog.i(TAG, "radar[$radarLogCount] ts=${info.timeStamp} " +
-            "F=[${f(info.front)}] R=[${f(info.rear)}] " +
+        val now = android.os.SystemClock.elapsedRealtime()
+        val near = nearestCm(info)
+        val isNear = near != null && near < LOG_NEAR
+        val gap = if (isNear) NEAR_MIN_GAP_MS else IDLE_GAP_MS
+        if (now - lastRadarLogMs < gap) return
+        lastRadarLogMs = now
+        fun f(a: FloatArray?) = a?.joinToString(",") { "%.0f".format(it) } ?: "null"
+        val tag = if (isNear) "NEAR ${near}cm" else "clear"
+        AppLog.i(TAG, "radar($tag) F=[${f(info.front)}] R=[${f(info.rear)}] " +
             "L=[${f(info.left)}] Ri=[${f(info.right)}] " +
-            "U=[${f(info.top)}] D=[${f(info.bottom)}]")
+            "U=[${f(info.top)}] D=[${f(info.bottom)}] flying=${AutelTakBridge.airborne}")
     }
 
-    private const val RADAR_LOG_SAMPLES = 20
+    /**
+     * Smallest REAL obstacle distance across every face, or null if nothing is reporting.
+     *
+     * Skips both sentinels: 0 (face absent from this push) and 10000 (clear). Without that, the
+     * minimum would always be 0 and every sample would look like an imminent collision.
+     */
+    fun nearestCm(info: AvoidanceRadarInfo?): Int? {
+        info ?: return null
+        var best: Float? = null
+        for (face in listOf(info.front, info.rear, info.left, info.right, info.top, info.bottom)) {
+            for (v in face ?: continue) {
+                if (v <= 0f || v >= CLEAR_SENTINEL) continue
+                if (best == null || v < best!!) best = v
+            }
+        }
+        return best?.toInt()
+    }
+
+    /** "Nothing detected on this face." Confirmed live: clear faces report exactly this. */
+    const val CLEAR_SENTINEL = 10000f
+
+    /** Below this, a sample is worth a log line. ~15 m in the believed units. */
+    private const val LOG_NEAR = 1500
+    private const val NEAR_MIN_GAP_MS = 500L
+    private const val IDLE_GAP_MS = 10_000L
+    @Volatile private var lastRadarLogMs = 0L
 
     // ---- Pre-Flight's saved intent, enforced on every connect ----
 
@@ -197,7 +253,15 @@ object AutelAvoidance {
     fun applyAtConnect(context: android.content.Context) {
         if (appliedForThisConnect) return
         appliedForThisConnect = true
-        refresh {
+        // NEVER rewrite a safety switch on an aircraft that is already flying. Enforcement is a
+        // pre-flight act: the pilot reads what was applied on the Enter Flight card and then
+        // launches. Writing avoidance settings underneath an airborne aircraft changes how it
+        // behaves with nobody looking at the card, which is the opposite of the point.
+        if (AutelTakBridge.airborne) {
+            AppLog.w(TAG, "aircraft is airborne — SKIPPING avoidance enforcement this connect")
+            return
+        }
+        readOnce {
             val want = listOf<Triple<com.autel.common.flycontroller.visual.VisualSettingSwitchblade, Boolean, Boolean?>>(
                 Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM,
                     savedSystem(context), systemEnabled),
@@ -223,9 +287,15 @@ object AutelAvoidance {
      * Called from the Pre-Flight toggles AND from [applyAtConnect]. See the class note for why
      * pushing a saved state is the right trade here.
      *
-     * @param onDone true if the aircraft accepted it. The caller re-reads the real state rather
-     *   than assuming the switch took, because this SDK returns success for things it does not
-     *   do (see the camera's setAspectRatio).
+     * @param onDone true if the aircraft ACKNOWLEDGED it — not that it took. This SDK returns
+     *   success for things it does not do (see the camera's setAspectRatio), so the real state
+     *   still has to be read back. That read comes from the continuous listener armed in
+     *   [onProductConnected], which updates the cached values within about half a second.
+     *
+     * ⚠ Deliberately does NOT kick off its own read on completion. It used to, and that was half
+     * of the runaway described on [readOnce]: each write left behind another 2 Hz reader that
+     * never stopped, so writes bred readers until the fly-controller channel gave out. One
+     * standing listener is all this needs.
      */
     fun setSwitch(
         which: com.autel.common.flycontroller.visual.VisualSettingSwitchblade,
@@ -237,12 +307,10 @@ object AutelAvoidance {
             fc.setVisualSettingEnable(which, enabled, object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() {
                     AppLog.i(TAG, "avoidance switch $which -> $enabled: accepted")
-                    refresh()          // confirm against the aircraft, do not trust the ack
-                    onDone(true)
+                    onDone(true)       // the standing listener reports what actually took
                 }
                 override fun onFailure(error: AutelError?) {
                     AppLog.w(TAG, "avoidance switch $which -> $enabled failed: ${error?.description}")
-                    refresh()
                     onDone(false)
                 }
             })
@@ -250,26 +318,5 @@ object AutelAvoidance {
             AppLog.w(TAG, "avoidance switch $which threw: ${it.message}")
             onDone(false)
         }
-    }
-
-    /** Re-reads the live state from the aircraft. */
-    fun refreshUnused(then: (() -> Unit)? = null) {
-        val fc = AutelProductHolder.evo2?.flyController ?: run { then?.invoke(); return }
-        runCatching {
-            fc.getVisualSettingInfo(object : CallbackWithOneParam<VisualSettingInfo> {
-                override fun onSuccess(info: VisualSettingInfo?) {
-                    info?.let {
-                        systemEnabled = it.isAvoidanceSystemEnable
-                        avoidDuringRth = it.isDetectObstacleEnableWhenReturn
-                        landingProtect = it.isLandingProtectEnable
-                    }
-                    then?.invoke()
-                }
-                override fun onFailure(error: AutelError?) {
-                    AppLog.w(TAG, "avoidance refresh failed: ${error?.description}")
-                    then?.invoke()
-                }
-            })
-        }.onFailure { then?.invoke() }
     }
 }

@@ -1451,6 +1451,128 @@ average bandwidth, at the cost of burstiness.
 ⚠ LOW is no longer the minimum-bandwidth floor it was designed as. If a genuinely marginal link
 needs one, add a new profile BELOW LOW rather than pushing LOW back down.
 
+## 🚩 WALL STRIKE — runaway write loop saturated the fly-controller channel (2026-08-02)
+
+**The most serious defect found in this port so far. An aircraft hit a building.**
+
+### What happened
+
+Flying with TAKPilot as the sole connected client, the aircraft would not hold a hover — it
+oscillated in a circle — and obstacle avoidance did not prevent an impact with a shed wall.
+
+The operator then ran the control experiment that actually settled it: closed TAKPilot, opened
+Autel Explorer, same aircraft, same yard, same crosswind, minutes later. Explorer held a
+rock-solid hover, drew live obstacle distances on its HUD, and refused to let the aircraft
+closer than 6 ft to the wall.
+
+The logs rule out the Explorer-contention blocker below as the cause — the two never overlapped:
+
+```
+14:48:26  TAKPilot  (pid 25469)  AppTeardown releaseAll: done ... SIG: 9
+14:49:59  Explorer  (pid 18703)  process start                       <- 93 s LATER
+```
+
+### Root cause — ours
+
+`AutelAvoidance.refresh()` passed its completion lambda directly to
+`IAutelFlyController.getVisualSettingInfo(callback)`, on the assumption that a getter calls back
+once. **It does not.** On this firmware that callback fires roughly twice a second, forever —
+a fact the same file already documented, twelve lines above the code that ignored it.
+
+Two compounding effects:
+
+1. `applyAtConnect` guarded its ENTRY with `appliedForThisConnect`, but the enforcement lambda
+   it handed to `refresh` then ran at ~2 Hz for the entire flight.
+2. Every `setSwitch` completion handler called `refresh()` again, leaving behind yet another
+   permanent 2 Hz reader. Writes bred readers without bound.
+
+The flight log shows the shape of the runaway exactly:
+
+```
+14:47:29.894  enforcing LANDING_PROTECT -> true (aircraft had false)
+   ... 14 times, ~500 ms apart, aircraft never accepting ...
+14:47:39.906  avoidance switch LANDING_PROTECT -> true failed: ... timed out
+14:47:40.087  accepted     <- six acknowledgements inside one 700 ms burst,
+14:47:40.295  accepted        the backlog from the stacked readers draining
+14:47:40.382  accepted
+```
+
+That channel is not a settings side-channel. It is the fly controller's visual interface — the
+same path that carries vision positioning and obstacle data. Saturating it is a coherent single
+cause for BOTH observed symptoms.
+
+### ✅ CONFIRMED FIXED — flight test 2026-08-02, ~15:25
+
+The hypothesis was held open until a flight could settle it. It has now been flown, and the
+operator's report is unambiguous: *"It works great! It didn't let me crash."* Obstacle
+avoidance braked the aircraft, and the live distances read correctly on the FPV.
+
+So the causal chain is no longer a hypothesis. The runaway loop saturated the fly controller's
+visual interface; that channel carries both vision positioning and obstacle data; starving it
+produced the oscillating hover AND the failure to brake. Removing the loop restored both.
+
+Log evidence across the two builds, same aircraft, same site:
+
+| | before the fix | after |
+|---|---|---|
+| `enforcing LANDING_PROTECT` writes | 5 | **0** |
+| avoidance switch writes | 3 accepted + 1 timed out | **0** |
+| state reads | repeating at ~2 Hz | **1** |
+| hover | oscillating in a circle | stable |
+| obstacle braking | none — struck a wall | stops the aircraft |
+
+Vision positioning was healthy throughout on the fixed build — `locationEnabled=true`,
+`landingAccurately=true`, `mainFlyState=NORMAL` — which also retires the compass/vision theories
+that were the first (wrong) instinct.
+
+### Fixes applied (2026-08-02, 15:06)
+
+- `refresh` replaced by `readOnce`, which latches on an `AtomicBoolean` and invokes its
+  continuation exactly once no matter how often the SDK calls back.
+- `setSwitch` no longer starts a read on completion. The standing listener armed in
+  `onProductConnected` is the single source of live state.
+- `refreshUnused` deleted — dead code, and a verbatim copy of the pattern that caused this.
+- `applyAtConnect` now REFUSES to run when `AutelTakBridge.airborne` is true. A safety switch
+  must never be rewritten underneath a flying aircraft; enforcement is a pre-flight act.
+
+### Standing lesson
+
+**In this SDK, a getter is not a one-shot.** `getVisualSettingInfo` is a subscription wearing a
+getter's name. Before passing a continuation to ANY `get*(callback)` in this SDK, confirm how
+many times it fires. Assume repeating until proven otherwise.
+
+### Still open
+
+- ~~Re-fly and confirm hover stability and a wall stop on the fixed build.~~ **Done, passed.**
+- ~~Audit every other `get*(callback)` continuation in this codebase for the same mistake.~~
+  **Done 2026-08-02.** The behaviour is NOT universal, which is worth knowing precisely:
+  - `IAutelRemoteController.getCommandStickMode` / `getGimbalDialAdjustSpeed` /
+    `getYawCoefficient` — **one-shot, measured.** `AutelControlRates` emits a bounded two lines
+    per connect across three separate process lifetimes in the log. Its `outstanding` counter
+    would have gone negative and re-fired `then` forever had they repeated; it did not.
+  - `IAutelFlyController.getVisualSettingInfo` — **repeats at ~2 Hz, measured.** The one that
+    caused this.
+  - `FlightActivity.getDisplayMode` / `getIrColor` — callbacks only assign UI state with no
+    continuation, so repetition would be wasteful but not harmful. Left alone.
+
+  So the rule is "verify per call", not "all getters repeat".
+- `LANDING_PROTECT` never took even when acknowledged. Unclear whether that is the channel flood
+  or the aircraft refusing the write; recheck once the flood is gone.
+- ~~Explorer's HUD gives the spec for the FPV obstacle edges.~~ **Built and flown**
+  (`ObstacleEdgeView`, 2026-08-02). Per-face arcs at the screen edge with a distance label, amber
+  at range, red when close — modelled on Explorer so the two apps share a visual language.
+  Confirmed readable in flight for left, right and up.
+  - Rear was initially omitted, on the reasoning that a forward view has no honest place for
+    "behind you". The operator flew it and immediately asked where reverse was. That reasoning
+    was backwards: rear is the ONE direction the camera cannot show, so it is where the readout
+    earns the most. Added as a captioned chevron above the bottom arc, deliberately a different
+    SHAPE from the edge arcs so it can never be misread as the ground.
+  - Radar units: **centimetres, field-validated 2026-08-02.** The operator flew the display
+    against real obstacles and judged the distances accurate. That is agreement with reality at
+    flight-relevant ranges, not a bench calibration — good enough to rely on, and nobody should
+    quote it to the inch. If it is ever disputed, `CM_PER_FOOT` in `ObstacleEdgeView` is the one
+    number to change.
+
 ## 🚩 RELEASE BLOCKER — Autel Explorer steals the aircraft link BY ITSELF (found 2026-08-01)
 
 **Must be tested and addressed in a dedicated session before any full release.** Not a
