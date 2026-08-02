@@ -25,6 +25,16 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
+    <!-- Obstacle proximity arcs on the video edges, one per aircraft face.
+
+         ABOVE the AR overlay and BELOW the crosshair. A contact marker may be occluded by a
+         collision warning; the reverse must never happen, and the crosshair stays on top for
+         the same reason it sits above the AR layer — it is the aiming reference for drops. -->
+    <com.autel.sdksample.tak.ObstacleEdgeView
+        android:id="@+id/flightObstacleEdges"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <!-- Centre reticle over the video: sighting reference, and its ring carries the
          marker-accuracy cue driven by gimbal pitch. Matches the DJI blueprint. -->
     <com.autel.sdksample.tak.CrosshairView

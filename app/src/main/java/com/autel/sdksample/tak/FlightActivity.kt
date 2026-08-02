@@ -54,6 +54,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvNotice: TextView
     private lateinit var crosshairView: CrosshairView
     private lateinit var arOverlay: ArOverlayView
+    private lateinit var obstacleEdges: ObstacleEdgeView
     private lateinit var streamToggle: LiveToggleView
     private lateinit var recordToggle: RecordToggleView
     private lateinit var toolbarSignal: SignalBarsView
@@ -137,6 +138,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvNotice = findViewById(R.id.fpvNotice)
         crosshairView = findViewById(R.id.flightCrosshair)
         arOverlay = findViewById(R.id.flightArOverlay)
+        obstacleEdges = findViewById(R.id.flightObstacleEdges)
         // Load the calibrated FOV before the overlay draws anything with it.
         ArSettings.loadFov(this)
         ArSettings.loadAimOffsets(this)
@@ -339,7 +341,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.v(TAG, "Drop Pin tapped")
             val gp = TakBridgeHolder.lookPoint()
             if (aimTooPoorToDrop()) {
+                // The gate blocks PLACING a marker, not MANAGING them. A tap that only refused
+                // made the button a dead end: the pilot could not rename, re-send, delete or
+                // clear existing markers just because they happened to be low or shallow, which
+                // are exactly the moments (on the ground, or just after landing) when tidying up
+                // is most likely. So say why dropping is unavailable, then open the list anyway.
                 refuseDropForAim()
+                onMarkersListTapped()
             } else if (gp == null) {
                 AppLog.w(TAG, "drop refused — no look-point (GPS/gimbal not ready)")
                 toast("Can't drop: camera look-point not available (GPS/gimbal not ready)")
@@ -534,6 +542,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // delay needs it to read the same way on every device.
         fpvClock.text = clockFormat.format(java.util.Date())
 
+        // Obstacle arcs. Fed here, on the 500 ms HUD tick, NOT from the radar callback — the
+        // sensor pushes several times a second per face and a full-screen invalidate at that
+        // rate is wasted work. The view keeps each face's last real reading, so a slower
+        // refresh loses nothing.
+        obstacleEdges.update(AutelAvoidance.radar)
+
         val hud = TakBridgeHolder.hud()
         val takOk = TakManager.getInstance().isConnected
         val acOk = AutelProductHolder.isConnected
@@ -616,22 +630,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         // Same five-line readout as the DJI blueprint, imperial throughout (see Units).
         fpvOverlayText.text = buildString {
+            // LINE ORDER IS DELIBERATE (operator, 2026-08-02), most-glanced-at first:
+            //   1 callsign + speed   2 AGL/MSL   3 lat/lon   4 home
+            // Height moved up to second because it is the number a pilot checks constantly;
+            // lat/lon and home are reference figures they look up only when asked for them.
+            // The clock sits above this block in its own view — see fpvClock.
             append(TakManager.getInstance().callsign ?: "—")
             append(if (hud != null) "   ${Units.mph(hud.speedMs)}" else "   — MPH")
-            append('\n')
-            if (hud != null && hud.hasFix) {
-                append("%.4f, %.4f".format(hud.lat, hud.lon))
-            } else {
-                append("—, —")
-            }
-            append('\n')
-            if (hud != null && hud.hasFix && homeSet) {
-                val dist = CameraSlantPoint.distanceMeters(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
-                val bearing = CameraSlantPoint.initialBearingDeg(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
-                append("HOME %s  %03.0f°T".format(Units.feet(dist), bearing))
-            } else {
-                append("HOME — ft  —°T")
-            }
             append('\n')
             // "AGL" only when DTED actually corrected it to height-above-terrain-below;
             // otherwise "ALT", which is what the raw number really is (height above the takeoff
@@ -649,6 +654,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             append("  ·  ")
             val msl = aglReading.mslMeters
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
+            append('\n')
+            if (hud != null && hud.hasFix) {
+                append("%.4f, %.4f".format(hud.lat, hud.lon))
+            } else {
+                append("—, —")
+            }
+            append('\n')
+            if (hud != null && hud.hasFix && homeSet) {
+                val dist = CameraSlantPoint.distanceMeters(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
+                val bearing = CameraSlantPoint.initialBearingDeg(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
+                append("HOME %s  %03.0f°T".format(Units.feet(dist), bearing))
+            } else {
+                append("HOME — ft  —°T")
+            }
             // AC and TAK state used to be appended here and were removed (operator, 2026-07-31)
             // as redundant: the toolbar already carries both — the TAK badge's green/red dot,
             // and the aircraft through the battery gauge, GPS count and signal bars, which all
@@ -1297,6 +1316,30 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             setScale(scale, scale, vw / 2f, vh / 2f)   // anchor = view centre = reticle centre
         })
         view.invalidate()
+
+        // TELL THE AR OVERLAY WHERE THE FULL VIDEO FRAME NOW LIVES.
+        //
+        // This was a real bug and it was mine: ArOverlayView projects angles onto its videoRect,
+        // which defaults to the whole view — correct only while the video fills the view 1:1.
+        // The centre-crop above MAGNIFIES the image by `scale`, so every marker was drawn too
+        // close to the centre, with the error growing linearly outward. It looked fine near the
+        // crosshair and badly wrong at the edges, which is why it showed up as soon as the gimbal
+        // was pitched up and contacts sat near the frame edge.
+        //
+        // The rect handed over is where the WHOLE video frame would be if nothing were cropped:
+        // fit-inside dimensions times the same scale, centred. Its overflow beyond the view is
+        // the point — a target that has been cropped off screen then projects outside the view
+        // bounds and is correctly treated as off-frame, instead of being squeezed back inside.
+        val fitW: Float
+        val fitH: Float
+        if (videoAspect > viewAspect) { fitW = vw; fitH = vw / videoAspect }
+        else { fitH = vh; fitW = vh * videoAspect }
+        val fullW = fitW * scale
+        val fullH = fitH * scale
+        arOverlay.setVideoRect(android.graphics.RectF(
+            vw / 2f - fullW / 2f, vh / 2f - fullH / 2f,
+            vw / 2f + fullW / 2f, vh / 2f + fullH / 2f))
+        AppLog.i(TAG, "AR video rect: ${fullW.toInt()}x${fullH.toInt()} in view ${vw.toInt()}x${vh.toInt()}")
         AppLog.i(TAG, "video fill: view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
             "content aspect ${"%.3f".format(videoAspect)} -> scale ${"%.3f".format(scale)}")
     }
