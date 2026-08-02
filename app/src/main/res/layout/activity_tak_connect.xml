@@ -808,5 +808,105 @@
             android:textSize="13sp"
             android:text="" />
 
+        <!-- 7. Obstacle Avoidance.
+
+             DIFFERENT FROM EVERY OTHER SECTION HERE, and deliberately so. Sections 1-6 store a
+             value and PUSH it to the aircraft on connect. This one does not: it shows the
+             aircraft's CURRENT state and only changes it when the pilot touches a switch.
+
+             The reason is that a stale saved checkbox pushing "avoidance off" onto an aircraft
+             at connect would disable a safety system without anyone deciding to, and the pilot
+             would have no reason to suspect it. Sections 1-6 push limits; this is a sensor
+             system, which is a different category of risk. Nothing is remembered between
+             sessions on purpose. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="7. Obstacle Avoidance"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:paddingTop="16dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Live state read from the aircraft. Connect the aircraft first — these switches are disabled until it reports. Changes apply immediately to the aircraft and are NOT saved: this app never turns avoidance on or off by itself."
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingBottom="10dp" />
+
+        <TextView
+            android:id="@+id/avoidStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textColor="#FFB300"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="Aircraft not connected" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="6dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/avoidSystem"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:buttonTint="#2E7D32" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Obstacle avoidance system"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="6dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/avoidRth"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:buttonTint="#2E7D32" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Avoid obstacles during Return to Home"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="6dp"
+            android:paddingBottom="24dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/avoidLanding"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:buttonTint="#2E7D32" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Landing protection"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
     </LinearLayout>
 </ScrollView>

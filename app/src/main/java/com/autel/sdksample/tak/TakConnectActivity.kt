@@ -60,6 +60,7 @@ class TakConnectActivity : AppCompatActivity() {
 
         // Camera look-point toggle (applies live to the running bridge + persists).
         val cameraPoint = findViewById<android.widget.CheckBox>(R.id.takCameraPoint)
+        wireAvoidanceSection()
         cameraPoint.isChecked = prefs.getBoolean(KEY_CAMERA_POINT, false)
         cameraPoint.setOnCheckedChangeListener { _, isOn ->
             AppLog.v(TAG, "camera point toggle -> $isOn")
@@ -1156,6 +1157,91 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_V_TCP = "video_tcp"
         private const val KEY_V_PROFILE = "video_profile"
     }
+
+    /**
+     * Section 7 — obstacle avoidance. Live state, explicit toggles, nothing persisted.
+     *
+     * Unlike every other section on this screen, NOTHING here is saved or replayed on connect.
+     * The switches show what the aircraft currently reports and change it only when touched.
+     * See the layout comment for why a stale saved value would be the wrong thing to push at a
+     * safety system.
+     *
+     * Each toggle RE-READS the aircraft afterwards instead of trusting its own success callback.
+     * This SDK has already been caught returning success for things it did not do (the camera's
+     * setAspectRatio), and a switch that shows the state the pilot asked for rather than the
+     * state the aircraft is in would be worse than no switch.
+     */
+    private fun wireAvoidanceSection() {
+        val status = findViewById<android.widget.TextView>(R.id.avoidStatus)
+        val system = findViewById<android.widget.CheckBox>(R.id.avoidSystem)
+        val rth = findViewById<android.widget.CheckBox>(R.id.avoidRth)
+        val landing = findViewById<android.widget.CheckBox>(R.id.avoidLanding)
+        val boxes = listOf(system, rth, landing)
+
+        fun render() {
+            val connected = AutelProductHolder.isConnected
+            val known = AutelAvoidance.systemEnabled != null
+            status.text = when {
+                !connected -> "Aircraft not connected"
+                !known -> "Aircraft connected — waiting for avoidance state…"
+                AutelAvoidance.systemEnabled == true -> "Avoidance is ON"
+                else -> "Avoidance is OFF"
+            }
+            status.setTextColor(
+                when {
+                    !connected || !known -> android.graphics.Color.parseColor("#FFB300")
+                    AutelAvoidance.systemEnabled == true -> android.graphics.Color.parseColor("#4CAF50")
+                    else -> android.graphics.Color.parseColor("#F44336")
+                })
+            // Set the boxes WITHOUT firing their listeners, or rendering the aircraft's state
+            // would look like a pilot toggle and be pushed straight back at it.
+            boxes.forEach { it.setOnCheckedChangeListener(null) }
+            system.isChecked = AutelAvoidance.systemEnabled == true
+            rth.isChecked = AutelAvoidance.avoidDuringRth == true
+            landing.isChecked = AutelAvoidance.landingProtect == true
+            boxes.forEach { it.isEnabled = connected && known }
+            attachListeners()
+        }
+
+        fun toggle(which: com.autel.common.flycontroller.visual.VisualSettingSwitchblade,
+                   enabled: Boolean) {
+            boxes.forEach { it.isEnabled = false }        // no double-taps mid-flight
+            AutelAvoidance.setSwitch(which, enabled) { ok ->
+                runOnUiThread {
+                    if (!ok) android.widget.Toast.makeText(this@TakConnectActivity,
+                        "Aircraft did not accept the change", android.widget.Toast.LENGTH_SHORT).show()
+                    render()
+                }
+            }
+        }
+
+        attachListeners = {
+            system.setOnCheckedChangeListener { _, v ->
+                toggle(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM, v)
+            }
+            rth.setOnCheckedChangeListener { _, v ->
+                toggle(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE, v)
+            }
+            landing.setOnCheckedChangeListener { _, v ->
+                toggle(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT, v)
+            }
+        }
+
+        render()
+        // The state arrives asynchronously after the aircraft syncs, so re-render for a while
+        // rather than leaving "waiting…" on screen until the pilot navigates away and back.
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        var ticks = 0
+        val poll = object : Runnable {
+            override fun run() {
+                render()
+                if (++ticks < 30 && !isFinishing) h.postDelayed(this, 1000)
+            }
+        }
+        h.postDelayed(poll, 1000)
+    }
+
+    private var attachListeners: () -> Unit = {}
 }
 
 // NOTE: TakBridgeHolder lives in AutelTakBridge.kt in this port (it wraps AutelTakBridge).

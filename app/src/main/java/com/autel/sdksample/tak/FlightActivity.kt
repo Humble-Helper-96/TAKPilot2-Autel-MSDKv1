@@ -93,7 +93,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /** Zoom pill state. Screen-scoped like the blueprint's — reopening the flight screen
      *  re-reads reality via the connect-time baseline rather than trusting a saved flag. */
-    private var zoomedIn = false
+    /** Current digital zoom step: 1, 2 or 4. Not a boolean any more — 4X is reachable by
+     *  long-press, so "zoomed in or not" can no longer describe the state. */
+    private var zoomLevel = 1
 
     // ISO/shutter readout cache, refreshed by pollExposureReadout() every ~2s (no push
     // listener exists for these on this SDK).
@@ -125,6 +127,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         MapTileCache.configure(this)
         setContentView(R.layout.activity_flight)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        goFullScreen()
 
         exposureReadout = findViewById(R.id.exposureReadout)
         fpvClock = findViewById(R.id.fpvClock)
@@ -244,8 +247,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             onShootPhotoTapped()
         }
         zoomButton.setOnClickListener {
-            AppLog.v(TAG, "tap: Zoom (currently ${if (zoomedIn) "2X" else "1X"})")
-            onZoomTapped()
+            AppLog.v(TAG, "tap: Zoom (currently ${zoomLevel}X)")
+            // Tap cycles 1X <-> 2X. From 4X it returns to 1X rather than stepping down,
+            // so one tap always gets the pilot back to the widest view.
+            applyZoom(if (zoomLevel == 1) 2 else 1)
+        }
+        zoomButton.setOnLongClickListener {
+            AppLog.v(TAG, "long-press: Zoom (currently ${zoomLevel}X)")
+            applyZoom(if (zoomLevel == 4) 1 else 4)
+            true
         }
         findViewById<ImageButton>(R.id.flightResyncButton).setOnClickListener {
             AppLog.v(TAG, "tap: Video re-sync")
@@ -290,8 +300,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             }
         }
 
-        crosshairView.onReticleTap = { onQuickDropTapped() }
-        crosshairView.onReticleLongPress = { onQuickDropLongPressed() }
+        crosshairView.onReticleTap = { onQuickMarkerAction("tap: reticle") }
+        crosshairView.onReticleLongPress = { onQuickMarkerAction("long-press: reticle") }
 
         VideoStreamerHolder.onStateChanged = Runnable { refreshStreamToggle() }
         refreshStreamToggle()
@@ -334,6 +344,47 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
     }
 
+    /**
+     * Hides the status and navigation bars for the whole flight screen.
+     *
+     * Two reasons, and the second is the operational one:
+     *  1. The bars cost screen the FPV image should have.
+     *  2. The TAK feed is a SCREEN CAPTURE, so the Android status bar was being broadcast to the
+     *     whole team — clock, battery, carrier, and any notification that happened to arrive.
+     *     That is both clutter and a small privacy leak on a shared picture.
+     *
+     * BEHAVIOUR_SHOW_TRANSIENT_BARS_BY_SWIPE, not a hard hide: a pilot must still be able to
+     * reach the bars deliberately, and they slide back away on their own. A screen that cannot
+     * be escaped is the wrong answer on a device that also has to do other things.
+     *
+     * Re-applied in [onWindowFocusChanged] because Android restores the bars after a dialog,
+     * a permission prompt or a screen-off — and this screen shows plenty of dialogs.
+     */
+    @Suppress("DEPRECATION")
+    private fun goFullScreen() {
+        // Legacy systemUiVisibility, NOT WindowInsetsController. This project is on
+        // androidx.appcompat 1.0.0, whose androidx.core predates WindowInsetsControllerCompat,
+        // and bumping androidx across this old dependency set to hide a status bar is a much
+        // bigger risk than using the deprecated call. Deprecated is not broken: these flags are
+        // still honoured through API 33, which is this app's compileSdk.
+        //
+        // IMMERSIVE_STICKY is the deliberate choice over plain IMMERSIVE: the bars come back
+        // transiently on a swipe and hide themselves again, so a pilot can always reach them
+        // and never has to think about restoring the screen afterwards.
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) goFullScreen()
+    }
+
     override fun onResume() {
         super.onResume()
         AppLog.v(TAG, "onResume")
@@ -343,6 +394,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // than a default. No-ops when no camera is attached.
         syncIrStateFromCamera()
         map.onResume()
+        installHardwareButtonListener()
         handler.post(refresh)
     }
 
@@ -350,7 +402,72 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         super.onPause()
         AppLog.v(TAG, "onPause")
         map.onPause()
+        // Dropped while this screen is not showing: the hardware button must not
+        // place markers from the home screen or with the app in the background.
+        runCatching { AutelProductHolder.evo2?.remoteController?.setRemoteButtonControllerListener(null) }
         handler.removeCallbacks(refresh)
+    }
+
+    /**
+     * Maps the CONTROLLER HARDWARE BUTTONS onto the two controls a pilot most wants without
+     * taking a hand off the sticks or hunting for a touch target:
+     *
+     *   C2 (custom B) — the quick marker: place it, or move it to what the camera is on
+     *   C1 (custom A) — zoom: short toggles 1X/2X, long goes to 4X and back to 1X
+     *
+     * Short press  -> place the quick marker ([TakDropMarkers.QUICK_NAME])
+     * Long press   -> re-aim the existing one at what the camera is looking at now
+     *
+     * Deliberately the SAME two functions the reticle already offers, so the two routes cannot
+     * drift apart — and both go through the red-reticle gate, so a hardware button cannot place
+     * a marker the touch UI would have refused.
+     *
+     * ⚠ WHICH PHYSICAL BUTTON IS UNCONFIRMED. The SDK exposes only CUSTOM_BUTTON_{SHORT,LONG}_A
+     * and _B — there is no "C1"/"C2" in its vocabulary — and nothing documents which label maps
+     * to which letter. [QUICK_MARKER_BUTTON] is set to B as the working assumption for C2; EVERY
+     * event received is logged, so one press tells us the truth and the constant is a one-line
+     * correction. Guessing silently is how the wrong button ends up wired.
+     *
+     * Registered per-screen rather than globally: it is dropped in onPause so the button cannot
+     * place markers from the home screen or with the app in the background.
+     */
+    private fun installHardwareButtonListener() {
+        val rc = AutelProductHolder.evo2?.remoteController ?: return
+        runCatching {
+            rc.setRemoteButtonControllerListener(
+                object : com.autel.common.CallbackWithOneParam<
+                    com.autel.common.remotecontroller.RemoteControllerNavigateButtonEvent> {
+                    override fun onSuccess(
+                        e: com.autel.common.remotecontroller.RemoteControllerNavigateButtonEvent?,
+                    ) {
+                        e ?: return
+                        // Logged unconditionally — this is how the button mapping gets confirmed,
+                        // and how anyone later finds out what the other controls emit.
+                        AppLog.i(TAG, "controller button event: $e")
+                        // SDK thread — everything below shows toasts and touches views.
+                        when (e.name) {
+                            // C2: the quick marker. Short and long do the SAME thing, because
+                            // there is only ever one E419 — see onQuickMarkerAction.
+                            "CUSTOM_BUTTON_SHORT_$QUICK_MARKER_BUTTON",
+                            "CUSTOM_BUTTON_LONG_$QUICK_MARKER_BUTTON" ->
+                                runOnUiThread { onQuickMarkerAction("controller C2") }
+
+                            // C1: zoom, MIRRORING the on-screen zoom button exactly — short
+                            // toggles 1X/2X, long goes to 4X and back to 1X. A pilot who has
+                            // learned one control has learned the other, and both routes end in
+                            // applyZoom() so the button label and the camera cannot disagree.
+                            "CUSTOM_BUTTON_SHORT_$ZOOM_BUTTON" ->
+                                runOnUiThread { applyZoom(if (zoomLevel == 1) 2 else 1) }
+                            "CUSTOM_BUTTON_LONG_$ZOOM_BUTTON" ->
+                                runOnUiThread { applyZoom(if (zoomLevel == 4) 1 else 4) }
+                        }
+                    }
+                    override fun onFailure(error: AutelError?) {
+                        AppLog.w(TAG, "controller button listener error: ${error?.description}")
+                    }
+                })
+            AppLog.i(TAG, "hardware quick-marker button armed (custom button $QUICK_MARKER_BUTTON)")
+        }.onFailure { AppLog.w(TAG, "hardware button listener install failed: ${it.message}") }
     }
 
     /**
@@ -1066,41 +1183,33 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * exists, say so rather than moving it: a tap that sometimes places and sometimes moves is
      * a gesture the pilot can't predict the result of.
      */
-    private fun onQuickDropTapped() {
-        AppLog.v(TAG, "tap: reticle (quick drop)")
-        if (aimTooPoorToDrop()) { refuseDropForAim(); return }
-        if (TakDropMarkers.quickPin() != null) {
-            toast("${TakDropMarkers.QUICK_NAME} already placed — long-press the reticle to re-aim it")
-            return
-        }
-        val look = TakBridgeHolder.lookPoint()
-        if (look == null) {
-            AppLog.w(TAG, "quick drop refused — no look point (GPS/gimbal not ready)")
-            toast("Can't drop a marker yet — waiting on GPS + gimbal")
-            return
-        }
-        val (lat, lon, elev) = look
-        if (TakDropMarkers.placeQuick(lat, lon, elev)) {
-            showNotice("${TakDropMarkers.QUICK_NAME} dropped")
-        }
-    }
-
     /**
-     * Long-press the reticle — re-aim the quick marker at whatever the camera is on now,
-     * keeping its uid so it moves in place on every other TAK client. Places it if there isn't
-     * one yet, rather than scolding the pilot for the wrong gesture: both gestures then mean
-     * "the marker belongs where I'm looking", which is the only thing this feature does.
+     * The quick marker — place it, or move it if it already exists. ONE action.
+     *
+     * There was a short-press-places / long-press-re-aims split. It was a distinction without a
+     * difference: [TakDropMarkers.QUICK_NAME] is a SINGLETON, so "place" and "move" are the same
+     * intent — "the marker belongs where I am looking" — and the only thing the split achieved
+     * was a scolding toast when the pilot used the wrong gesture on a marker that already
+     * existed. Simplified at the operator's call after flying it.
+     *
+     * Every route now calls this: reticle touch, reticle touch-and-hold, and both presses of the
+     * controller's custom button. Which gesture the pilot uses genuinely does not matter, which
+     * is the point — there is nothing left to remember or get wrong mid-flight.
+     *
+     * @param source only for the log, so a press can be traced back to the control that sent it.
      */
-    private fun onQuickDropLongPressed() {
-        AppLog.v(TAG, "long-press: reticle (quick drop re-aim)")
+    private fun onQuickMarkerAction(source: String) {
+        AppLog.v(TAG, "$source: quick marker")
         if (aimTooPoorToDrop()) { refuseDropForAim(); return }
         val look = TakBridgeHolder.lookPoint()
         if (look == null) {
-            AppLog.w(TAG, "quick drop re-aim refused — no look point (GPS/gimbal not ready)")
-            toast("Can't move the marker yet — waiting on GPS + gimbal")
+            AppLog.w(TAG, "quick marker refused — no look point (GPS/gimbal not ready)")
+            toast("Can't place the marker yet — waiting on GPS + gimbal")
             return
         }
         val (lat, lon, elev) = look
+        // Move first: moveQuick keeps the uid, so the marker slides in place on every other TAK
+        // client rather than the team seeing a delete and a new contact.
         if (TakDropMarkers.moveQuick(lat, lon, elev)) {
             showNotice("${TakDropMarkers.QUICK_NAME} re-aimed")
         } else if (TakDropMarkers.placeQuick(lat, lon, elev)) {
@@ -1282,10 +1391,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
-    private fun onZoomTapped() {
+    private fun applyZoom(level: Int) {
         val cam = AutelProductHolder.xt706
         if (cam == null) {
-            AppLog.w(TAG, "zoom ignored — camera not connected (or not an XT70x)")
+            AppLog.w(TAG, "zoom ${level}X ignored — camera not connected (or not an XT70x)")
             toast("Aircraft camera not connected")
             return
         }
@@ -1295,12 +1404,16 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             toast("Camera still initialising — try again in a moment")
             return
         }
-        val target = if (zoomedIn) base else base * 2
+        // Everything is RELATIVE to the baseline read at connect, so the SDK's raw units
+        // (measured as x100) cancel out and 4X needs no new assumption about them.
+        val target = base * level
         cam.setDigitalZoomScale(target, camCb("setDigitalZoomScale($target)") {
-            zoomedIn = !zoomedIn
-            zoomButton.text = if (zoomedIn) "2X" else "1X"
-            TakBridgeHolder.setLiveZoom(if (zoomedIn) 2.0 else 1.0)
-            AppLog.i(TAG, "zoom now ${if (zoomedIn) "2X" else "1X"} (raw=$target)")
+            zoomLevel = level
+            zoomButton.text = "${level}X"
+            // The published FOV cone and the AR projection both narrow with zoom, so
+            // they must be told — otherwise AR markers drift as the pilot zooms.
+            TakBridgeHolder.setLiveZoom(level.toDouble())
+            AppLog.i(TAG, "zoom now ${level}X (raw=$target)")
         })
     }
 
@@ -1537,32 +1650,54 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * trying to prevent.
      */
     /**
-     * True when the reticle is RED — the look angle is too shallow (or too near level) for a
-     * marker drop to mean anything.
+     * Why a marker may NOT be placed right now, or null if it may.
      *
-     * Deliberately reuses [CrosshairView.accuracyColorFor], the same call that tints the reticle
-     * and the gimbal readout, rather than re-deriving a threshold. Three places now agree by
-     * construction; a fourth opinion about "how shallow is too shallow" would eventually drift
-     * from the other three and the pilot would see a red reticle accept a drop.
+     * Returns a REASON rather than a boolean so the pilot is told which rule stopped them.
+     * "The app did nothing" is the failure mode that makes people press harder and then stop
+     * trusting the control.
      *
-     * Why block rather than warn: ground error scales as 1/sin²(pitch), so red is not "slightly
-     * worse" — at 200ft AGL it is hundreds of feet, and above the horizon there is no ground
-     * intersection at all (the solver falls back to a fixed 300m guess). A marker placed there
-     * is fiction that the TAK team cannot distinguish from a real one, and they will act on it.
+     * Two independent rules, both about whether a computed ground point means anything:
+     *
+     *  1. **Look angle.** Asks [CrosshairView.accuracyColorFor] — the SAME call that tints the
+     *     reticle — so "red reticle" and "drop refused" can never disagree. A separate threshold
+     *     here would eventually drift and the pilot would see a red reticle accept a drop.
+     *  2. **Height above ground.** Below [MIN_DROP_AGL_FT] the geometry is worthless: ground
+     *     range is height / tan(pitch), so as height goes to zero the solved point collapses
+     *     onto the aircraft's own position no matter where the camera looks. A marker placed on
+     *     take-off or during landing would land on the pilot, and it would look deliberate to
+     *     everyone receiving it.
+     *
+     * Uses the same AGL the HUD shows — terrain-corrected where DTED covers the aircraft,
+     * otherwise height above the take-off point — so the number the pilot reads is the number
+     * being judged.
      */
-    private fun aimTooPoorToDrop(): Boolean {
-        val hud = TakBridgeHolder.hud()
-        val pitch = hud?.gimbalPitch ?: return true    // no attitude = no basis to trust a drop
+    private fun dropRefusalReason(): String? {
+        val hud = TakBridgeHolder.hud() ?: return "waiting on GPS + gimbal"
+        val pitch = hud.gimbalPitch ?: return "waiting on GPS + gimbal"
+
+        val aglFt = Units.metersToFeet(TerrainAgl.reading(this, hud).meters)
+        if (aglFt < MIN_DROP_AGL_FT) {
+            return "too low — climb above ${MIN_DROP_AGL_FT.toInt()} ft AGL to place a marker"
+        }
+
         val dtedAvailable = hud.hasFix &&
             DtedIndex.elevationAt(this, hud.lat, hud.lon) != null
-        return CrosshairView.accuracyColorFor(pitch, dtedAvailable) ==
-            CrosshairView.accuracyPoorColor
+        if (CrosshairView.accuracyColorFor(pitch, dtedAvailable) ==
+            CrosshairView.accuracyPoorColor) {
+            return "look angle too shallow — tilt the gimbal down"
+        }
+        return null
     }
 
-    /** Shared refusal, so both drop paths give the pilot the same reason. */
+    /** True when a marker must not be placed. Kept as a predicate for the call sites that only
+     *  need the yes/no; the reason itself comes from [dropRefusalReason]. */
+    private fun aimTooPoorToDrop(): Boolean = dropRefusalReason() != null
+
+    /** Shared refusal, so every drop route gives the pilot the same — and specific — reason. */
     private fun refuseDropForAim() {
-        AppLog.w(TAG, "marker drop refused — look angle in the red (accuracy cue POOR)")
-        toast("Look angle too shallow — tilt the gimbal down before dropping a marker")
+        val why = dropRefusalReason() ?: return
+        AppLog.w(TAG, "marker drop refused — $why")
+        toast("Can't place a marker: $why")
     }
 
     private fun updateGimbalPitch(hud: AutelTakBridge.Hud?) {
@@ -1871,6 +2006,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     companion object {
         private const val TAG = "FlightActivity"
+
+        /** Which SDK custom button drives the quick marker: "A" or "B". Set from the
+         *  logged event after a press — see installHardwareButtonListener. */
+        /** Controller custom buttons, in the SDK's vocabulary. It has no notion of the
+         *  physical "C1"/"C2" labels — the mapping below was confirmed on hardware
+         *  2026-08-02 by logging the events a press actually emits. */
+        private const val QUICK_MARKER_BUTTON = "B"   // physical C2
+        private const val ZOOM_BUTTON = "A"           // physical C1
+
+        /** Minimum height above ground for a marker drop, feet. Below this the slant
+         *  solve degenerates onto the aircraft's own position — see dropRefusalReason. */
+        private const val MIN_DROP_AGL_FT = 25.0
 
         /** 24-hour clock with seconds, for the HUD. Held as one instance rather than
          *  built per tick — updateHud runs twice a second for the whole flight. */

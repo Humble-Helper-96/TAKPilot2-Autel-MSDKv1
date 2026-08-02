@@ -95,7 +95,15 @@ object TakMapMarkers {
         iconKeys.clear()
         try {
             for (s in savedMarkers.values) if (!hidden.contains(s.uid)) upsert(s.toUser())
-            for (user in TakManager.getInstance().takUsers) upsert(user)
+            for (user in TakManager.getInstance().takUsers) {
+                // Same ADS-B ceiling the AR overlay applies — a target on one view and
+                // not the other would be worse than either rule on its own.
+                if (ArSettings.isAboveAirTrafficCeiling(user.type, user.alt)) {
+                    remove(user.uid)     // may already be on the map from below the ceiling
+                    continue
+                }
+                upsert(user)
+            }
         } catch (e: Exception) {
             AppLog.w(TAG, "resync failed: ${e.message}")
         }

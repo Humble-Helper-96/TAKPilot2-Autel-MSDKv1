@@ -38,6 +38,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var aircraft: TextView
     private lateinit var aircraftImage: ImageView
+    private lateinit var avoidance: TextView
     private lateinit var sdk: TextView
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
@@ -61,6 +62,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
 
         aircraft = findViewById(R.id.homeAircraft)
         aircraftImage = findViewById(R.id.homeAircraftImage)
+        avoidance = findViewById(R.id.homeAvoidance)
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
@@ -145,6 +147,25 @@ class TakPilotHomeActivity : AppCompatActivity() {
         // cue rather than decoration. INVISIBLE rather than GONE — see the layout note:
         // collapsing it would move "TAP TO ENTER" every time the aircraft comes and goes.
         aircraftImage.visibility = if (product != null) View.VISIBLE else View.INVISIBLE
+
+        // Obstacle avoidance, reported the moment the aircraft syncs.
+        //
+        // THREE STATES, NOT TWO. "Unknown" is shown as its own thing rather than collapsed into
+        // "off", because a pilot reading "AVOIDANCE OFF" will act on it, and telling them the
+        // system is off when we simply have not been told yet would be a lie with consequences.
+        // Amber for unknown, red for genuinely disabled, green for on.
+        avoidance.text = when {
+            product == null -> ""
+            AutelAvoidance.systemEnabled == true -> "OBSTACLE AVOIDANCE: ON"
+            AutelAvoidance.systemEnabled == false -> "OBSTACLE AVOIDANCE: OFF"
+            else -> "OBSTACLE AVOIDANCE: —"
+        }
+        avoidance.setTextColor(
+            when (AutelAvoidance.systemEnabled) {
+                true -> Color.parseColor("#4CAF50")
+                false -> Color.parseColor("#F44336")
+                null -> Color.parseColor("#FFB300")
+            })
         sdk.text = "Autel MSDK " + (runCatching { Autel.getSdkVersion() }.getOrNull() ?: "1.5")
 
         val connected = TakManager.getInstance().isConnected

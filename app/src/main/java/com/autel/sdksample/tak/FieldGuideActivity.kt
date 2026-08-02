@@ -322,6 +322,9 @@ class FieldGuideActivity : AppCompatActivity() {
                 "If the ring of the crosshair is red, the app does not put the marker. The " +
                     "angle of the camera is too small for an accurate position. Point the " +
                     "camera down more.",
+                "If the aircraft is less than 25 ft above the ground, the app does not put " +
+                    "the marker. Near the ground the app cannot calculate a position: the " +
+                    "marker would go to the position of the aircraft. Climb higher.",
                 "If you move, rename or change the type of a marker, the app changes the " +
                     "same marker on the screens of your team. It does not make a second one.",
                 "If you delete a marker, the app removes it from your screen only. It stays " +
@@ -375,8 +378,18 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
             "Zoom",
-            "This button changes the camera between the normal view and the 2X view. It " +
-                "changes the camera image. Your team sees the same view in the video.",
+            "This button changes the zoom of the camera. Touch it to change between 1X " +
+                "and 2X. Touch and hold it for 4X. From 4X, a touch or a touch-and-hold " +
+                "goes back to 1X.\n\n" +
+                "The C1 button on the controller does the same thing. A short press " +
+                "changes between 1X and 2X. A long press gives 4X.\n\n" +
+                "The zoom changes the camera image. Your team sees the same view in the " +
+                "video.",
+            listOf(
+                "This zoom is digital. It makes the image larger, but it does not add " +
+                    "detail. For an accurate marker, fly nearer. Do not use the zoom from " +
+                    "a long distance.",
+            ),
         )
 
         entry(
@@ -455,8 +468,10 @@ class FieldGuideActivity : AppCompatActivity() {
                 "GREEN: 30° down or more. The error is about 50 ft.\n" +
                 "YELLOW: 15° to 30° down. The error is about 100 ft.\n\n" +
                 "RED: less than the yellow angle. THE APP DOES NOT PUT A MARKER. Point the " +
-                "camera down more, or fly nearer. This applies to the marker button and " +
-                "to the crosshair.\n\n" +
+                "camera down more, or fly nearer. This applies to the marker button, the " +
+                "crosshair and the button on the controller.\n\n" +
+                "The app also does not put a marker if the aircraft is less than 25 ft " +
+                "above the ground.\n\n" +
                 "When the camera is near horizontal, a small error in the angle moves the " +
                 "marker a long distance on the ground. A steep angle is more accurate than a " +
                 "view from a long distance. If the position of a marker is important, fly " +
@@ -485,10 +500,11 @@ class FieldGuideActivity : AppCompatActivity() {
             "Touch the crosshair to put a marker immediately. The app does not ask you " +
                 "questions. The type is always Unknown and the name is always " +
                 "${TakDropMarkers.QUICK_NAME}. Your team can identify it quickly.\n\n" +
-                "There is only one quick marker. To move it, point the camera at the new " +
-                "target and touch and hold the crosshair. The marker moves on the screens of " +
-                "all your team. If you touch the crosshair again, the app does not put a " +
-                "second marker.\n\n" +
+                "There is only one quick marker. Point the camera at a new target and " +
+                "touch the crosshair again: the marker MOVES to the new target. It moves " +
+                "on the screens of all your team. The app does not put a second marker.\n\n" +
+                "You can also touch and hold the crosshair, or press the C2 button on the " +
+                "controller. All of them do the same thing.\n\n" +
                 "Use the quick marker to show your team what you look at now. To keep a " +
                 "record of a position, use the marker button. With that button you can set a " +
                 "name and a type.",

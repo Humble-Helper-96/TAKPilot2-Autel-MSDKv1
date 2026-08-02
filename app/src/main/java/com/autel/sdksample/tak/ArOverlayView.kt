@@ -295,6 +295,9 @@ class ArOverlayView @JvmOverloads constructor(
             // air traffic is worth seeing well past the range a ground marker is.
             val category = ArSettings.categoryFor(u.uid, u.type)
             if (!ArSettings.isEnabled(context, category)) { skipped++; continue }
+            // High-altitude traffic is clutter for a UAS below 400ft — see the ceiling's
+            // doc. Shared with the map so both views show the same picture.
+            if (ArSettings.isAboveAirTrafficCeiling(u.type, u.alt)) { skipped++; continue }
 
             val groundDist = CameraSlantPoint.distanceMeters(hud.lat, hud.lon, lat, lon)
             if (groundDist > ArSettings.rangeMeters(context, category)) { skipped++; continue }

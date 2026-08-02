@@ -259,6 +259,7 @@ object AutelProductHolder {
                 TakBridgeHolder.onProductConnected()
                 installCameraListener()
                 unlockUpwardGimbal()
+                AutelAvoidance.onProductConnected()
                 // Bring the foreground service up as soon as we hold the aircraft, whether or
                 // not TAK is connected. This is NOT about keeping anything alive: Android only
                 // delivers onTaskRemoved to RUNNING services, and that callback is the only
@@ -280,6 +281,7 @@ object AutelProductHolder {
                 camera = null
                 isRecording = false
                 TakBridgeHolder.onProductDisconnected()
+                AutelAvoidance.onProductDisconnected()
                 notifyAll(false)
             }
         }

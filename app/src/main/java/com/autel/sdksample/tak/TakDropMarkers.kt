@@ -77,7 +77,34 @@ object TakDropMarkers {
     }
     @Volatile var ui: Ui? = null
 
-    fun init(context: Context) { appContext = context.applicationContext; load() }
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        // Resolve the callsign HERE, not lazily on first read. It used to be picked on first
+        // access, which left a window where appContext was still null and the getter returned a
+        // fallback — and a marker created in that window kept the wrong name permanently,
+        // because pin names are persisted. Observed on hardware 2026-08-02.
+        AppLog.i(TAG, "quick marker callsign: $QUICK_NAME")
+        load()
+        healQuickPinName()
+    }
+
+    /**
+     * Brings a saved quick pin's label into line with this install's callsign.
+     *
+     * Needed because the label is stored ON the pin: a marker placed before the callsign was
+     * resolved (or carried over from a build that used a fixed name) would otherwise keep the
+     * old label for ever, which is exactly the confusion the per-install callsign exists to
+     * prevent. Keeps the pin's uid, so when it is next sent the team sees the SAME marker
+     * relabelled rather than a second one appearing.
+     */
+    private fun healQuickPinName() {
+        val pin = pins.values.firstOrNull { it.quick } ?: return
+        if (pin.name == QUICK_NAME) return
+        AppLog.i(TAG, "quick marker relabelled: '${pin.name}' -> '$QUICK_NAME'")
+        pin.name = QUICK_NAME
+        save()
+        redrawPin(pin)
+    }
 
     /** Called by TakMapMarkers when the osmdroid map is ready. Wires tap handling + redraws. */
     fun onMapReady(readyMap: MapView) {
@@ -219,7 +246,58 @@ object TakDropMarkers {
 
     /** The quick marker's fixed callsign — same string as the blueprint, so the team learns to
      *  recognise one "what I'm looking at right now" marker across both airframes. */
-    const val QUICK_NAME = "E419"
+    /**
+     * Callsign pool for the quick marker. One is drawn at random on first run and kept for the
+     * life of the install — see [quickName].
+     *
+     * The point is TEAM LEGIBILITY across multiple aircraft. Every install used to place a
+     * marker with the same fixed name, so two aircraft flying together put two identically
+     * labelled markers on the shared map and nobody could tell whose was whose without opening
+     * each one. A per-install callsign makes them distinguishable at a glance.
+     *
+     * Format is one letter and three digits, deliberately uniform so the labels read as a set
+     * and stay short enough to sit under a map icon without crowding it. The letter "H" is not
+     * used anywhere in the pool.
+     */
+    private val QUICK_CALLSIGNS = listOf(
+        "E419", "B312", "B320", "A259", "A266", "A239",
+        "K023", "B022", "V933", "C709", "F201", "I101",
+        "D042", "J092", "A130", "F104", "K087", "L058",
+        "S052", "S034", "S051", "M310", "G227", "N379",
+    )
+
+    private const val KEY_QUICK_CALLSIGN = "quick_marker_callsign"
+
+    /**
+     * This install's quick-marker callsign. Chosen once, then persisted — the same reasoning as
+     * the operator uid: an identity that changes under the team is worse than a dull one.
+     *
+     * Falls back to the first entry if there is no context yet, so a caller that runs before
+     * [init] still gets a usable label rather than an empty string.
+     */
+    val QUICK_NAME: String
+        get() {
+            cachedQuickName?.let { return it }
+            val ctx = appContext ?: run {
+                // Should not happen: init() resolves this. Loud, because silently
+                // handing back a pool member here is what let a marker be created
+                // with a name this install never actually drew.
+                AppLog.w(TAG, "quick marker callsign read before init — using fallback")
+                return QUICK_CALLSIGNS.first()
+            }
+            val prefs = ctx.getSharedPreferences(PREFS_CALLSIGN, Context.MODE_PRIVATE)
+            var name = prefs.getString(KEY_QUICK_CALLSIGN, null)
+            if (name == null || name !in QUICK_CALLSIGNS) {
+                name = QUICK_CALLSIGNS.random()
+                prefs.edit().putString(KEY_QUICK_CALLSIGN, name).apply()
+                AppLog.i(TAG, "quick marker callsign for this install: $name")
+            }
+            cachedQuickName = name
+            return name
+        }
+
+    @Volatile private var cachedQuickName: String? = null
+    private const val PREFS_CALLSIGN = "takpilot2_quickmarker"
 
     /** The one reticle-tap pin, or null. Exactly one may exist at a time — that is the whole
      *  point: it's a live pointer the pilot keeps re-aiming, not a trail of numbered pins. */

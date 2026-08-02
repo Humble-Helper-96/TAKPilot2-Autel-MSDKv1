@@ -184,6 +184,11 @@
                 android:text="—" android:layout_gravity="center_horizontal" />
             <TextView android:id="@+id/homeSdk" style="@style/homeCardSub"
                 android:text="MSDK —" android:layout_gravity="center_horizontal" />
+            <!-- Obstacle avoidance. Blank until the aircraft reports, because "unknown"
+                 and "disabled" must not look the same to a pilot. -->
+            <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="6dp" android:textStyle="bold" />
         </LinearLayout>
 
         <!-- Aircraft picture. Fills the dead space between the SDK line and the tap hint, and

@@ -70,6 +70,37 @@ object ArSettings {
     /** Set by the operator's METAR gateway as `METAR-<ICAO>`; see its runbook. */
     private const val METAR_UID_PREFIX = "METAR-"
 
+    /**
+     * ADS-B ceiling: air traffic reported ABOVE this is not drawn, on the map or in AR.
+     *
+     * A UAS operating below 400ft AGL cannot be deconflicted from an airliner at altitude, so
+     * drawing it is clutter that competes for attention with the traffic that does matter —
+     * helicopters, other UAS, and anything on approach.
+     *
+     * ⚠ THIS IS MSL, NOT AGL, because MSL is what ADS-B actually reports. Converting to AGL
+     * would need a terrain lookup at each contact's position, and would silently change meaning
+     * wherever DTED is missing. At the operator's field (~590ft ground) 3000ft MSL is about
+     * 2400ft AGL. Somewhere mountainous, the same number sits much lower above the ground —
+     * worth knowing before flying this in different terrain.
+     *
+     * Contacts with no usable altitude are NOT filtered: an unknown altitude is not evidence of
+     * a high one, and silently dropping traffic we cannot measure is the wrong way to fail.
+     */
+    const val AIR_TRAFFIC_CEILING_FT = 3000.0
+    private const val AIR_TRAFFIC_CEILING_M = AIR_TRAFFIC_CEILING_FT * 0.3048
+
+    /**
+     * True if this contact is air traffic above [AIR_TRAFFIC_CEILING_FT] and should be hidden.
+     *
+     * Shared by the AR overlay and the map so the two can never disagree about what is on
+     * screen — a target visible in one and not the other is worse than either rule alone.
+     */
+    fun isAboveAirTrafficCeiling(type: String?, altMeters: Double): Boolean {
+        if (!TakMapMarkers.isAirTrack(type)) return false
+        if (!altMeters.isFinite() || altMeters == 0.0) return false   // unknown, so keep it
+        return altMeters > AIR_TRAFFIC_CEILING_M
+    }
+
     /** Statute, not nautical. The whole app displays imperial (see `Units.kt`) and mixing the
      *  two units of "mile" in a pilot-facing menu is exactly how a range gets misread. */
     private const val METERS_PER_MILE = 1609.344
