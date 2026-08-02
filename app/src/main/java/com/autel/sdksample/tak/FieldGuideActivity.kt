@@ -253,6 +253,9 @@ class FieldGuideActivity : AppCompatActivity() {
                 "Look at the bars as the aircraft flies away from you. If the bars decrease, " +
                     "fly the aircraft nearer. If the aircraft loses the signal, it does the " +
                     "failsafe action and you cannot control it.",
+                "If the bars stay grey when the aircraft is connected, close the Autel " +
+                    "Explorer app. Only one app at a time can read the signal from the " +
+                    "controller. Everything else continues to operate.",
             ),
         )
 

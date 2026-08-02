@@ -98,11 +98,29 @@ dependencies {
     // this project is on Kotlin 1.7.20, so a more current Room release is fine.
     implementation "androidx.room:room-runtime:2.4.3"
     kapt "androidx.room:room-compiler:2.4.3"
-    //    compile autelSdkDependencies.okIO
-//    api 'io.reactivex.rxjava2:rxjava:2.1.2'
-//    api 'io.reactivex.rxjava2:rxandroid:2.0.1'
-//    api files('libs/commons-codec-1.5.jar')
-//    api 'org.greenrobot:eventbus:3.0.0'
+    // --- Autel SDK transitive dependencies ---
+    // autel-sdk-release.aar is a LOCAL file dependency, so Gradle resolves NOTHING transitively
+    // for it — everything the SDK needs at runtime has to be declared here by hand. These four
+    // were commented out at some point and the app crashed on the FIRST AIRCRAFT CONNECT with
+    // NoClassDefFoundError: io.reactivex.Observable (2026-08-02).
+    //
+    // Nothing in the app's own code touches them, and no UI path reaches them, which is why it
+    // ran fine for weeks: the trigger is SDKInitHelper.initProduct -> CameraManager.init, which
+    // only happens once an aircraft is talking to the controller.
+    //
+    // Counts are classes inside the aar referencing each package — measured, not assumed.
+    // Versions are the ones Autel's own sample declared, i.e. what the SDK was built against.
+    implementation 'io.reactivex.rxjava2:rxjava:2.1.2'          // 829 classes reference it
+    implementation 'io.reactivex.rxjava2:rxandroid:2.0.1'       // 1
+    implementation 'org.greenrobot:eventbus:3.0.0'              // 3
+    // okhttp3 (33) and gson (46) are also referenced and already declared above.
+    //
+    // commons-codec is deliberately NOT declared, despite also being referenced: the aar
+    // SHIPS it in its own internal libs/ (alongside httpclient-4.2.5 and httpcore-4.2.4), so
+    // adding the Maven artifact fails the build with duplicate-class errors. "Referenced by
+    // the aar" and "missing from the build" are different questions — check the aar's libs/
+    // before adding anything here.
+
     implementation 'com.google.code.gson:gson:2.8.7'
 //    api "androidx.annotation:annotation:1.0.0"
 }

@@ -1032,15 +1032,40 @@ class TakConnectActivity : AppCompatActivity() {
      *  like the button did nothing. */
     private var pendingLocationTarget: Pair<Int, Int> = R.id.uasfmLat to R.id.uasfmLon
 
+    /**
+     * Fills a centre lat/lon from the best position available.
+     *
+     * **Aircraft first, controller second.** The aircraft is the better source whenever it is
+     * connected: its GNSS is running by definition, it is the thing whose airspace you are
+     * downloading, and on this hardware the controller's receiver is frequently not running at
+     * all (see below).
+     *
+     * The controller's GPS is a genuine trap. `getLastKnownLocation()` only reads a CACHE, and
+     * nothing populates that cache unless something has called `requestLocationUpdates()`. On a
+     * Smart Controller where no app has done so, `dumpsys location` shows the gps provider with
+     * `mStarted=false`, `request=OFF`, `last location=null` — permanently, outdoors included.
+     * The old message here told the pilot to "go outside for a moment", which was confidently
+     * wrong advice for a receiver that was never switched on (found with the aircraft connected
+     * outdoors, 2026-08-02).
+     */
     private fun fillCentreFromLocation(
         latId: Int = pendingLocationTarget.first,
         lonId: Int = pendingLocationTarget.second,
     ) {
-        val loc = lastKnownPhoneLocation()
+        val hud = TakBridgeHolder.hud()
+        val loc: Pair<Double, Double>? = when {
+            hud != null && hud.hasFix -> {
+                AppLog.i(TAG, "centre from AIRCRAFT position")
+                hud.lat to hud.lon
+            }
+            else -> lastKnownPhoneLocation()?.also {
+                AppLog.i(TAG, "centre from CONTROLLER position")
+            }
+        }
         if (loc == null) {
             Toast.makeText(
                 this,
-                "No GPS fix yet — go outside for a moment, or type the centre manually",
+                "No position available — connect the aircraft, or type the centre manually",
                 Toast.LENGTH_LONG,
             ).show()
             return

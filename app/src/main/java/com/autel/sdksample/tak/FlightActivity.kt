@@ -665,12 +665,33 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         return buckets.minByOrNull { kotlin.math.abs(it - pct) } ?: 0
     }
 
-    /** Tap on the signal indicator — reports the uncoarsened figure and where it comes from. */
+    /**
+     * Tap on the signal indicator — reports the uncoarsened figure, or explains its absence.
+     *
+     * The "close Autel Explorer" case is not a guess. The RC message channel that carries
+     * signal strength and controller battery is SINGLE-CLIENT: while Explorer (or its
+     * background service) holds it, our `setInfoDataListener` registers cleanly and then never
+     * fires — no callback, no error. Aircraft telemetry keeps working throughout, because that
+     * travels the RNDIS link rather than the controller's MCU bus, so the failure looks like
+     * "only the signal bars are broken".
+     *
+     * Diagnosed on hardware 2026-08-02: with Explorer running, sig=-% indefinitely; force-stop
+     * Explorer and the same build reports sig=100% rcBat=78%, matching what Explorer itself had
+     * been showing. Worth stating in the toast because the symptom gives a pilot no way to
+     * guess the cause.
+     */
     private fun signalDetail() {
         val pct = TakBridgeHolder.hud()?.uplinkSignalPct
         AppLog.v(TAG, "tap: signal bars (pct=${pct ?: "-"})")
-        toast(if (pct != null) "Controller link: $pct%"
-              else "No link reading yet — connect the aircraft.")
+        toast(
+            when {
+                pct != null -> "Controller link: $pct%"
+                AutelProductHolder.isConnected ->
+                    "No link reading. Close Autel Explorer if it is open — only one app at a " +
+                        "time can read the controller's signal."
+                else -> "No link reading yet — connect the aircraft."
+            }
+        )
     }
 
     /**
