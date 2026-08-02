@@ -72,7 +72,18 @@ dependencies {
     //*
     //implementation project(':sdk')
 
-    implementation(name: "autel-sdk-release", ext: "aar")
+    // NOT the vendor aar -- a PATCHED copy of it. autel-sdk-release.aar sits beside this one,
+    // pristine and committed, and is still the source of truth; the -xl726 variant is generated
+    // from it by buildsystem/patch-autel-sdk-camera-id.py.
+    //
+    // The patch repoints one camera-model alias (XL719 -> XL726) so this SDK can identify the
+    // EVO II 640T V3's camera at all. Without it the SDK reports CameraProduct.UNKNOWN, hands
+    // back a placeholder UnknownCamera, and EVERY camera command fails. No published Autel SDK
+    // knows XL726 -- all three of their public repos were checked. Full reasoning, the evidence,
+    // and the "genuine XL719 hardware no longer works" caveat are at the top of that script.
+    //
+    // Regenerate after any change to the vendor aar:  python3 buildsystem/patch-autel-sdk-camera-id.py
+    implementation(name: "autel-sdk-release-xl726", ext: "aar")
 
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.7.20"
     //noinspection GradleCompatible

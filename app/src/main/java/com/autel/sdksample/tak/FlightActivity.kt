@@ -21,6 +21,7 @@ import com.autel.common.camera.XT706.DisplayMode
 import com.autel.common.camera.base.MediaMode
 import com.autel.common.camera.XT706.IrColor
 import com.autel.common.error.AutelError
+import com.autel.sdk.camera.AutelBaseCamera
 import com.autel.sdk.widget.AutelCodecView
 import com.autel.sdksample.R
 import com.taklite.client.tak.TakManager
@@ -77,7 +78,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var toolbarBattery: BatteryGaugeView
     private lateinit var toolbarGps: TextView
     private lateinit var rthButton: ImageButton
+    private lateinit var shootPhotoButton: ImageButton
+
     private var codecView: AutelCodecView? = null
+
+    /** Aspect ratio (w/h) of the frames the camera is currently sending; 0 until the first
+     *  frame. Changes when the pilot switches photo/video/IR — see [armVideoFill]. */
+    private var videoAspect: Float = 0f
     private var aircraftMarker: Marker? = null
     private var homeMarker: Marker? = null
     private var homeLine: Polyline? = null
@@ -160,7 +167,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         // Live video, full screen behind everything.
         val container = findViewById<FrameLayout>(R.id.videoContainer)
-        codecView = AutelCodecView(this).also { container.addView(it) }
+        codecView = AutelCodecView(this).also { container.addView(it); armVideoFill(it) }
 
         // Locked TAK mini-map. Pan/fling/double-tap-zoom are blocked inside [LockedMapView];
         // these two calls kill the remaining interactive affordances (pinch-zoom and the
@@ -228,7 +235,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Same long-press idiom as RTH (reset home) and drop-pin (markers list).
         arButton.setOnLongClickListener { onArOptionsTapped(); true }
         refreshArButton()
-        findViewById<ImageButton>(R.id.flightShootPhotoButton).setOnClickListener {
+        shootPhotoButton = findViewById(R.id.flightShootPhotoButton)
+        shootPhotoButton.setOnClickListener {
             AppLog.v(TAG, "tap: Photo")
             onShootPhotoTapped()
         }
@@ -427,6 +435,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // press — so a record that failed to start, or stopped itself (card full/removed),
         // shows truthfully within a tick.
         recordToggle.setRecording(AutelProductHolder.isRecording)
+        // Shutter is locked out while recording. Shooting a still mid-record would drag the
+        // camera through VIDEO -> SINGLE -> VIDEO underneath a running recording — which at best
+        // jumps the picture the pilot and the whole TAK team are watching, and at worst
+        // interrupts the recording itself. Greyed rather than hidden so the control does not
+        // move around under the pilot's thumb.
+        shootPhotoButton.isEnabled = !AutelProductHolder.isRecording
+        shootPhotoButton.alpha = if (AutelProductHolder.isRecording) 0.4f else 1f
         if (AutelProductHolder.photoTakenFlag) {
             AutelProductHolder.photoTakenFlag = false
             showNotice("Photo Saved")
@@ -982,12 +997,83 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * black gap, same as the blueprint's hard resync. Only affects the local picture — the
      * RTSP push reads its own frame tap and is untouched.
      */
+    /**
+     * Makes the FPV video FILL the screen in every camera mode, aspect preserved, centred.
+     *
+     * THE PROBLEM THIS SOLVES. The camera emits a different shape per mode — photo 1280x960
+     * (4:3), video 1280x720 (16:9), IR 640x512 (5:4) — and the SDK fits each one INSIDE the
+     * widget, so the picture changed shape and grew black bars whenever the pilot took a photo,
+     * started recording or switched to thermal. Those bars are not cosmetic: the TAK feed is a
+     * screen capture, so the whole team saw them too. A pilot should not have to track aspect
+     * ratios; the picture should just fill the screen and stay put.
+     *
+     * HOW. AutelCodecView is a TextureView underneath, so setTransform() can scale what the SDK
+     * already rendered — no SDK internals touched, no second surface, no re-encode. The SDK fits
+     * content CENTRED (verified from its own renderPos trace: 16:9 -> x:0 y:120, 4:3 -> x:96 y:0
+     * — symmetric bars either way), so a centre-anchored uniform scale crops the bars off exactly
+     * and leaves the image's true centre dead on the view's centre.
+     *
+     * The scale is just the ratio of the two aspects, whichever way round they sit:
+     *
+     *     content wider than view  -> letterboxed -> scale = contentAspect / viewAspect
+     *     content taller than view -> pillarboxed -> scale = viewAspect / contentAspect
+     *
+     * which collapses to max(a/b, b/a). At most one of those is > 1, and the other case is the
+     * reciprocal, so the same expression covers all three camera modes and anything Autel adds.
+     *
+     * WHY THE CENTRE MATTERS MORE THAN THE EDGES. [CrosshairView] is match_parent over the same
+     * rect, so the reticle sits at the view centre. Because the scale is anchored at that exact
+     * point, the optical centre stays under the reticle in every mode — which is what the
+     * crosshair PROMISES, since it is the aiming reference for marker drops. Losing the edges to
+     * the crop is an accepted trade (the pilot's call); losing the centre would silently corrupt
+     * every marker placed through it.
+     *
+     * Re-applied on every frame-size change AND every layout change, because either can happen
+     * without the other: the camera switches mode without the view resizing, and the map toggle
+     * resizes the view without the camera changing.
+     */
+    private fun armVideoFill(view: AutelCodecView) {
+        AutelCodecView.setOnRenderFrameInfoListener(object : com.autel.common.video.OnRenderFrameInfoListener {
+            override fun onRenderFrameSizeChanged(w: Int, h: Int) {
+                // Source or already-fitted dimensions — either is fine, we only use the RATIO,
+                // and the SDK's fit preserves it.
+                if (w <= 0 || h <= 0) return
+                val aspect = w.toFloat() / h
+                if (kotlin.math.abs(aspect - videoAspect) < 0.001f) return   // no real change
+                videoAspect = aspect
+                AppLog.i(TAG, "video frame size ${w}x$h (aspect ${"%.3f".format(aspect)}) — refilling")
+                runOnUiThread { applyVideoFill(view) }
+            }
+            override fun onRenderFrameTimestamp(ts: Long) { /* not used */ }
+        })
+        view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or_, ob ->
+            if (r - l != or_ - ol || b - t != ob - ot) applyVideoFill(view)
+        }
+    }
+
+    /** Centre-anchored scale that turns the SDK's fit-inside into a fill. See [armVideoFill]. */
+    private fun applyVideoFill(view: AutelCodecView) {
+        val vw = view.width.toFloat()
+        val vh = view.height.toFloat()
+        // Before first layout, or before any frame has arrived, leave the view alone — an
+        // identity transform is the SDK's own behaviour and a safe resting state.
+        if (vw <= 0f || vh <= 0f || videoAspect <= 0f) return
+        val viewAspect = vw / vh
+        val scale = maxOf(videoAspect / viewAspect, viewAspect / videoAspect)
+        view.setTransform(android.graphics.Matrix().apply {
+            setScale(scale, scale, vw / 2f, vh / 2f)   // anchor = view centre = reticle centre
+        })
+        view.invalidate()
+        AppLog.i(TAG, "video fill: view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
+            "content aspect ${"%.3f".format(videoAspect)} -> scale ${"%.3f".format(scale)}")
+    }
+
     private fun resyncVideo() {
         val container = findViewById<FrameLayout>(R.id.videoContainer)
         codecView?.let { container.removeView(it) }
         runCatching { AutelCodecView.stopCodec() }
             .onFailure { AppLog.w(TAG, "stopCodec during resync: ${it.message}") }
-        codecView = AutelCodecView(this).also { container.addView(it) }
+        codecView = AutelCodecView(this).also { container.addView(it); armVideoFill(it) }
         AppLog.i(TAG, "video resync: codec view rebuilt")
     }
 
@@ -1158,6 +1244,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             return
         }
         if (AutelProductHolder.isRecording) {
+            // Nothing to restore: VIDEO is the resting mode, so stopping leaves the camera
+            // exactly where it belongs and the picture does not move. See [onShootPhotoTapped].
             cam.stopRecordVideo(camCb("stopRecordVideo"))
             return
         }
@@ -1165,10 +1253,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             override fun onSuccess(mode: MediaMode?) {
                 AppLog.i(TAG, "media mode before record: $mode")
                 if (mode == MediaMode.VIDEO) {
-                    cam.startRecordVideo(camCb("startRecordVideo"))
+                    startRecordVerified(cam)
                 } else {
                     cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO)") {
-                        cam.startRecordVideo(camCb("startRecordVideo"))
+                        // SETTLE DELAY — NOT superstition, measured on hardware 2026-08-01.
+                        // Firing startRecordVideo straight out of this callback (which is what
+                        // this code used to do, 2ms after the mode ack) gets StartRecording
+                        // answered with status 0 and then SILENTLY IGNORED: no RECORD_START
+                        // event, no file on the card. The camera acknowledges the mode change
+                        // before it can actually act on it. With no mode switch needed,
+                        // RECORD_START comes back in 1ms — so the delay is only needed here.
+                        handler.postDelayed({ startRecordVerified(cam) }, MODE_SWITCH_SETTLE_MS)
                     })
                 }
             }
@@ -1182,12 +1277,54 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
+     * Issues StartRecording and then CHECKS WHETHER IT ACTUALLY WORKED.
+     *
+     * The camera answers StartRecording with status 0 even when it is not going to record —
+     * observed on hardware 2026-08-01: a start issued 2ms after a Single->Record mode switch
+     * was acked as success, produced no RECORD_START event, and left no file on the SD card.
+     * A pilot who trusts the button in that state believes they have footage they do not have,
+     * which is the worst possible failure for this control. So the SDK's "OK" is treated as a
+     * request receipt, not as evidence.
+     *
+     * Truth comes from [AutelProductHolder.isRecording], which only goes true on the camera's
+     * own RECORD_START push. If that has not arrived within [RECORD_CONFIRM_MS] we retry once
+     * (the settle delay may simply have been too short for a slower card or a busy camera),
+     * and if it still has not arrived we TELL THE PILOT rather than leaving a dark pill and a
+     * false sense of recording.
+     *
+     * The window is generous: when the camera is genuinely ready, RECORD_START lands in ~1ms.
+     */
+    private fun startRecordVerified(cam: AutelBaseCamera, isRetry: Boolean = false) {
+        cam.startRecordVideo(camCb(if (isRetry) "startRecordVideo(retry)" else "startRecordVideo"))
+        handler.postDelayed({
+            if (AutelProductHolder.isRecording) return@postDelayed   // camera confirmed it
+            if (!isRetry) {
+                AppLog.w(TAG, "no RECORD_START ${RECORD_CONFIRM_MS}ms after startRecordVideo — retrying once")
+                startRecordVerified(cam, isRetry = true)
+            } else {
+                AppLog.e(TAG, "recording did not start: camera accepted StartRecording twice " +
+                    "but never reported RECORD_START")
+                toast("Recording did not start — camera did not confirm")
+            }
+        }, RECORD_CONFIRM_MS)
+    }
+
+    /**
      * Photo — still to the aircraft's SD card. Confirmation comes from the camera's
      * PHOTO_TAKEN_DONE event (surfaced as a notice by updateHud), not from the call returning.
      *
-     * Tries [startTakePhoto] directly first — whether the XT709 accepts that while in VIDEO
-     * mode is unknown until hardware (plan step 2). If the camera rejects it, falls back to
-     * the blueprint's dance: switch to SINGLE, shoot, restore VIDEO.
+     * ANSWERED ON HARDWARE 2026-08-01 (this used to read "unknown until hardware"): the XT709
+     * does NOT accept startTakePhoto while in VIDEO mode — it rejects it, so from the resting
+     * mode this always takes the SINGLE-mode fallback below. The direct attempt is kept anyway:
+     * it costs one fast rejection (~100ms) and self-heals if a firmware update ever allows it.
+     *
+     * VIDEO IS THE RESTING MODE, and the restore below is what maintains that. The camera sends
+     * a different frame shape per mode (photo 4:3, video 16:9) and nothing can change that —
+     * setAspectRatio is ignored by this camera and VideoResolution has no 4:3 option, both
+     * verified — so SOME action has to pay the visible shape change. The operator's call
+     * (2026-08-01): recordings are far more frequent than stills on this aircraft, so the cost
+     * belongs on the photo path, not on record start/stop. Recording is the thing that must
+     * stay visually still, because that is when the TAK team is watching the screen capture.
      */
     private fun onShootPhotoTapped() {
         val cam = AutelProductHolder.camera
@@ -1202,8 +1339,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 AppLog.i(TAG, "direct photo rejected (${error?.description}) — trying SINGLE-mode fallback")
                 cam.setMediaMode(MediaMode.SINGLE, camCb("setMediaMode(SINGLE)") {
                     cam.startTakePhoto(camCb("startTakePhoto") {
-                        // Restore VIDEO so a later REC press isn't surprised. Best-effort.
-                        cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO restore)"))
+                        // Back to the resting mode. Delayed for the same reason the record path
+                        // waits: this camera acknowledges a mode change before it can act on it,
+                        // and the still is still being written when the shutter call returns.
+                        handler.postDelayed(
+                            { cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO rest)")) },
+                            MODE_SWITCH_SETTLE_MS)
                     })
                 })
             }
@@ -1520,6 +1661,16 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     companion object {
         private const val TAG = "FlightActivity"
+
+        /** Pause after a media-mode switch before commanding record — see [startRecordVerified].
+         *  The failing case measured 2ms; this is deliberately far clear of it rather than tuned
+         *  to the edge, since the cost of waiting is imperceptible and the cost of being early is
+         *  a recording that silently never happens. */
+        private const val MODE_SWITCH_SETTLE_MS = 800L
+
+        /** How long to wait for the camera's RECORD_START before assuming the start was ignored.
+         *  When the camera is ready this arrives in ~1ms, so this is ~1000x margin. */
+        private const val RECORD_CONFIRM_MS = 1200L
 
         /**
          * Fixed mini-map zoom. The map is locked, so this is the zoom for the whole flight.

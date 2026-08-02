@@ -1,8 +1,10 @@
 package com.autel.sdksample.tak
 
 import com.taklite.util.AppLog
+import com.autel.common.CallbackWithNoParam
 import com.autel.common.CallbackWithTwoParams
 import com.autel.common.camera.CameraProduct
+import com.autel.common.camera.base.MediaMode
 import com.autel.common.camera.base.MediaStatus
 import com.autel.common.error.AutelError
 import com.autel.sdk.Autel
@@ -22,6 +24,12 @@ import com.autel.sdk.video.AutelCodec
  */
 object AutelProductHolder {
     private const val TAG = "AutelProductHolder"
+
+    /** Attempts to park the camera in VIDEO mode at connect, and the gap between them.
+     *  Sized from hardware: the third attempt was the one that stuck, ~3.7s after the camera
+     *  first announced itself, so this covers roughly twice that with room to spare. */
+    private const val VIDEO_MODE_ATTEMPTS = 8
+    private const val VIDEO_MODE_RETRY_MS = 1000L
 
     @Volatile var product: BaseProduct? = null
         private set
@@ -108,6 +116,41 @@ object AutelProductHolder {
                         AppLog.w(TAG, "getDigitalZoomScale failed: ${error?.description}")
                     }
                 })
+            // PUT THE CAMERA IN VIDEO MODE AT CONNECT, before the pilot touches anything.
+            //
+            // This is what makes "the picture never moves when you record" actually true. The
+            // camera REMEMBERS its last mode across power cycles, and this app used to only ever
+            // change mode in reaction to a button press — so the flight screen came up in
+            // whatever mode the camera happened to be left in. If that was photo mode (4:3), the
+            // first REC press switched to video (16:9) and the picture visibly zoomed, which is
+            // exactly the thing the resting-mode design was supposed to prevent.
+            //
+            // Recording is the frequent action and the one the TAK team watches (their feed is a
+            // screen capture of this display), so the camera starts where REC needs it and stays
+            // there. The photo path dips to SINGLE and restores VIDEO — see FlightActivity.
+            // GUARDED on the camera being real. This listener fires first with UnknownCamera —
+            // the SDK's null-placeholder, delivered while the camera is still being identified
+            // (it is the same object behind this port's original "camera enumerates as UNKNOWN"
+            // bug). EVERY method on it fails with "the communication to the aircraft has not
+            // been built up", so calling through it is never useful and only produces log noise
+            // that looks like a fault. Measured 2026-08-01: two placeholder callbacks failed,
+            // then the real CameraXT709 arrived and the very same call succeeded first try.
+            //
+            // The retry behind this is for GENUINE transient failures, not for the placeholder.
+            (cam as? AutelXT706)?.let { setVideoModeWithRetry(it, attempt = 1) }
+
+            // DO NOT re-add setAspectRatio(Aspect_16_9) here. Tried 2026-08-01 to make photo
+            // mode send the same 16:9 shape as video mode, so the picture would stop changing
+            // when the pilot shoots or records. The SDK reported SUCCESS and the camera ignored
+            // it completely: the preview stayed 1280x960, and stills before and after the call
+            // were both 4000x3000 (measured off the camera's own file server, not inferred).
+            // This camera answers status 0 for things it does not do — the same way it accepts
+            // StartRecording it will not honour (see FlightActivity.startRecordVerified).
+            //
+            // There is also no 4:3 option in VideoResolution to attack it from the other side.
+            // Equalising the modes has to be done on OUR side, off real FOV numbers from
+            // XT706CameraInfo.setInfoListener — see the flight screen's video-fill note.
+
             // Put the camera into a known auto-exposure mode and re-apply the pilot's saved EV.
             // Done here rather than in FlightActivity so it happens once per camera session
             // regardless of which screen is up — and so a camera that reconnects mid-flight
@@ -119,6 +162,41 @@ object AutelProductHolder {
         override fun onFailure(error: AutelError?) {
             AppLog.w(TAG, "camera change listener error: ${error?.description}")
         }
+    }
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /**
+     * Parks the camera in VIDEO mode, retrying if it genuinely refuses.
+     *
+     * Only ever called with a REAL camera — see the guard at the call site. On hardware the real
+     * camera accepted this on the first attempt; the retry exists for transient refusals, not
+     * for the placeholder-camera case, which the guard handles instead.
+     *
+     * Gives up after [VIDEO_MODE_ATTEMPTS] rather than retrying forever: if the camera is still
+     * refusing after ~8s something else is wrong, and a retry loop that never ends would hide it.
+     * Bails early if the camera has been swapped or disconnected underneath us.
+     */
+    private fun setVideoModeWithRetry(cam: AutelBaseCamera, attempt: Int) {
+        if (cam !== camera) return                          // stale attempt, camera moved on
+        cam.setMediaMode(MediaMode.VIDEO, object : CallbackWithNoParam {
+            override fun onSuccess() {
+                AppLog.i(TAG, "camera set to VIDEO mode at connect (attempt $attempt)")
+            }
+            override fun onFailure(error: AutelError?) {
+                if (attempt >= VIDEO_MODE_ATTEMPTS) {
+                    // The pilot will see the picture jump on their first REC. Say so loudly
+                    // rather than leaving it to be rediscovered in the field.
+                    AppLog.e(TAG, "camera would not go to VIDEO mode after $attempt attempts " +
+                        "(${error?.description}) — the picture will jump on first REC")
+                    return
+                }
+                AppLog.i(TAG, "setMediaMode(VIDEO) attempt $attempt not ready " +
+                    "(${error?.description}) — retrying")
+                mainHandler.postDelayed(
+                    { setVideoModeWithRetry(cam, attempt + 1) }, VIDEO_MODE_RETRY_MS)
+            }
+        })
     }
 
     /** Hooks the camera-change listener on the current product. Called from [install] and on

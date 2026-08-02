@@ -60,6 +60,7 @@ public class TestApplication extends Application {
         Log.v("connectDebug", "TestApplication onCreate ");
         initXlog();
         AppLog.init(this);
+        initAutelSdkLog();
         // Real client identity for CoT's <takv> block, so this app's own entry in a TAK
         // server's connected-users list says what it actually is, not the shared TakManager
         // core's generic placeholder. See TakManager.setClientIdentity's doc — deliberately
@@ -240,6 +241,44 @@ public class TestApplication extends Application {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss", Locale.US);
         String timeStamp = sdf.format(new Date());
         return timeStamp;
+    }
+
+    /**
+     * Turns ON the Autel SDK's own internal connect trace.
+     *
+     * WHY THIS EXISTS: the SDK's most useful diagnostics — the camera enumeration handshake —
+     * go through AutelLog.debug_i(), which forwards to com.autel.log.AutelLog.i(), which is a
+     * NO-OP while its mLogger field is null. Nothing installs that logger by default, so lines
+     * like "MessageDisPatcher: camera notifyConnected<bool>" and "ConnectDebug: camera connect
+     * from X to Y" are silently dropped. Two debugging sessions lost evidence to this before
+     * anyone noticed the drop was upstream of logcat, not inside it.
+     *
+     * Passing debug=true selects DebugLog, which writes to a file AND mirrors to
+     * android.util.Log — that mirror is the whole point. The alternative (debug=false) is
+     * LogImpl, which routes to Tencent mars/xlog and produces NOTHING in logcat.
+     *
+     * NOTE the two AutelLog classes: com.autel.util.log.AutelLog (thin android.util.Log
+     * wrapper, imported at the top of this file) is NOT this one. The commented-out
+     * AutelLog.init in initXlog() below is that other class's XLog-era signature and would
+     * not have helped.
+     *
+     * Diagnostic aid, not a feature — see the camera-enumeration notes in
+     * TAKPILOT2_AUTEL_PORT_PLAN.md. Cheap enough to leave on; drop it if log volume bites.
+     */
+    private void initAutelSdkLog() {
+        try {
+            File dir = getExternalFilesDir("autel-sdk-log");
+            if (dir == null) dir = new File(getFilesDir(), "autel-sdk-log");   // no external vol
+            com.autel.log.AutelLog.init(
+                    true,                                  // debug -> DebugLog -> logcat mirror
+                    dir.getAbsolutePath(),
+                    getCacheDir().getAbsolutePath(),
+                    0);                                    // level; ignored when debug==true
+            Log.i(TAG, "Autel SDK logger installed -> " + dir.getAbsolutePath());
+        } catch (Throwable t) {
+            // Never let a diagnostic aid take the app down at startup.
+            Log.w(TAG, "Autel SDK logger install failed: " + t);
+        }
     }
 
     /**

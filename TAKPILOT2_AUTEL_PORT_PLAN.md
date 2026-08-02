@@ -737,6 +737,12 @@ instead of trusting ordinal.
 
 ### Also found, not yet acted on — `XT706CameraInfo` push feed
 
+> **UNBLOCKED 2026-08-01.** This was blocked on the camera enumerating; it now does (see the
+> camera-enumeration section). It has also become more than a nicety: the flight screen's
+> aspect-normalisation work needs real per-mode FOV, and the AR overlay / TAK sensor cone still
+> use hand-calibrated FOV numbers that should be checked against measurements before the next
+> marker-dropping flight.
+
 `AutelXT706.setInfoListener(CallbackWithOneParam<XT706CameraInfo>)` is a **push** feed carrying
 a great deal that this port currently polls for, guesses at, or holds a calibration constant for:
 
@@ -1100,6 +1106,177 @@ device camera exists.
 4. Aircraft would not bind to the controller this session — unresolved, and separate from
    anything in this app. Pull Explorer's logcat during a pairing attempt.
 
+## Camera enumeration — ROOT CAUSE AND FIX (2026-08-01)
+
+*All of this was verified on the real EVO II 640T V3 + Smart Controller, with SDK logging
+on. Where something is inference rather than measurement it says so.*
+
+### The symptom
+
+The SDK reported **success** with `CameraProduct.UNKNOWN` and handed back an `UnknownCamera`.
+`AutelProductHolder.camera` was non-null so Photo/REC reached the SDK and failed with *"The SDK
+init has failed since the communication to the aircraft has not been build up"*; `xt706` was
+null (failed `as? AutelXT706`) so IR/zoom/exposure said "Aircraft camera not connected". Live
+video worked throughout — a separate path.
+
+### The cause, in one line
+
+**The camera identifies itself as `XL726`, and no published Autel SDK contains that string.**
+
+Chain, every step read off the bytecode and confirmed in the log:
+
+1. The camera's `SystemStatus` push carries `CameraType: "XL726"`.
+2. `CameraMessageDisPatcher.transferType()` remaps `XL720/XL705 → XT705` and
+   `XL719/XL729/XK729/XL709/XL725 → XT709`. **`XL726` is in neither list**, so it passes
+   through unchanged. It misses by one digit.
+3. `CameraProduct.find("XL726")` → `UNKNOWN`; `BaseCamera20.getProduct()` is nothing but that
+   lookup.
+4. `CameraMessageDisPatcher.notifyConnected()` checks `product == UNKNOWN` and **suppresses the
+   CONNECTED notification.** That guard is correct — logged as `camera notifyConnected true`.
+5. So `CameraManager.connectStateChanged()` is never called with a real product, `currentCamera`
+   stays null, and `CameraManager$2` substitutes `new UnknownCamera()` as a **null placeholder**.
+   That placeholder is the "camera" the app was holding. It was never a camera.
+6. **The latch:** the SDK's 3s retry (`Observable.interval` in `initHandler`) only runs while
+   `isConnected == false`, and `setCameraCurrentData()` calls `notifyConnected()` *before*
+   `setCameraCurrentDate()`, whose success callback sets `isConnected = true`. The SDK checks the
+   product exactly once, gets UNKNOWN, then disables its own retry forever.
+
+### Why no SDK update fixes it
+
+All three of AutelSDK's public repos were checked (2026-08-01):
+
+| repo | aar | camera IDs | XL726 |
+|---|---|---|---|
+| `AndroidAdvanceSample` | byte-identical to ours (`59023ae8`, 10,181,182 B, 2024-01-13) | `XK729 XL705 XL709 XL719 XL720 XL725 XL729` + `XT701..XT712` | no |
+| `AndroidSample` | different build, 2023-08-01 | `XK729 XL709` + `XT701..XT712` | no — a strict SUBSET of ours |
+| `MSDK2.0 V2.0.66` | 2024-09-23 | `XL705 XL709 XL715 XL716 XL720 XL730 XL732 XL736 XL8xx` | no |
+
+Ours already IS `AndroidAdvanceSample` HEAD. MSDK2.0 has **no `XT7xx` classes at all** and jumps
+`XL720 → XL730` — a different product generation (EVO Max, *inferred* from the numbering), and
+adopting it would mean rewriting the whole SDK integration layer for no gain here.
+
+That `XL726` belongs with `XL725` is **corroborated externally**, not guessed from the adjacent
+number: the third-party `crgrove/automated-drone-image-analysis-tool` lists `"XL725, XL726"` as
+the camera IDs of the same airframe — *Autel / Evo II Dual 640T*, RGB and Thermal — and its
+thermal parser handles `XL726` explicitly. `XL725` already maps to `XT709`.
+
+### The fix — a patched aar
+
+`buildsystem/patch-autel-sdk-camera-id.py` repoints the string `XL719` → `XL726` across
+`classes.jar`. Both are 5 bytes, so offsets, constant-pool structure and class lengths are
+untouched. `XL719` is the donor because it is the only alias in BOTH lists that need fixing
+(`transferType`'s XT709 group AND `RxAutelBaseCameraImpl.isEvoAdvance`), so one edit repairs
+both — and they read *different* fields (`cameraModel` vs `cameraRealType`), so fixing one alone
+would not have fixed the other.
+
+**It MUST be a global replace, not a `CameraProduct.class`-only edit.** Class files deduplicate
+UTF-8 entries, so the enum constant name, its `moduleName` value and the *field* name are one
+shared entry; the other two classes reach that field by name via `getstatic`. Patching only
+`CameraProduct` yields `NoSuchFieldError` at runtime.
+
+**⚠ LANDMINE:** this build can no longer recognise genuine `XL719` hardware, and
+`CameraProduct.XL719.name()` now returns `"XL726"`. Deliberate trade — an alias this airframe
+will never use, bought for one it cannot fly without. Revisit if pointing this repo at a
+different Autel camera. The right fix remains an Autel SDK that knows XL726; ask them.
+
+### Verified working on hardware after the fix
+
+Camera enumerates as `XT709` (`CameraXT709InitializeProxy`); photo (file confirmed on the
+camera's own file server); recording (real `.MP4` files); IR display mode + BlackHot/WhiteHot
+palettes; exposure set; zoom read.
+
+**Zoom units measured: ×100** (`GetZoomFactor` → `ZoomValue: 100` at 1x). This resolves the
+"could be a plain multiplier, could be x100" note on `AutelProductHolder.zoomBaseRaw`.
+
+### THIS CAMERA REPORTS SUCCESS FOR THINGS IT DOES NOT DO
+
+Three separate instances in one session. **Do not trust an Autel callback's `onSuccess` as
+evidence that anything happened — verify the effect.**
+
+1. **`StartRecording`** issued 2 ms after a Single→Record mode switch: answered `status: 0`,
+   produced no `RECORD_START`, and left **no file on the card**. Fixed by
+   `FlightActivity.startRecordVerified()` — settle delay, then confirm via the camera's own
+   `RECORD_START`, retry once, and toast the pilot if it still never starts. A pilot who
+   believes they have footage they do not have is the worst failure this control has.
+2. **`setAspectRatio(Aspect_16_9)`**: answered success, changed nothing. Preview stayed
+   1280×960 and stills before/after were both **4000×3000** (measured off the camera's file
+   server). Do not re-add it; there is a note in `AutelProductHolder` saying so.
+3. **`setMediaMode(VIDEO)` on the `UnknownCamera` placeholder**: fails by definition — every
+   method on that object returns the "communication…not been built up" error. Not a timing
+   problem. Guard camera-init work on `as? AutelXT706` so it runs only against a real camera.
+
+### Display geometry — the camera sends three different shapes
+
+| mode | stream | aspect |
+|---|---|---|
+| photo | 1280×960 | 4:3 |
+| video | 1280×720 | 16:9 |
+| IR | 640×512 | 5:4 |
+
+Note photo vs video is the **same width, less height** — video genuinely has less vertical FOV.
+
+**Neither can be equalised from the camera:** `setAspectRatio` is ignored (above), and
+`VideoResolution` has no 4:3 option (7680×4320 / 5760×3240 / 4096×2160 / 3840×2160 / 2720×1528 /
+1920×1080 / 1280×720 are 16:9; 1280×1024 and 640×512 are 5:4).
+
+**This matters to the whole team, not just the pilot: the TAK feed is a MediaProjection SCREEN
+CAPTURE** (`ScreenCaptureService` → `VideoStreamerHolder.startScreenCapture`). Anything on the
+flight screen — bars, aspect jumps, overlays — is in their feed. `AutelVideoStreamer`'s
+constructor defaults `mediaProjection = null`, which reads like the camera-feed path is the only
+one; **check the call site, not the default.** A stale comment claiming screen capture was an
+unported "known gap" cost real debugging time and has been corrected in place.
+
+**What was done about it:**
+
+- `FlightActivity.armVideoFill()` / `applyVideoFill()` — the video now FILLS the screen in every
+  mode, aspect preserved, edges cropped, **true centre locked to the reticle**. `AutelCodecView`
+  is a `TextureView`, so `setTransform()` scales what the SDK already rendered; the SDK fits
+  content *centred* (its own `renderPos` trace proves it), so a centre-anchored uniform scale of
+  `max(contentAspect/viewAspect, viewAspect/contentAspect)` crops the bars off exactly. The
+  centre is the invariant on purpose — the crosshair is the aiming reference for marker drops,
+  so losing edges is an accepted trade but a drifting centre would silently corrupt every marker.
+- **VIDEO is the resting mode**, set at camera connect (`AutelProductHolder.setVideoModeWithRetry`)
+  and restored after each photo. Operator's call: recordings are far more frequent than stills,
+  so the unavoidable shape change belongs on the photo path, and recording — when the team is
+  watching — stays visually still.
+  **Setting it AT CONNECT is the part that matters.** The camera remembers its mode across power
+  cycles, and this app previously only ever changed mode *reacting* to a button press, so it came
+  up in whatever mode the camera was left in. "Video is the resting mode" was only true after the
+  pilot had already pressed something.
+- The shutter is disabled (greyed, not hidden) while recording, driven off the camera's reported
+  state so it re-enables if a recording stops on its own.
+
+**Still open:** the three modes still differ in apparent framing, because filling a fixed screen
+with different source shapes crops each differently (4:3 → ×1.103, 5:4 → ×1.177, 16:9 → ×1.208).
+Truly identical framing needs normalising to real FOV numbers from `XT706CameraInfo.setInfoListener`
+— scale every mode so the same real-world angle fills the screen, cropping to the narrowest common
+view. **Measure the FOVs and show them before committing**, since normalising IR to a much tighter
+thermal lens could waste most of the EO image.
+
+### SDK logging — it is OFF by default and that is why evidence kept vanishing
+
+The SDK's most useful diagnostics go through `AutelLog.debug_i` → `com.autel.log.AutelLog.i`,
+which is a **no-op while its `mLogger` field is null**, and nothing installs that logger by
+default. `TestApplication.initAutelSdkLog()` now calls
+`com.autel.log.AutelLog.init(true, …)` — `debug=true` selects `DebugLog`, which mirrors to
+`android.util.Log`. (`debug=false` selects `LogImpl` → Tencent mars/xlog → **nothing in
+logcat**.) Beware two same-named classes: `com.autel.util.log.AutelLog` is a thin
+`android.util.Log` wrapper and is NOT the one that matters; the commented-out `AutelLog.init` in
+`initXlog()` is that other class's XLog-era signature and would not have helped.
+
+Useful tags: `ConnectDebug`, `MessageDisPatcher`, `AutelCameraConnectManager`, `camera_connect1`,
+`camera_connect11`, `xxxx`.
+
+### Also learned
+
+- **Read the aar, don't infer from names** — but also **check the CALL SITE, not the default
+  parameter**. Both bit this session.
+- The camera's file server (`http://192.168.1.11/DCIM/100MEDIA/`) is reachable *from the
+  controller* and is the ground truth for "did that actually record/shoot": `adb shell curl`.
+  Ranged GETs plus a JPEG SOF parse give real image dimensions without pulling whole files.
+- `AutelXT709 extends AutelXT706`, so the existing `xt706` accessor works unchanged once a real
+  camera is built.
+
 ## Environment / Tooling
 
 - Project root: `/home/echos6/SynologyDrive/TAKServer/UAS_Apps/Autel/AutelTAKPilot2/takpilot-autel_v1-2/`.
@@ -1110,18 +1287,27 @@ device camera exists.
   OS. See the Android 11 callout near the top of this doc.
 - Toolchain: Gradle 7.3.3 / AGP 7.2.2 / Kotlin 1.7.20, `compileSdk` 33, `minSdk` 21,
   `targetSdk` 29.
-  **Use JDK 11** — AGP 7.2.2 misbehaves on JDK 17/21 (same lesson learned on the DJI
-  MSDKv4 side with its own JDK/Gradle combination).
+  **Use JDK 17** — corrected 2026-08-01. This line used to say JDK 11, and JDK 11 no longer
+  builds this tree at all: the vendored `rtsp-2.2.6-api.jar` ships **Java 17 class files
+  (major version 61)**, so `kaptDebugKotlin` dies with *"class file has wrong version 61.0,
+  should be 55.0"* on `com.pedro.rtsp.rtsp.RtspClient`. JDK 17 builds clean:
+  `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ./gradlew assembleDebug`.
 - `chmod +x gradlew` after any unzip/re-sync — the execute bit is stripped by zip
   extraction and by Synology Drive sync; this has bitten the project twice already.
-- Autel SDK is a bundled AAR in-repo (`app/libs/autel-sdk-release.aar`), not a remote
-  artifact. App ID `com.tak.uastoollite`; App Key already wired into
-  `TestApplication.java`.
+- Autel SDK is a bundled AAR in-repo, not a remote artifact. App ID `com.tak.uastoollite`;
+  App Key already wired into `TestApplication.java`.
+  **⚠ THE BUILD CONSUMES A PATCHED COPY, NOT THE VENDOR FILE.** `app/build.gradle` depends on
+  `autel-sdk-release-xl726.aar`, generated from the pristine `autel-sdk-release.aar` by
+  `buildsystem/patch-autel-sdk-camera-id.py`. Without it this aircraft's camera does not
+  enumerate and NO camera command works. Regenerate after any SDK change; the script aborts
+  loudly if the vendor aar's shape changes. Full reasoning in the camera-enumeration section
+  below and at the top of the script.
 - Build: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
   Install: `adb install -r <apk>`.
 - **Two test devices, and they are not interchangeable.** OUKITEL RT3 (`OUKITELRT349474`,
   Android 13, 533 × 853 dp) is the convenience device; the Autel Smart Controller
-  (`5554d34f`, Android 11, 1024 × 720 dp) is the real target. Always pass `-s <serial>` when
+  (`f270d328`, model `RCPad`, Android 11, 1024 × 720 dp — serial corrected 2026-08-01,
+  this doc previously said `5554d34f`) is the real target. Always pass `-s <serial>` when
   both are attached. A layout verdict on the RT3 says nothing about the controller — see the
   target-hardware section above.
 - Reference material to keep on hand: `TAKPilot2-source-V1.zip` (the original DJI
@@ -1130,6 +1316,40 @@ device camera exists.
   feature related, since that's what pilots will actually compare against).
 - Standing constraint carried over from the DJI project: **do not commit without asking
   first.**
+
+## Session 2026-08-01 — what changed, and what is untested
+
+**Uncommitted working tree** (standing constraint: do not commit without asking):
+
+| file | change |
+|---|---|
+| `buildsystem/patch-autel-sdk-camera-id.py` | NEW — the XL726 aar patch + verifier |
+| `app/libs/autel-sdk-release-xl726.aar` | NEW — generated; vendor aar left pristine |
+| `app/build.gradle` | depends on the patched aar |
+| `TestApplication.java` | `initAutelSdkLog()` — turns the SDK's own trace on |
+| `AutelProductHolder.kt` | VIDEO mode at connect (guarded + retried); note against re-adding `setAspectRatio` |
+| `FlightActivity.kt` | `startRecordVerified`, video fill/centre-crop, VIDEO resting mode, shutter locked during record |
+| `AutelVideoStreamer.kt` | corrected the stale "screen capture is a known gap" comment |
+| `TAKPILOT2_AUTEL_PORT_PLAN.md` | this write-up; JDK 17, controller serial, patched-aar warning |
+
+**Verified on hardware:** camera enumerates as XT709; photo (file on card); recording (file on
+card); IR + both palettes; exposure; zoom read (×100 units); video fills screen in all modes with
+centre held; VIDEO resting mode means REC no longer moves the picture; shutter greys out while
+recording.
+
+**NOT verified — do these first next session:**
+
+- **The 800 ms `MODE_SWITCH_SETTLE_MS` on the record path.** Now that VIDEO is the resting mode,
+  REC never switches modes, so that branch is effectively unreachable in normal use. The photo
+  path's VIDEO restore does exercise the same constant.
+- **The `startRecordVerified` retry/toast path.** Never triggered. Its whole point is that a
+  silent failed record becomes visible; that has not been seen happen.
+- **IR toggled DURING a recording.** The shutter is locked out but IR and zoom are not. IR
+  changes the stream to 640×512 mid-record and it is unknown whether the camera splits the file,
+  corrupts it, or handles it cleanly. Test deliberately.
+- **Own-ship chevron rotation** — still unverified from earlier sessions.
+- **Controller GPS** — `getLastKnownLocation()` reads a cache nothing fills; still needs a real
+  `requestLocationUpdates()`.
 
 ## To resume
 

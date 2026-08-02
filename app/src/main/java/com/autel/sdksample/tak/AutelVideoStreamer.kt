@@ -25,11 +25,16 @@ import java.nio.ByteBuffer
  * transcode, zero quality loss, near-zero CPU" long after profiles made that false. Corrected
  * 2026-07-31. Do not trust that claim if it reappears.)
  *
- * **Known gap vs the DJI blueprint:** DJI streams a MediaProjection capture of the whole
- * flight screen, so the team sees the FPV *plus* the HUD, AR markers and map. This build
- * streams only the camera feed. That was not a deliberate difference — it came from treating
- * DJI's screen capture as a workaround for an SDK limitation rather than the product decision
- * it was. Porting `ScreenCaptureService`/`ScreenCaptureEncoder` is the fix; see the plan doc.
+ * **STALE COMMENT REMOVED (2026-08-01).** This used to say screen capture was a "known gap"
+ * still to be ported. It is NOT a gap — it is DONE and it is the live path: `ScreenCaptureService`
+ * obtains the MediaProjection and calls [VideoStreamerHolder.startScreenCapture], so the team
+ * sees the FPV *plus* HUD, AR markers and map, same as the DJI blueprint. The camera-feed path
+ * below (`mediaProjection == null`) is the fallback, not the norm.
+ *
+ * This matters when reasoning about what the team sees: anything on this screen is in their
+ * feed. Black bars, aspect changes and overlays are not local cosmetics. The comment cost real
+ * debugging time on 2026-08-01 because the constructor's `mediaProjection = null` DEFAULT reads
+ * like the camera path is the only one — check the CALL SITE, not the default.
  *
  * SPS/PPS (and VPS if the feed turns out to be H.265) are sniffed out of the byte stream;
  * [RtspClient.connect] blocks its worker up to 5 s waiting for them, so we register the
