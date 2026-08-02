@@ -51,9 +51,13 @@ import com.taklite.util.AppLog
  *
  * **Every control the blueprint has is documented, and as of the Phase 2.5 activation pass
  * every one of them now works.** Anything that regresses to a placeholder should get a line in
- * section 4, which exists as a single pre-flight scan rather than making a pilot re-read
- * section 3. Section 4 has no counterpart in the DJI guide — that build has no gaps left to
+ * section 5, which exists as a single pre-flight scan rather than making a pilot re-read
+ * section 3. Section 5 has no counterpart in the DJI guide — that build has no gaps left to
  * list — so keep it whenever the two files are reconciled.
+ *
+ * Section 4 is a PROCEDURE, not a control reference: the aim calibration is periodic
+ * maintenance the pilot performs, like a compass calibration, so it gets steps in order
+ * rather than a description of each button.
  */
 class FieldGuideActivity : AppCompatActivity() {
 
@@ -74,6 +78,7 @@ class FieldGuideActivity : AppCompatActivity() {
         sectionTwo()
         sectionThree()
         sectionFour()
+        sectionFive()
 
         divider()
         body("If this guide does not agree with the aircraft, obey the aircraft. Then tell " +
@@ -314,6 +319,9 @@ class FieldGuideActivity : AppCompatActivity() {
             listOf(
                 "If the aircraft does not have a GPS position and a gimbal position, the app " +
                     "does not put the marker.",
+                "If the ring of the crosshair is red, the app does not put the marker. The " +
+                    "angle of the camera is too small for an accurate position. Point the " +
+                    "camera down more.",
                 "If you move, rename or change the type of a marker, the app changes the " +
                     "same marker on the screens of your team. It does not make a second one.",
                 "If you delete a marker, the app removes it from your screen only. It stays " +
@@ -346,8 +354,13 @@ class FieldGuideActivity : AppCompatActivity() {
                     "accurate position. For an accurate position, put the crosshair on the " +
                     "object and put a marker.",
                 "No person measured the camera direction and the field of view of the EVO II " +
-                    "in flight. The markers can show away from their targets. To correct " +
-                    "this, use the Calibrate FOV control in the touch-and-hold menu.",
+                    "in flight. The markers can show away from their targets. The " +
+                    "touch-and-hold menu has two controls to correct this. They correct " +
+                    "different errors:\n" +
+                    "- Calibrate FOV: use it if the markers are correct in the center of " +
+                    "the image but not correct near the edges.\n" +
+                    "- Aim Offsets: use it if the markers are not correct in the CENTER. " +
+                    "This also moves the position of a marker that you put.",
             ),
         )
 
@@ -441,8 +454,9 @@ class FieldGuideActivity : AppCompatActivity() {
                 "WITHOUT terrain data:\n" +
                 "GREEN: 30° down or more. The error is about 50 ft.\n" +
                 "YELLOW: 15° to 30° down. The error is about 100 ft.\n\n" +
-                "RED: less than the yellow angle. Do not put a marker. Point the camera down " +
-                "more, or fly nearer.\n\n" +
+                "RED: less than the yellow angle. THE APP DOES NOT PUT A MARKER. Point the " +
+                "camera down more, or fly nearer. This applies to the marker button and " +
+                "to the crosshair.\n\n" +
                 "When the camera is near horizontal, a small error in the angle moves the " +
                 "marker a long distance on the ground. A steep angle is more accurate than a " +
                 "view from a long distance. If the position of a marker is important, fly " +
@@ -458,6 +472,10 @@ class FieldGuideActivity : AppCompatActivity() {
                     "no terrain data.",
                 "A person measured these angles on a Mini 2 aircraft. No person measured them " +
                     "on the EVO II. Use them as a guide until a person measures them again.",
+                "If markers go to a position that is not correct at all angles, the aim of " +
+                    "the camera can have an error. Touch and hold the AR button, then " +
+                    "select Aim Offsets to correct it. Do this at a small angle (15° to " +
+                    "25° down). At a steep angle you cannot see the error.",
             ),
         )
 
@@ -495,6 +513,10 @@ class FieldGuideActivity : AppCompatActivity() {
                 "To see the state of the aircraft and of the TAK connection, look at the " +
                 "toolbar at the top of the screen.",
             listOf(
+                "The camera angle line shows DOWN, UP or LEVEL. The camera can look above " +
+                    "the horizon. If it does, the app cannot calculate a position on the " +
+                    "ground: it does not put a marker and it does not send the camera " +
+                    "position to your team. Point the camera down to continue.",
                 "The height shows AGL if terrain data covers your position. AGL is the true " +
                     "height above the ground below the aircraft.",
                 "The height shows ALT if there is no terrain data. ALT is the height above " +
@@ -561,17 +583,95 @@ class FieldGuideActivity : AppCompatActivity() {
      * above; repeating them in one place gives a pilot a single thing to scan before a flight
      * rather than re-reading the whole of section 3.
      */
+    /**
+     * The aim calibration procedure.
+     *
+     * Written as ordered steps because it is a task the pilot DOES, not a control they read
+     * about. The two rules that decide whether it works — do it at a small camera angle, and
+     * move one control at a time — are stated as warnings, because a pilot who calibrates at a
+     * steep angle will see no change, conclude the control is broken, and stop.
+     */
     private fun sectionFour() {
-        section("4. What this build cannot do")
+        section("4. How to correct the position of a marker")
+
+        body("The app puts a marker at the center of the camera image. If the aim of the " +
+            "camera has a small error, the markers go to a position that is not correct. The " +
+            "\"Aim Offsets\" control corrects this error.")
+
+        body("The error is a property of the aircraft. It is not a property of the app. A " +
+            "gimbal can move a small quantity after a hard landing or a repair.")
+
+        note("Two controls correct two different errors. If the markers are not correct in the " +
+            "CENTER of the image, use \"Aim Offsets\". If the markers are correct in the center " +
+            "but not correct near the EDGES, use \"Calibrate FOV\".")
+
+        sub("When to do this")
+        body("Do this one time for each aircraft. Do it again after these events:")
+        bullet("The aircraft has a hard landing.")
+        bullet("A person repairs or replaces the gimbal or the camera.")
+        bullet("You use the app with a different aircraft.")
+
+        sub("Before you start")
+        bullet("Select a target that you can see clearly in the video image. A mark on a road " +
+            "or a corner of a building is good. A tree is not good.")
+        bullet("Make sure that you can find the same target on the map.")
+        bullet("Load terrain data (DTED) for your area. See section 2.")
+        bullet("Put the aircraft in a hover at about 200 ft above the ground.")
+
+        warn("Do this procedure at the camera 25° down. At a steep angle a " +
+            "small error moves the marker only a short distance. You cannot see the error, and " +
+            "you cannot correct it.")
+
+        sub("The procedure")
+        bullet("1. Point the camera at the target. Read the GIMBAL line. Make the angle 25° " +
+            "down.")
+        bullet("2. Touch the crosshair. The app puts the quick marker on the target.")
+        bullet("3. Look at the marker on your map or on the map of your team. Compare its " +
+            "position with the true position of the target.")
+        bullet("4. If the marker is correct, the calibration is complete. Stop here.")
+        bullet("5. Touch and hold the AR button. Then select \"Aim Offsets\".")
+        bullet("6. If the marker is too far from the aircraft, touch the minus button of " +
+            "\"Pitch offset\".")
+        bullet("7. If the marker is too near to the aircraft, touch the plus button of " +
+            "\"Pitch offset\".")
+        bullet("8. On the map, look from the aircraft to the target. If the marker is " +
+            "clockwise from the target, touch the minus button of \"Bearing offset\".")
+        bullet("9. If the marker is counter-clockwise from the target, touch the plus button " +
+            "of \"Bearing offset\".")
+        bullet("10. Touch \"Done\".")
+        bullet("11. Touch and hold the crosshair. The marker moves to the new position.")
+        bullet("12. Do steps 3 to 11 again until the marker is correct.")
+
+        warn("Change one control at a time. If you change both controls together, you cannot " +
+            "see which control corrects the error.")
+
+        note("The app keeps these values. You do not do this procedure again for each flight. " +
+            "To remove the correction, open \"Aim Offsets\" and touch \"Reset to 0\".")
+
+        sub("After the calibration")
+        body("Do a test at a different angle. Point the camera 40° to 50° down and put a " +
+            "marker. The marker must also be correct at this angle. If it is correct at one " +
+            "angle but not correct at the other angle, the correction is not complete.")
+
+        warn("Do not use a value of more than 2°. A large value shows a mechanical problem. " +
+            "Examine the gimbal and the camera before you fly again.")
+
+        note("The app does not put a marker if the ring of the crosshair is red. If the app " +
+            "refuses, point the camera down more. See \"The crosshair\" in section 3.")
+    }
+
+    private fun sectionFive() {
+        section("5. What this build cannot do")
         body("All the controls on the flight screen operate on the EVO II. One function is " +
             "not available:")
 
         bullet("Satellite and hybrid map images (Pre-Flight Setup, Map Display). You can use " +
             "the street map or one custom map source.")
 
-        warn("Examine each control carefully on the first flight. No person flew these " +
-            "controls with an aircraft: the photo, the zoom, the record function, the " +
-            "exposure, the signal bars, the video re-sync, the AR image and the quick marker.")
+        warn("Examine each control carefully on the first flight. A person flew the photo, " +
+            "the record function, the thermal camera, the exposure and the marker functions " +
+            "with an aircraft on 1 August 2026. No person flew these controls: the zoom, " +
+            "the signal bars, the video re-sync and the quick marker.")
     }
 
     // ------------------------------------------------------- content builders

@@ -40,12 +40,20 @@ class LowBandwidthTranscoder(
     /**
      * The pilot-selectable video quality tiers.
      *
-     * **Bitrates are identical to the DJI blueprint's, but each tier carries one resolution
-     * step MORE** (480/720/1080 here vs 360/480/720 there). That is the whole point of
-     * encoding H.265 on this airframe: it delivers roughly the same quality as H.264 at about
-     * half the bitrate, so the saving is spent on resolution rather than on bandwidth. A pilot
-     * on a marginal link gets the same number of bits either way — they just get a sharper
-     * picture for them. Deliberately NOT value-for-value with DJI, so do not "restore" it.
+     * **Each tier carries one resolution step MORE than the DJI blueprint** (480/720/1080 here
+     * vs 360/480/720 there).
+     *
+     * That extra step is bought with H.265, which delivers roughly the same quality as H.264 at
+     * about half the bitrate — the saving spent on resolution rather than bandwidth.
+     *
+     * H.264 was tried briefly on 2026-08-02 to chase a keyframe pulse and REVERTED the same day:
+     * the pulse went, but at the same bitrate the picture was visibly worse, which is exactly
+     * what halving the codec's efficiency buys. We are on H.265 with the raised bitrates — see
+     * ScreenCaptureEncoder.OUT_MIME for the full history and the question that build answers.
+     *
+     * The bitrates are now roughly double what this ladder was originally tuned for, so there IS
+     * headroom here — deliberately, for the periodic IDR. Do not read the old
+     * bits-per-pixel note below as current: it describes the pre-2026-08-01 numbers.
      *
      * `maxHeight` is a CEILING on the vertical dimension, not a format: the source aspect
      * ratio is preserved and the width follows from it (see [ensureEncoder]). A 4:3 source at
@@ -404,6 +412,8 @@ class LowBandwidthTranscoder(
          *  back to "video/avc" is supported (handleCodecConfig classifies both), but the
          *  profile resolutions were chosen on the assumption of H.265 efficiency and should
          *  drop a step with it. */
+        /** H.265 — kept in step with ScreenCaptureEncoder.OUT_MIME, which carries the full
+         *  history of this choice. Both must match: they feed the same RtspClient. */
         private const val OUT_MIME = "video/hevc"
 
     }

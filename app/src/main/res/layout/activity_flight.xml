@@ -364,6 +364,21 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
+        <!-- Wall clock, 24-hour, with seconds. Its real job is on the STREAM, not here: the TAK
+             feed is a screen capture, so a viewer can read this against their own clock and know
+             exactly how far behind real time they are. Software encoding added latency, and
+             "how delayed am I?" stopped being answerable by eye.
+
+             Monospace so the digits do not jitter as they change width. Seconds are the whole
+             point — without them it cannot resolve the delay it exists to show. -->
+        <TextView
+            android:id="@+id/fpvClock"
+            style="@style/hudText"
+            android:layout_marginBottom="4dp"
+            android:gravity="end"
+            android:fontFamily="monospace"
+            android:text="" />
+
         <TextView
             android:id="@+id/fpvOverlayText"
             style="@style/hudText"

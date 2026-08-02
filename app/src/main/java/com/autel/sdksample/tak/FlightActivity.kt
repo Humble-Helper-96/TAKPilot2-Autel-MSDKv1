@@ -47,6 +47,7 @@ import org.osmdroid.views.overlay.Polyline
 class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     private lateinit var exposureReadout: TextView
+    private lateinit var fpvClock: TextView
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
     private lateinit var fpvFaaCeiling: TextView
@@ -126,6 +127,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         exposureReadout = findViewById(R.id.exposureReadout)
+        fpvClock = findViewById(R.id.fpvClock)
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
@@ -403,6 +405,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     // ---- HUD ----
 
     private fun updateHud() {
+        // Local wall clock, 24-hour with seconds. Driven from the HUD tick (500ms), which is
+        // twice the rate needed for a seconds display — so it never visibly skips a second.
+        // Locale.US pins the digits and separators: some locales substitute their own
+        // numerals, and a viewer comparing this against their own clock to measure stream
+        // delay needs it to read the same way on every device.
+        fpvClock.text = clockFormat.format(java.util.Date())
+
         val hud = TakBridgeHolder.hud()
         val takOk = TakManager.getInstance().isConnected
         val acOk = AutelProductHolder.isConnected
@@ -902,7 +911,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * at 6°, so a coarse step would be unusable for the shallow angles that actually need this.
      *
      * CALIBRATE SHALLOW. A bias hides at steep angles — if it looks perfect at 50° that proves
-     * almost nothing. 15–25° is where a real offset becomes visible.
+     * almost nothing. 25° down is the recommended angle (operator's call after calibrating
+     * in flight): shallow enough that a real offset shows, and clear of the red-reticle gate
+     * that blocks drops — with no DTED loaded the reticle turns red below 15°, which would
+     * stop the pilot part-way through the procedure.
      */
     private fun onAimOffsetsTapped() {
         AppLog.v(TAG, "aim calibration opened")
@@ -919,9 +931,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
         }
         fun refreshHint() {
+            // Both directions spelled out for BOTH rows, at the operator's request after using
+            // this in flight. A pilot mid-calibration should not have to infer that "−" is the
+            // opposite of the one direction the hint happened to name.
             hint.text = "Pitch +  sends the marker FARTHER from the aircraft, −  brings it " +
-                "closer.\nBearing +  swings it clockwise.\n\n" +
-                "Aim at a known object at a SHALLOW angle (15–25°) — a bias is nearly " +
+                "closer.\nBearing +  swings it clockwise, −  swings it counter-clockwise.\n\n" +
+                "Aim at a known object with the gimbal 25° DOWN — a bias is nearly " +
                 "invisible looking straight down.\n\nDefault is 0.00° / 0.00° (uncalibrated)."
         }
         refreshHint()
@@ -1053,6 +1068,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      */
     private fun onQuickDropTapped() {
         AppLog.v(TAG, "tap: reticle (quick drop)")
+        if (aimTooPoorToDrop()) { refuseDropForAim(); return }
         if (TakDropMarkers.quickPin() != null) {
             toast("${TakDropMarkers.QUICK_NAME} already placed — long-press the reticle to re-aim it")
             return
@@ -1077,6 +1093,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      */
     private fun onQuickDropLongPressed() {
         AppLog.v(TAG, "long-press: reticle (quick drop re-aim)")
+        if (aimTooPoorToDrop()) { refuseDropForAim(); return }
         val look = TakBridgeHolder.lookPoint()
         if (look == null) {
             AppLog.w(TAG, "quick drop re-aim refused — no look point (GPS/gimbal not ready)")
@@ -1854,6 +1871,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     companion object {
         private const val TAG = "FlightActivity"
+
+        /** 24-hour clock with seconds, for the HUD. Held as one instance rather than
+         *  built per tick — updateHud runs twice a second for the whole flight. */
+        private val clockFormat =
+            java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
 
         /** Pause after a media-mode switch before commanding record — see [startRecordVerified].
          *  The failing case measured 2ms; this is deliberately far clear of it rather than tuned

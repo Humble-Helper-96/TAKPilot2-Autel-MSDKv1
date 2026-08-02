@@ -6,7 +6,9 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.autel.sdk.Autel
@@ -35,6 +37,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var aircraft: TextView
+    private lateinit var aircraftImage: ImageView
     private lateinit var sdk: TextView
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
@@ -57,6 +60,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         TakAutoConnect.tryReconnect(applicationContext)
 
         aircraft = findViewById(R.id.homeAircraft)
+        aircraftImage = findViewById(R.id.homeAircraftImage)
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
@@ -137,6 +141,10 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private fun updateStatus() {
         val product = AutelProductHolder.product
         aircraft.text = product?.type?.toString() ?: "Not connected"
+        // Shown only once an aircraft is actually connected, so the picture is a status
+        // cue rather than decoration. INVISIBLE rather than GONE — see the layout note:
+        // collapsing it would move "TAP TO ENTER" every time the aircraft comes and goes.
+        aircraftImage.visibility = if (product != null) View.VISIBLE else View.INVISIBLE
         sdk.text = "Autel MSDK " + (runCatching { Autel.getSdkVersion() }.getOrNull() ?: "1.5")
 
         val connected = TakManager.getInstance().isConnected

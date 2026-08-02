@@ -143,25 +143,51 @@ class ScreenCaptureEncoder(
             Variant("minimal (encoder defaults)") { },
         )
 
-        for (v in variants) {
-            val format = MediaFormat.createVideoFormat(OUT_MIME, w, h).apply {
-                setInteger(MediaFormat.KEY_COLOR_FORMAT,
-                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrateBps)
-                setInteger(MediaFormat.KEY_FRAME_RATE, profile.fps)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_S)
-                v.apply(this)
+        // WHICH ENCODER, not just which format keys.
+        //
+        // This controller has exactly one HARDWARE HEVC encoder — OMX.qcom.video.encoder.hevc —
+        // and its rate control is the reason stream viewers see a pixelated pulse at every
+        // 2s keyframe. The same chip's AVC encoder does not do it, and the RT3 and both Pixels
+        // never did it either, so it is this specific component rather than our settings.
+        //
+        // There is no Codec2 HARDWARE HEVC encoder here (checked against the device's own
+        // /vendor/etc/media_codecs*.xml). The only other option is Google's SOFTWARE encoder,
+        // c2.android.hevc.encoder, which does its own rate control and spreads keyframe cost
+        // properly. We ask for it first and fall back to whatever the platform picks.
+        //
+        // ⚠ SOFTWARE ENCODING COSTS CPU. On this sdm660 the STANDARD tier (720p15) should be
+        // comfortable; the HIGH tier (1080p15) may not keep up, and dropped frames or a hot
+        // controller would be the symptom. The winning encoder's NAME is logged — check it
+        // before drawing conclusions about picture quality, because a silent fall back to the
+        // hardware encoder would look exactly like "software did not help".
+        for (name in encoderPreference) {
+            for (v in variants) {
+                val format = MediaFormat.createVideoFormat(OUT_MIME, w, h).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                        MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                    setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrateBps)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, profile.fps)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_S)
+                    v.apply(this)
+                }
+                val enc = runCatching {
+                    if (name == null) MediaCodec.createEncoderByType(OUT_MIME)
+                    else MediaCodec.createByCodecName(name)
+                }.getOrNull() ?: break     // this encoder does not exist — go to the next one
+                val ok = runCatching {
+                    enc.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                }.isSuccess
+                if (ok) return enc to "${enc.name} / ${v.name}"
+                AppLog.w(TAG, "${name ?: "default"} rejected variant '${v.name}' — trying simpler")
+                runCatching { enc.release() }
             }
-            val enc = runCatching { MediaCodec.createEncoderByType(OUT_MIME) }.getOrNull() ?: continue
-            val ok = runCatching {
-                enc.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            }.isSuccess
-            if (ok) return enc to v.name
-            AppLog.w(TAG, "encoder rejected variant '${v.name}' — trying simpler")
-            runCatching { enc.release() }
         }
         return null
     }
+
+    /** Encoders to try, in order. null means "let the platform choose" (normally hardware). */
+    private val encoderPreference: List<String?> get() =
+        if (PREFER_SOFTWARE_ENCODER) listOf(SW_HEVC_ENCODER, null) else listOf(null)
 
     /** Ask the encoder for an IDR now — arms the RTSP packetiser on connect, heals viewers. */
     fun requestSyncFrame() {
@@ -280,7 +306,50 @@ class ScreenCaptureEncoder(
         private const val Z: Byte = 0
         private const val O: Byte = 1
         private const val I_FRAME_INTERVAL_S = 2
+
+        /**
+         * Prefer Google's SOFTWARE HEVC encoder over this chip's hardware one.
+         *
+         * Set true 2026-08-02 to test whether the 2s keyframe pulse is the hardware encoder's
+         * rate control. The other devices this app runs on (OUKITEL RT3, Pixel 8, Pixel 10) never
+         * showed the pulse, and the operator believes those were software-encoding.
+         *
+         * Flip to false to go back to the hardware encoder. Keep the flag rather than deleting
+         * the loser: which encoder is in use is the single most useful thing to change when
+         * stream quality is in question, and hunting for the call site each time is how this
+         * ends up hard-coded by accident.
+         */
+        private const val PREFER_SOFTWARE_ENCODER = true
+
+        /** Google's software HEVC encoder. Present on this controller; verified against its own
+         *  /vendor/etc/media_codecs_google_c2_video.xml. */
+        private const val SW_HEVC_ENCODER = "c2.android.hevc.encoder"
         /** Kept in step with [LowBandwidthTranscoder]'s OUT_MIME. */
+        /**
+         * H.265 at the RAISED bitrates — the combination that has never actually been flown.
+         *
+         * History, because this constant has now moved twice and the reasoning matters more than
+         * the value:
+         *  - H.265 @ 800kbps STANDARD: a 2-second pixelated pulse, seen by stream viewers only
+         *    (the artifact is created by this re-encode, so it exists only in the outgoing
+         *    stream). Cause looked like a full IDR every 2s under forced CBR with no headroom.
+         *  - Bitrates roughly doubled. Pulse persisted.
+         *  - H.264 @ the raised bitrates: the operator judged the picture noticeably worse.
+         *    Expected — AVC needs roughly twice HEVC's bitrate for equivalent quality, so
+         *    doubling the rate only bought back what the codec gave up.
+         *  - NOW: H.265 @ the raised bitrates. HEVC's efficiency AND the keyframe headroom.
+         *
+         * The open question this build answers: is the pulse rate starvation that the extra bits
+         * now cover, or is it this controller's HEVC encoder itself? `OMX.qcom.video.encoder
+         * .hevc` here is a LEGACY OMX component (see configureEncoder's doc) whose rate control
+         * is less mature than the same vendor's AVC encoder. If the pulse returns at double the
+         * bitrate, the encoder is the cause and no bitrate will fix it — the next lever is VBR,
+         * which lets keyframes borrow bits without raising the average.
+         *
+         * Both codecs stay fully handled either side of this constant (parameter-set parsing in
+         * handleCodecConfig; RtspClient picks H264 vs H265 packetisation from whether a VPS
+         * reaches setVideoInfo). Flipping it is a one-line change in either direction.
+         */
         private const val OUT_MIME = "video/hevc"
     }
 }

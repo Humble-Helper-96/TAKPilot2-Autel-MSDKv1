@@ -186,9 +186,26 @@
                 android:text="MSDK —" android:layout_gravity="center_horizontal" />
         </LinearLayout>
 
-        <!-- Spacer pushes the tap hint to the bottom -->
-        <View android:layout_width="0dp" android:layout_height="0dp"
-            android:layout_weight="1" />
+        <!-- Aircraft picture. Fills the dead space between the SDK line and the tap hint, and
+             doubles as an at-a-glance "the aircraft is here" cue.
+
+             INVISIBLE (not GONE) when no aircraft is connected: GONE would let the spacer
+             collapse and move "TAP TO ENTER" up the card, so the layout would jump every time
+             the aircraft connects or drops. Reserving the space keeps the card still. -->
+        <ImageView
+            android:id="@+id/homeAircraftImage"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:visibility="invisible"
+            android:contentDescription="Connected aircraft"
+            android:src="@drawable/evo2_aircraft" />
 
         <TextView
             android:layout_width="wrap_content"
