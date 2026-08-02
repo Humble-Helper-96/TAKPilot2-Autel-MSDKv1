@@ -167,6 +167,48 @@ object ArSettings {
     fun resetFov(context: Context) =
         saveFov(context, TakBridgeHolder.DEFAULT_HFOV, TakBridgeHolder.DEFAULT_VFOV)
 
+    private const val KEY_PITCH_OFFSET = "aim_pitch_offset_deg"
+    private const val KEY_BEARING_OFFSET = "aim_bearing_offset_deg"
+
+    /**
+     * SPI aim calibration — the bias between where the gimbal SAYS it is looking and where the
+     * lens actually looks. Persisted per install, alongside FOV.
+     *
+     * Distinct from FOV calibration and they fix opposite problems: an FOV error is invisible at
+     * the frame CENTRE and grows toward the edges, while an aim offset moves the CENTRE itself —
+     * which is exactly what a marker drop uses. Calibrating one will not fix the other.
+     *
+     * Ground error from an aim bias scales as 1/sin²(pitch): at 200ft AGL one degree is ~5ft at
+     * 54° down but ~320ft at 6°. So it hides at steep angles and only shows up on shallow drops,
+     * and it must be measured at a SHALLOW angle to be seen at all.
+     *
+     * Re-check after a gimbal strike, a repair, or swapping airframes — this is airframe
+     * property, not a software constant.
+     */
+    fun loadAimOffsets(context: Context) {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        TakBridgeHolder.setAimOffsets(
+            p.getFloat(KEY_PITCH_OFFSET, TakBridgeHolder.DEFAULT_PITCH_OFFSET.toFloat()).toDouble(),
+            p.getFloat(KEY_BEARING_OFFSET, TakBridgeHolder.DEFAULT_BEARING_OFFSET.toFloat()).toDouble(),
+        )
+        AppLog.i(TAG, "aim calibration loaded: pitch %+.2f deg, bearing %+.2f deg"
+            .format(TakBridgeHolder.currentPitchOffset, TakBridgeHolder.currentBearingOffset))
+    }
+
+    /** Applies immediately AND persists — same as FOV, the pilot adjusts while watching. */
+    fun saveAimOffsets(context: Context, pitchDeg: Double, bearingDeg: Double) {
+        TakBridgeHolder.setAimOffsets(pitchDeg, bearingDeg)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putFloat(KEY_PITCH_OFFSET, TakBridgeHolder.currentPitchOffset.toFloat())
+            .putFloat(KEY_BEARING_OFFSET, TakBridgeHolder.currentBearingOffset.toFloat())
+            .apply()
+        AppLog.i(TAG, "aim calibration set: pitch %+.2f deg, bearing %+.2f deg"
+            .format(TakBridgeHolder.currentPitchOffset, TakBridgeHolder.currentBearingOffset))
+    }
+
+    fun resetAimOffsets(context: Context) = saveAimOffsets(
+        context, TakBridgeHolder.DEFAULT_PITCH_OFFSET, TakBridgeHolder.DEFAULT_BEARING_OFFSET)
+
     /** Default ON: the toggle implies everything shows, so first run should match that. */
     fun isEnabled(context: Context, category: Category): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

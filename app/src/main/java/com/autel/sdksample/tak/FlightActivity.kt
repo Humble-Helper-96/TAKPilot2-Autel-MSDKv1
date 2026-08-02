@@ -134,6 +134,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         arOverlay = findViewById(R.id.flightArOverlay)
         // Load the calibrated FOV before the overlay draws anything with it.
         ArSettings.loadFov(this)
+        ArSettings.loadAimOffsets(this)
         // Chrome insets so edge arrows can't be parked under the toolbar or the HUD column
         // where they're invisible — the exact case (aircraft directly overhead) the indicator
         // matters most. Measured from the real views after layout, re-read every pass, so a
@@ -320,7 +321,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         findViewById<ImageButton>(R.id.flightDropPinButton).setOnClickListener {
             AppLog.v(TAG, "Drop Pin tapped")
             val gp = TakBridgeHolder.lookPoint()
-            if (gp == null) {
+            if (aimTooPoorToDrop()) {
+                refuseDropForAim()
+            } else if (gp == null) {
                 AppLog.w(TAG, "drop refused — no look-point (GPS/gimbal not ready)")
                 toast("Can't drop: camera look-point not available (GPS/gimbal not ready)")
             } else {
@@ -521,13 +524,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // go blank without one. Losing the line also lets the FAA ceiling sit directly
             // above the mini-map, which is where a pilot looks for it.
             //
-            // SPI stays: nothing else on the screen says whether the camera look-point is being
-            // published to TAK. It gets its own line only when it is actually on, so the
-            // readout does not carry a permanently blank row.
-            if (TakBridgeHolder.isCameraPointEnabled) {
-                append('\n')
-                append("SPI ✓")
-            }
+            // The "SPI ✓" line that used to live here was dropped too (operator, 2026-08-01).
+            // The earlier argument for keeping it — that nothing else says whether the camera
+            // look-point is being published — did not survive contact with the actual screen:
+            // the pilot toggles SPI deliberately and the button carries its own state, so the
+            // line was restating a thing the pilot had just done.
         }
 
         if (hud == null || !hud.hasFix) return
@@ -876,6 +877,107 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             .setView(view)
             .setPositiveButton("Done", null)
             .setNeutralButton("Calibrate FOV…") { _, _ -> onArCalibrateTapped() }
+            .setNegativeButton("Aim Offsets…") { _, _ -> onAimOffsetsTapped() }
+            .show()
+    }
+
+    /**
+     * SPI AIM CALIBRATION — corrects the bias between where the gimbal reports it is looking
+     * and where the lens actually looks (mount tolerance, gimbal wear, a hard landing).
+     *
+     * NOT the same thing as FOV calibration, and one will not fix the other: an FOV error is
+     * invisible at the frame centre and grows toward the edges, while an aim offset moves the
+     * CENTRE — which is precisely what a marker drop uses.
+     *
+     * Why this exists as a pilot-facing control rather than a constant: it was a compile-time
+     * `const val` sitting at 0.0, so tuning it cost a rebuild and in practice nobody ever did.
+     * The DJI sibling's equivalent bearing offset was flight-tuned to +105; this port's had
+     * never been measured, which is the most likely reason its marker accuracy trailed DJI's at
+     * shallow look angles. It is airframe property, not a software constant — re-check it after
+     * a gimbal strike, a repair, or swapping aircraft.
+     *
+     * Applied live on every tap so the pilot can hold the crosshair on a known object, watch
+     * the SPI/AR marker walk onto it, and stop when it sits right. Steps are deliberately fine
+     * (0.25°): at 200ft AGL a QUARTER of a degree is ~1ft of ground error at 54° down but ~80ft
+     * at 6°, so a coarse step would be unusable for the shallow angles that actually need this.
+     *
+     * CALIBRATE SHALLOW. A bias hides at steep angles — if it looks perfect at 50° that proves
+     * almost nothing. 15–25° is where a real offset becomes visible.
+     */
+    private fun onAimOffsetsTapped() {
+        AppLog.v(TAG, "aim calibration opened")
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        var pitch = TakBridgeHolder.currentPitchOffset
+        var bearing = TakBridgeHolder.currentBearingOffset
+
+        val hint = TextView(this).apply {
+            textSize = 13f
+            setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
+        }
+        fun refreshHint() {
+            hint.text = "Pitch +  sends the marker FARTHER from the aircraft, −  brings it " +
+                "closer.\nBearing +  swings it clockwise.\n\n" +
+                "Aim at a known object at a SHALLOW angle (15–25°) — a bias is nearly " +
+                "invisible looking straight down.\n\nDefault is 0.00° / 0.00° (uncalibrated)."
+        }
+        refreshHint()
+
+        // Built in code rather than XML: two near-identical stepper rows, and a layout file
+        // would need its own ids for each without buying any clarity.
+        fun stepperRow(label: String, get: () -> Double, set: (Double) -> Unit): android.view.View {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, pad / 2, 0, pad / 2)
+            }
+            val name = TextView(this).apply {
+                text = label; textSize = 16f
+                setTextColor(android.graphics.Color.WHITE)
+                layoutParams = android.widget.LinearLayout.LayoutParams(0,
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val value = TextView(this).apply {
+                textSize = 18f; minWidth = (90 * resources.displayMetrics.density).toInt()
+                gravity = android.view.Gravity.CENTER
+                setTextColor(android.graphics.Color.parseColor("#9AC4FF"))
+            }
+            fun show() { value.text = "%+.2f°".format(get()) }
+            show()
+            fun button(text: String, delta: Double) = android.widget.Button(this).apply {
+                this.text = text
+                setOnClickListener {
+                    set(get() + delta)
+                    ArSettings.saveAimOffsets(this@FlightActivity, pitch, bearing)
+                    // Read back: the holder clamps, so the display must show what was ACCEPTED,
+                    // not what was asked for — otherwise the pilot keeps tapping past the limit.
+                    pitch = TakBridgeHolder.currentPitchOffset
+                    bearing = TakBridgeHolder.currentBearingOffset
+                    show()
+                }
+            }
+            row.addView(name)
+            row.addView(button("−", -0.25))
+            row.addView(value)
+            row.addView(button("+", 0.25))
+            return row
+        }
+
+        root.addView(stepperRow("Pitch offset", { pitch }, { pitch = it }))
+        root.addView(stepperRow("Bearing offset", { bearing }, { bearing = it }))
+        root.addView(hint)
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("Aim Calibration")
+            .setView(root)
+            .setPositiveButton("Done", null)
+            .setNeutralButton("Reset to 0") { _, _ ->
+                ArSettings.resetAimOffsets(this)
+                toast("Aim calibration reset")
+            }
             .show()
     }
 
@@ -1195,7 +1297,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val cam = AutelProductHolder.xt706 ?: return
         cam.getISO(object : com.autel.common.CallbackWithOneParam<com.autel.common.camera.media.CameraISO> {
             override fun onSuccess(iso: com.autel.common.camera.media.CameraISO?) {
-                lastIsoLabel = iso?.name?.removePrefix("ISO_")
+                // Prefer the RAW value; the enum cannot represent what this camera actually does.
+                lastIsoLabel = rawIso()?.toString()
+                    ?: iso?.name?.removePrefix("ISO_")?.takeIf { it != "UNKNOWN" }
             }
             override fun onFailure(error: AutelError?) { /* readout stays "—" */ }
         })
@@ -1206,6 +1310,29 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             override fun onFailure(error: AutelError?) { /* readout stays "—" */ }
         })
     }
+
+    /**
+     * The camera's ACTUAL ISO as an integer, or null if the parsed settings aren't populated.
+     *
+     * WHY NOT JUST USE getISO(). That returns [com.autel.common.camera.media.CameraISO], an enum
+     * holding only whole stops — 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600 (plus a few
+     * odd high values). It has NO entry for the 1/3-stop values a camera in auto exposure
+     * routinely picks: 125, 160, 250, 320, 500, 640, 1000... The SDK maps every one of those to
+     * UNKNOWN, so the HUD read "ISO UNKNOWN" the moment auto-exposure stepped off a whole stop —
+     * observed on hardware 2026-08-01, ISO 100 displayed fine and everything above did not.
+     *
+     * The raw integer is right there in the parsed settings the SDK already maintains
+     * (CameraAllSettings.ImageISO.getISO()), it just isn't surfaced on the public camera
+     * interface. Reading it loses nothing and survives whatever values future firmware picks,
+     * where extending an enum mapping would not.
+     *
+     * Reaches into com.autel.camera.protocol.protocol20 (SDK internals). Read-only, wrapped, and
+     * it degrades to the enum if the shape ever changes — but do not build control paths on it.
+     */
+    private fun rawIso(): Int? = runCatching {
+        com.autel.camera.protocol.protocol20.entity.CameraAllSettingsWithParser.instance()
+            ?.cameraAllSettings?.imageISO?.iso?.takeIf { it > 0 }
+    }.getOrNull()
 
     /** "ShutterSpeed_1_60" -> "1/60", "ShutterSpeed_3dot2" -> "3.2\"", "ShutterSpeed_15" -> "15\"". */
     private fun shutterLabel(enumName: String): String? {
@@ -1383,12 +1510,44 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * nothing else on screen tells the pilot that. Shares [CrosshairView.accuracyColorFor] with
      * the reticle ring so the number and the ring can never disagree about the state.
      *
-     * NOTE the pitch here is the RAW gimbal pitch from the bridge's cache — the sign convention
-     * is still uncalibrated on Autel (`AutelTakBridge.PITCH_SIGN`, a Phase 4 bring-up item). If
-     * hardware testing shows Autel reports pitch inverted vs DJI, this readout and the ring will
-     * both be wrong in the same direction; fix it at the bridge, not here, so the SPI math and
-     * this cue stay consistent.
+     * RESOLVED 2026-08-01. This used to warn that the sign convention was uncalibrated. It is
+     * now settled: Autel reports pitch DOWN POSITIVE (opposite to DJI), and the bridge negates
+     * it at ingest so everything downstream — this readout, the ring, the SPI look-point, the AR
+     * overlay and the CoT pitch sent to TAK — shares one convention (down = negative).
+     *
+     * So the pitch arriving here is ALREADY normalised. Do not add another sign here; that would
+     * put this cue back out of step with the SPI math, which is exactly what the old note was
+     * trying to prevent.
      */
+    /**
+     * True when the reticle is RED — the look angle is too shallow (or too near level) for a
+     * marker drop to mean anything.
+     *
+     * Deliberately reuses [CrosshairView.accuracyColorFor], the same call that tints the reticle
+     * and the gimbal readout, rather than re-deriving a threshold. Three places now agree by
+     * construction; a fourth opinion about "how shallow is too shallow" would eventually drift
+     * from the other three and the pilot would see a red reticle accept a drop.
+     *
+     * Why block rather than warn: ground error scales as 1/sin²(pitch), so red is not "slightly
+     * worse" — at 200ft AGL it is hundreds of feet, and above the horizon there is no ground
+     * intersection at all (the solver falls back to a fixed 300m guess). A marker placed there
+     * is fiction that the TAK team cannot distinguish from a real one, and they will act on it.
+     */
+    private fun aimTooPoorToDrop(): Boolean {
+        val hud = TakBridgeHolder.hud()
+        val pitch = hud?.gimbalPitch ?: return true    // no attitude = no basis to trust a drop
+        val dtedAvailable = hud.hasFix &&
+            DtedIndex.elevationAt(this, hud.lat, hud.lon) != null
+        return CrosshairView.accuracyColorFor(pitch, dtedAvailable) ==
+            CrosshairView.accuracyPoorColor
+    }
+
+    /** Shared refusal, so both drop paths give the pilot the same reason. */
+    private fun refuseDropForAim() {
+        AppLog.w(TAG, "marker drop refused — look angle in the red (accuracy cue POOR)")
+        toast("Look angle too shallow — tilt the gimbal down before dropping a marker")
+    }
+
     private fun updateGimbalPitch(hud: AutelTakBridge.Hud?) {
         val pitch = hud?.gimbalPitch
         // Whether a marker dropped RIGHT NOW would get CameraSlantPoint's terrain-corrected
@@ -1520,7 +1679,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle(if (pins.isEmpty()) "Dropped Markers (none)" else "Dropped Markers")
-            .setItems(labels) { _, i -> onMarkerRowTapped(pins[i]) }
+            .setAdapter(iconRowAdapter(pins.zip(labels) { p, l -> p.affiliation.res to l })) { _, i ->
+                onMarkerRowTapped(pins[i])
+            }
             .setNegativeButton("Close", null)
             .setNeutralButton("Clear All") { _, _ -> onClearAllMarkersTapped() }
             .show()
@@ -1532,7 +1693,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             .setTitle(pin.name)
             .setItems(actions) { _, index ->
                 when (index) {
-                    0 -> onMoveMarkerTapped(pin)
+                    0 -> if (aimTooPoorToDrop()) refuseDropForAim() else onMoveMarkerTapped(pin)
                     1 -> onRenameMarkerTapped(pin)
                     2 -> onChangeTypeTapped(pin)
                     3 -> {
@@ -1582,7 +1743,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val affs = TakDropMarkers.Affiliation.values()
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Change Type")
-            .setItems(affs.map { it.label }.toTypedArray()) { _, i ->
+            .setAdapter(iconRowAdapter(affiliationRows(affs))) { _, i ->
                 TakDropMarkers.changeType(pin.key, affs[i])
             }
             .setNegativeButton("Cancel", null)
@@ -1619,11 +1780,43 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     // ---- Drop-pin UI ----
 
+    /**
+     * Adapter for the affiliation pickers: MIL-STD shape + name, not name alone.
+     *
+     * Both pickers used `AlertDialog.setItems()`, which renders text ONLY — so
+     * `Affiliation.res` was defined and never drawn, and the pilot chose an affiliation by
+     * reading a word. The shape and colour are the whole point of these symbols; a pilot
+     * scanning under time pressure recognises a red diamond faster than the string "Hostile",
+     * and the icon here is the same drawable that ends up on the map, so what they pick is
+     * literally what they get.
+     */
+    private fun iconRowAdapter(rows: List<Pair<Int, String>>):
+        android.widget.ArrayAdapter<Pair<Int, String>> {
+        // Themed context, so the row inflates against the dialog's dark background rather than
+        // the activity's — otherwise the white label can land on white.
+        val themed = android.view.ContextThemeWrapper(this, R.style.TakDialogTheme)
+        return object : android.widget.ArrayAdapter<Pair<Int, String>>(
+            themed, R.layout.item_marker_affiliation, R.id.affiliationLabel, rows
+        ) {
+            override fun getView(position: Int, convertView: android.view.View?,
+                                 parent: android.view.ViewGroup): android.view.View {
+                val row = super.getView(position, convertView, parent)
+                val (iconRes, label) = getItem(position)!!
+                row.findViewById<ImageView>(R.id.affiliationIcon).setImageResource(iconRes)
+                row.findViewById<android.widget.TextView>(R.id.affiliationLabel).text = label
+                return row
+            }
+        }
+    }
+
+    private fun affiliationRows(affs: Array<TakDropMarkers.Affiliation>) =
+        affs.map { it.res to it.label }
+
     private fun pickAffiliationThen(then: (TakDropMarkers.Affiliation) -> Unit) {
         val affs = TakDropMarkers.Affiliation.values()
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Marker affiliation")
-            .setItems(affs.map { it.label }.toTypedArray()) { _, which ->
+            .setAdapter(iconRowAdapter(affiliationRows(affs))) { _, which ->
                 AppLog.v(TAG, "affiliation chosen: ${affs[which].label}")
                 then(affs[which])
             }

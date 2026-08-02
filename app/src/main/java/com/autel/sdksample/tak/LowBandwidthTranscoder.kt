@@ -68,9 +68,35 @@ class LowBandwidthTranscoder(
      * streaming the screen at all.
      */
     enum class TranscodeProfile(val maxHeight: Int, val fps: Int, val bitrateBps: Int) {
-        LOW(480, 10, 275_000),        // maximum survivability on marginal links
-        STANDARD(720, 15, 800_000),   // default — ~3x Low's bitrate, noticeably better
-        HIGH(1080, 15, 1_800_000);    // ~2x again, plus higher resolution
+        // Bitrates raised for STANDARD/HIGH on 2026-08-01 to kill a 2-SECOND PIXELATED PULSE
+        // visible to stream viewers (never on the controller — the artifact is created by this
+        // re-encode, so it exists only in the outgoing stream).
+        //
+        // Cause: a full IDR every I_FRAME_INTERVAL_S (2s) under FORCED CBR. The keyframe cannot
+        // fit its share of a 2-second budget, so the rate controller spikes the quantiser on
+        // that frame — blocky keyframe, recovering over the following P-frames, forever.
+        //
+        // The old numbers were tuned for constant quality-per-pixel and left no keyframe
+        // headroom at any setting:
+        //     LOW 0.0671, STANDARD 0.0579, HIGH 0.0579 bits/pixel/frame
+        // STANDARD and HIGH were IDENTICAL, which is why "just use HIGH" would not have helped —
+        // it scales resolution and bitrate together and pulses exactly the same.
+        //
+        // STANDARD/HIGH now sit near 0.115 bits/pixel/frame, roughly double, which is the
+        // headroom a periodic IDR needs at these sizes.
+        //
+        // LOW was raised to match, at the operator's call (2026-08-01): at 275k it looked "really
+        // bad", and video too degraded to read is not survivability, it is just a smaller stream.
+        // ⚠ Note what this trades: LOW is no longer the minimum-bandwidth floor it was designed
+        // as. If a genuinely marginal link ever needs one, add a new profile below this rather
+        // than pushing LOW back down and re-breaking the picture.
+        //
+        // All three now sit at the SAME bits/pixel/frame (~0.14 at the flight screen's 1.47:1
+        // aspect), so a profile change trades resolution and frame rate WITHOUT changing
+        // per-pixel quality — which is what makes them comparable choices for a pilot.
+        LOW(480, 10, 475_000),        // marginal links — now matched to STANDARD's bits/pixel
+        STANDARD(720, 15, 1_600_000), // default — keyframe headroom over the old 800k
+        HIGH(1080, 15, 3_600_000);    // same bits/pixel as STANDARD, at 1080p
 
         companion object {
             fun fromPref(name: String?): TranscodeProfile = when (name) {

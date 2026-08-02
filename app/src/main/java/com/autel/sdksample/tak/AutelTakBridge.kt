@@ -58,7 +58,10 @@ class AutelTakBridge(
     @Volatile private var lon = Double.NaN
     @Volatile private var hae = Double.NaN          // EvoGpsInfo.getAltitude() — HAE
     @Volatile private var mslAlt = Double.NaN       // EvoGpsInfo.getHeightMeanSeaLevel()
-    @Volatile private var relAlt = Double.NaN       // LocalCoordinateInfo altitude (above takeoff)
+    // Metres ABOVE TAKEOFF, up-positive. NOT what the SDK hands over — Autel's
+    // LocalCoordinateInfo is NED (down-positive) and is negated on the way in; see the
+    // assignment for the in-flight confirmation. Every consumer relies on up-positive.
+    @Volatile private var relAlt = Double.NaN
     @Volatile private var speedMs = 0.0             // ground speed m/s
     @Volatile private var headingDeg = 0.0          // aircraft yaw, 0..360
     @Volatile private var batteryPct = 0
@@ -180,7 +183,25 @@ class AutelTakBridge(
                     vertAccM = if (v in 0.01..500.0) v else -1.0
                 }
                 info.localCoordinateInfo?.let { local ->
-                    relAlt = local.altitude.toDouble()
+                    // NEGATED — Autel's LocalCoordinateInfo is a NED frame, so its third axis is
+                    // DOWN-POSITIVE: an aircraft 60m ABOVE takeoff reports altitude = -60.
+                    // Confirmed in flight 2026-08-01 by the only test that settles a sign
+                    // question: climbing drove the number MORE negative, descending drove it
+                    // toward zero, and zero was on the ground.
+                    //
+                    // This was not cosmetic. Every consumer reads relAlt as up-positive metres
+                    // above takeoff, so the raw value broke three things at once:
+                    //   - the HUD read -198 ft while the aircraft was at +198 ft
+                    //   - aglMeters() returns relAlt only when > 0, so it fell back to 0 and the
+                    //     SPI slant-point solver placed every dropped marker as if the aircraft
+                    //     were sitting on the ground (visible as "agl=0" in the SPI log line
+                    //     while airborne) — this is what made dropped markers inaccurate
+                    //   - isFlying (relAlt > 0.5) was false the entire flight
+                    // Negated here, at ingest, for the same reason as the gimbal pitch above:
+                    // it is the one point that fixes the HUD, the marker math, TerrainAgl's
+                    // MSL derivation and the AR overlay together, with no consumer double-
+                    // correcting.
+                    relAlt = -local.altitude.toDouble()
                     val s = local.speed.toDouble()
                     speedMs = if (s.isFinite() && s >= 0) s else run {
                         val x = local.xSpeed.toDouble(); val y = local.ySpeed.toDouble()
@@ -242,7 +263,23 @@ class AutelTakBridge(
         evo.gimbal.setAngleListener(object : CallbackWithOneParam<EvoAngleInfo> {
             override fun onSuccess(info: EvoAngleInfo?) {
                 info ?: return
-                liveGimbalPitch = info.pitch.toDouble()
+                // NEGATED AT INGEST — Autel reports gimbal pitch with DOWN POSITIVE, which is
+                // the opposite of DJI. Confirmed on hardware 2026-08-01: tilting the gimbal
+                // down made the HUD read "GIMBAL n° UP".
+                //
+                // Normalised HERE, at the single point the value enters the app, because
+                // liveGimbalPitch feeds THREE independent consumers that all assume the DJI
+                // convention (down = negative):
+                //   1. hud() -> Hud.gimbalPitch -> the HUD readout and the crosshair accuracy ring
+                //   2. pushOnce() -> the CoT pitch= attribute PUBLISHED TO TAK
+                //   3. pushCameraPoint()/cameraPose() -> SPI look-point, AR overlay, sensor cone
+                //
+                // Flipping PITCH_SIGN instead would have fixed only (3) and left the HUD and the
+                // data the TAK team receives silently inverted. One negation, at the source, is
+                // the only place that fixes all three without any consumer double-correcting.
+                // PITCH_SIGN stays +1.0 and remains what it was meant to be: a calibration knob,
+                // not the inversion fix.
+                liveGimbalPitch = -info.pitch.toDouble()
                 liveGimbalYaw = info.yaw.toDouble()
             }
             override fun onFailure(error: AutelError?) {
@@ -342,8 +379,8 @@ class AutelTakBridge(
      * [BEARING_MODE_RELATIVE]. Both paths are logged each SPI push for exactly that test.
      */
     private fun cameraBearing(rawYaw: Double, aircraftHeading: Double): Double =
-        if (BEARING_MODE_RELATIVE) CameraSlantPoint.norm360(aircraftHeading + rawYaw + BEARING_OFFSET_DEG)
-        else CameraSlantPoint.norm360(rawYaw + BEARING_OFFSET_DEG)
+        if (BEARING_MODE_RELATIVE) CameraSlantPoint.norm360(aircraftHeading + rawYaw + TakBridgeHolder.currentBearingOffset)
+        else CameraSlantPoint.norm360(rawYaw + TakBridgeHolder.currentBearingOffset)
 
     private fun pushCameraPoint(lat: Double, lon: Double, aglMeters: Double, aircraftHeading: Double) {
         val pitch = liveGimbalPitch
@@ -353,10 +390,29 @@ class AutelTakBridge(
             return
         }
         val bearing = cameraBearing(yaw, aircraftHeading)
-        // ⚠ Gimbal pitch sign convention unverified on Autel (tracker item #6). Assumed
-        // DJI-like: level = 0, looking down = negative. Flip PITCH_SIGN to -1.0 if the
-        // SPI lands behind/above the aircraft in testing.
-        val pitchAdj = pitch * PITCH_SIGN + PITCH_OFFSET_DEG
+        // Sign convention RESOLVED 2026-08-01 — Autel reports down-positive and is negated at
+        // ingest, so by here it is DJI-like: level = 0, looking down = negative. PITCH_SIGN is a
+        // calibration scale, not the inversion fix; see its doc before touching it.
+        val pitchAdj = pitch * PITCH_SIGN + TakBridgeHolder.currentPitchOffset
+
+        // ABOVE THE HORIZON THERE IS NO LOOK-POINT, SO PUBLISH NOTHING.
+        //
+        // The camera ray only meets the ground while pointing below horizontal. Looking up (now
+        // reachable — the upward gimbal limit is unlocked at connect) CameraSlantPoint cannot
+        // solve, and falls back to a FIXED 300m range along the bearing. Publishing that would
+        // put a confident-looking SPI on the TAK picture at a spot the camera is not seeing and
+        // nobody downstream could tell it was invented. An absent SPI is honest; a fabricated
+        // one is worse than none, because the team will act on it.
+        //
+        // Threshold matches CameraSlantPoint's own `depression > 1.0` guard, so this suppresses
+        // exactly the cases it would otherwise have faked.
+        if (pitchAdj > -1.0) {
+            sensorFov = -1.0; sensorVfov = -1.0; sensorAzimuth = -1.0
+            sensorElevation = pitchAdj; sensorRange = -1.0
+            AppLog.d(TAG, "SPI suppressed: camera at or above horizon " +
+                "(pitch ${"%.1f".format(pitchAdj)}) — no ground intersection to publish")
+            return
+        }
 
         val gp = CameraSlantPoint.compute(
             lat, lon, aglMeters, bearing, pitchAdj, ::elevationLookup, aircraftMsl(aglMeters))
@@ -405,7 +461,7 @@ class AutelTakBridge(
     fun cameraPose(): CameraPose? {
         val pitch = liveGimbalPitch ?: return null
         val yaw = liveGimbalYaw ?: return null
-        return CameraPose(cameraBearing(yaw, headingDeg), pitch * PITCH_SIGN + PITCH_OFFSET_DEG)
+        return CameraPose(cameraBearing(yaw, headingDeg), pitch * PITCH_SIGN + TakBridgeHolder.currentPitchOffset)
     }
 
     /**
@@ -429,7 +485,7 @@ class AutelTakBridge(
         val bearing = cameraBearing(yaw, headingDeg)
         val agl = aglMeters()
         val gp = CameraSlantPoint.compute(
-            lat, lon, agl, bearing, pitch * PITCH_SIGN + PITCH_OFFSET_DEG,
+            lat, lon, agl, bearing, pitch * PITCH_SIGN + TakBridgeHolder.currentPitchOffset,
             ::elevationLookup, aircraftMsl(agl))
         // Third element is the target's terrain elevation, which dropped markers publish as
         // their CoT hae. 0.0 when there's no DTED coverage — same "unknown, assume sea level"
@@ -473,13 +529,22 @@ class AutelTakBridge(
 
         // ---- SPI calibration constants (flight-test these; see tracker §4.6 open items) ----
         /** Added to the gimbal yaw to reach true bearing. DJI needed +105; Autel starts at 0. */
-        private const val BEARING_OFFSET_DEG = 0.0
+        // MOVED to TakBridgeHolder.currentBearingOffset (runtime + persisted) so it can be
+        // calibrated without a rebuild. See TakBridgeHolder's aim-calibration block.
         /** false: gimbal yaw treated as absolute; true: body-relative (heading + yaw). */
         private const val BEARING_MODE_RELATIVE = false
-        /** +1.0 assumes DJI-like pitch (down = negative). Flip to -1.0 if inverted. */
+        /**
+         * Slant-range pitch CALIBRATION scale — no longer the inversion fix.
+         *
+         * DO NOT flip this to -1.0 to correct an inverted gimbal readout. Autel's down-positive
+         * convention is already normalised at ingest (see setAngleListener), because this
+         * constant only reaches the SPI/AR path and would leave the HUD and the CoT pitch sent
+         * to TAK inverted. Flipping it now would re-invert the SPI and AR while the HUD stayed
+         * correct — the two would silently disagree, which is worse than both being wrong.
+         */
         private const val PITCH_SIGN = 1.0
         /** Slant-range fine-tune, added to pitch after sign correction. */
-        private const val PITCH_OFFSET_DEG = 0.0
+        // MOVED to TakBridgeHolder.currentPitchOffset — see above.
 
         // EVO II Dual 640T V3 per-camera FOV (deg) at 1x — CALIBRATION CONSTANTS.
         // Start values from published specs; confirm against the live cone in ATAK. The EO pair
@@ -509,6 +574,14 @@ object TakBridgeHolder {
     const val MIN_FOV = 5.0
     const val MAX_FOV = 170.0
 
+    /** Aim-calibration defaults: zero, i.e. trust the gimbal exactly as reported. Deliberately
+     *  NOT a guessed non-zero value — an uncalibrated system should behave predictably, and a
+     *  fabricated offset would be indistinguishable from a measured one later. */
+    const val DEFAULT_PITCH_OFFSET = 0.0
+    const val DEFAULT_BEARING_OFFSET = 0.0
+    /** Past this, the problem is mechanical, not calibration — see [setAimOffsets]. */
+    const val MAX_PITCH_OFFSET = 15.0
+
     private var bridge: AutelTakBridge? = null
     private var videoUrl: String? = null
     private var cameraPointEnabled = false
@@ -520,6 +593,38 @@ object TakBridgeHolder {
     // the published FOV cone and the AR projection always read the same numbers.
     private var hFovBase: Double = DEFAULT_HFOV
     private var vFovBase: Double = DEFAULT_VFOV
+
+    // ---- SPI aim calibration (pitch / bearing offsets) ----
+    //
+    // WHY THESE ARE RUNTIME AND NOT const val. They used to be compile-time constants in
+    // AutelTakBridge, which meant every candidate value cost a rebuild + reinstall — so in
+    // practice they were never touched and sat at 0.0 forever. That is the honest reason the
+    // Autel port's marker accuracy lagged the DJI one: the DJI port's BEARING_OFFSET was
+    // flight-tuned to +105, ours had never been measured at all. Uncalibrated, not worse physics.
+    //
+    // These correct a BIAS between what the gimbal reports and where the lens actually looks
+    // (mount tolerance, gimbal wear, a hard landing). A bias is invisible at steep look angles
+    // and brutal at shallow ones — ground error scales as 1/sin²(pitch), so at 200ft AGL one
+    // degree costs ~5ft at 54° down and ~320ft at 6°. That asymmetry is why it went unnoticed.
+    //
+    // Per-airframe and NOT permanent: re-check after a gimbal strike, a repair, or swapping
+    // aircraft. Treated as routine maintenance, like compass/IMU calibration.
+    private var pitchOffset: Double = DEFAULT_PITCH_OFFSET
+    private var bearingOffset: Double = DEFAULT_BEARING_OFFSET
+
+    /**
+     * Sets the aim calibration. Clamped: these correct mount tolerance, not gross error, so a
+     * mistyped value should be refused rather than quietly aimed at the horizon. A pitch offset
+     * beyond ±[MAX_PITCH_OFFSET]° would mean something mechanically wrong that calibration must
+     * not paper over.
+     */
+    fun setAimOffsets(pitchDeg: Double, bearingDeg: Double) {
+        pitchOffset = pitchDeg.coerceIn(-MAX_PITCH_OFFSET, MAX_PITCH_OFFSET)
+        bearingOffset = ((bearingDeg % 360.0) + 540.0) % 360.0 - 180.0   // normalise to ±180
+    }
+
+    val currentPitchOffset: Double get() = pitchOffset
+    val currentBearingOffset: Double get() = bearingOffset
 
     /** Set the calibrated 1x field of view. Clamped to sane bounds so a mis-tap can't drive
      *  the projection somewhere absurd — an FOV near zero sends every marker to infinity. */

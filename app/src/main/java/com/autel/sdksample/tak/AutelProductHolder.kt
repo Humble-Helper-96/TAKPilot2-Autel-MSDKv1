@@ -167,6 +167,44 @@ object AutelProductHolder {
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /**
+     * Unlocks UPWARD gimbal tilt, so the pilot can look above the horizon.
+     *
+     * The EVO II ships with the upward pitch limit closed, capping the gimbal at level. This
+     * sends the SDK's `setGimbalLimitUpward(true)`.
+     *
+     * THE ARGUMENT SENSE IS VERIFIED, NOT ASSUMED. The public method name is ambiguous — "limit
+     * upward" could plausibly mean "apply a limit". Traced through the aar 2026-08-01: the SDK's
+     * own internal parameter is `isOpen`, and GimbalManager2 sends GimbalCmdType
+     * .CMD_SET_PITCH_LIMIT_UPWARD with data 1 for true / 0 for false. So true = limit OPEN =
+     * looking up allowed.
+     *
+     * ⚠ CONSEQUENCE FOR MARKER DROPS: above the horizon the camera ray never meets the ground,
+     * so there is no look-point to compute. CameraSlantPoint falls back to a FIXED 300m range
+     * along the bearing (see its `depression > 1.0` guard) — a placeholder, not a real solution.
+     * A marker or SPI published while looking up is therefore fiction. The crosshair does turn
+     * red (accuracyColorFor treats any near-level pitch as POOR), but nothing currently BLOCKS
+     * the drop. Worth suppressing SPI publication above the horizon rather than sending the TAK
+     * team a look-point that does not exist.
+     */
+    private fun unlockUpwardGimbal(attempt: Int = 1) {
+        val gimbal = evo2?.gimbal ?: return
+        gimbal.setGimbalLimitUpward(true, object : CallbackWithNoParam {
+            override fun onSuccess() {
+                AppLog.i(TAG, "gimbal upward tilt unlocked (attempt $attempt)")
+            }
+            override fun onFailure(error: AutelError?) {
+                // Same not-ready-yet behaviour as the camera calls, so same treatment.
+                if (attempt >= VIDEO_MODE_ATTEMPTS) {
+                    AppLog.w(TAG, "gimbal upward unlock failed after $attempt attempts " +
+                        "(${error?.description}) — the gimbal will stop at level")
+                    return
+                }
+                mainHandler.postDelayed({ unlockUpwardGimbal(attempt + 1) }, VIDEO_MODE_RETRY_MS)
+            }
+        })
+    }
+
+    /**
      * Parks the camera in VIDEO mode, retrying if it genuinely refuses.
      *
      * Only ever called with a REAL camera — see the guard at the call site. On hardware the real
@@ -220,6 +258,7 @@ object AutelProductHolder {
                 // registrations don't survive a product cycle.
                 TakBridgeHolder.onProductConnected()
                 installCameraListener()
+                unlockUpwardGimbal()
                 // Bring the foreground service up as soon as we hold the aircraft, whether or
                 // not TAK is connected. This is NOT about keeping anything alive: Android only
                 // delivers onTaskRemoved to RUNNING services, and that callback is the only

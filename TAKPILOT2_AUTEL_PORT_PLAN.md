@@ -1317,6 +1317,205 @@ Useful tags: `ConnectDebug`, `MessageDisPatcher`, `AutelCameraConnectManager`, `
 - Standing constraint carried over from the DJI project: **do not commit without asking
   first.**
 
+## Flight test 2026-08-01 (evening) — sign conventions, terrain, marker accuracy
+
+*First real flights after the camera started working. Almost everything here was found by
+flying, not by reading code.*
+
+### AUTEL USES THE OPPOSITE SIGN TO DJI. TWICE.
+
+Two independent inversions, both fixed by ONE negation at ingest — never at the display, never
+in a downstream consumer, because each value feeds several consumers that must agree.
+
+**1. Gimbal pitch — Autel reports DOWN POSITIVE.** Tilting down read "GIMBAL n° UP". Negated in
+`setAngleListener`. It feeds three places: the HUD readout + crosshair accuracy ring, the CoT
+`pitch=` attribute **published to TAK**, and the SPI/AR/sensor-cone math. Flipping `PITCH_SIGN`
+(which the old comment invited — *"flip to -1.0 if inverted"*) would have fixed only the third
+and left the HUD and the team's data inverted. `PITCH_SIGN` is now documented as a calibration
+scale, explicitly NOT the inversion fix.
+
+**2. Relative altitude — `LocalCoordinateInfo` is NED, i.e. DOWN POSITIVE.** At +198ft the HUD
+read **-198ft**. Confirmed by the only test that settles a sign question: climbing drove it more
+negative, descending toward zero, zero on the ground.
+
+That one was not cosmetic. `aglMeters()` returns `relAlt` only when positive, else **0** — so the
+slant-point solver placed every marker as if the aircraft were on the ground (visible as `agl=0`
+in the SPI log while airborne). **That was the real cause of "markers are inaccurate", not a
+calibration problem.** `isFlying` was also false for entire flights.
+
+**Lesson: when one Autel telemetry value turns out inverted, sweep the others immediately.**
+Pitch was fixed first and altitude was sitting right there with the same defect, found only when
+the pilot noticed a negative altitude in flight.
+
+### DTED: the coarse tile was silently winning
+
+`DtedIndex.elevationAt()` returns the FIRST tile covering a point, and `DtedStore.listFiles()`
+sorts by FILENAME. A cell imported at several levels flattens to `w149_n61.dt0` / `w149_n61.dt2`,
+and **`.dt0` sorts first** — so the ~900m-post DTED0 won every lookup and the ~30m DTED2 the
+pilot imported was parsed, indexed and never read. Fixed by sorting on `DtedTile.postSpacingDeg`.
+
+Confirm from the log on first lookup:
+`DtedIndex: loaded 16/16 DTED tile(s); finest post spacing 2.7777E-4°` (1 arc-sec = DTED2;
+`8.33E-3°` would mean it is still on DTED0).
+
+### Marker accuracy — measured, with the geometry that governs it
+
+Measured against CloudTAK, ~200ft AGL:
+
+| gimbal down | result |
+|---|---|
+| 54° | accurate to **<1m** (measured 45.01m ground distance vs 45.0m predicted) |
+| 30° | "very accurate" |
+| 21° | ~10ft out |
+| 6° | ~200m out |
+
+**Ground error scales as `1/sin²(pitch)`.** At 200ft AGL, per 1° of aim bias: 5ft at 54°, 27ft at
+21°, **323ft at 6°**. Per 1m of terrain error: 0.4m at 54°, 2.6m at 21°, 9.5m at 6°. This is
+geometry and applies to any aircraft — but it is NOT the whole story (see below).
+
+**The AR/SPI math itself is sound.** At the 21° drop the solved pin sat 0.1° off the camera
+bearing and 0.1° off camera pitch — the pipeline places the marker exactly where it believes the
+camera points. Residual error is in the INPUTS, not the solve.
+
+**Do not dismiss residual error as "just geometry".** The operator's DJI Mini did better at the
+same look angles, which physics alone cannot explain. The real difference: **the DJI port's
+offsets were flight-tuned (`BEARING_OFFSET_DEG = +105`); this port's had never been measured and
+sat at 0.** Uncalibrated, not worse physics.
+
+Also note: **relative altitude drifts between flights** — ground readings of -1.56m and -0.42m on
+two flights, so it is per-flight drift (barometric/takeoff reference), not a fixed offset that
+could be calibrated out. At 21° a 1.5m altitude error alone is ~13ft of marker miss.
+
+### Aim calibration is now a pilot-facing control (Stage 1)
+
+`PITCH_OFFSET_DEG`/`BEARING_OFFSET_DEG` moved from `const val` to runtime + SharedPreferences,
+mirroring the existing FOV calibration exactly (`TakBridgeHolder.setAimOffsets` /
+`ArSettings.loadAimOffsets`). **Long-press AR → "Aim Offsets…"**, ±0.25° steppers, applied and
+persisted live.
+
+Being compile-time is precisely why they were never calibrated — every candidate value cost a
+rebuild. **Calibrate SHALLOW (15–25°)**: a bias is nearly invisible steeply down, so tuning at
+50° proves almost nothing.
+
+Stage 2 (not built): guided multi-angle calibration that least-squares solves for both offsets
+and reports the residual. Deliberately deferred until hand-tuning shows a single offset actually
+closes the DJI gap — otherwise Stage 2 would be built on an unproven premise.
+
+### Camera / gimbal behaviour learned in flight
+
+- **The camera lies about `StartRecording`.** Issued 2ms after a mode switch it returns
+  `status: 0`, emits no `RECORD_START`, and writes no file. `startRecordVerified()` now settles,
+  verifies against the camera's own event, retries once, and TOASTS the pilot on failure.
+- **`setAspectRatio(Aspect_16_9)` is accepted and ignored.** Stills stayed 4000×3000 before and
+  after (measured off the camera's file server). Do not re-add it.
+- **Three stream shapes, unavoidable:** photo 1280×960 (4:3), video 1280×720 (16:9), IR 640×512
+  (5:4). No camera setting equalises them — `VideoResolution` has no 4:3 option. The flight screen
+  centre-crops to fill (`armVideoFill`), holding the true centre on the reticle because the
+  crosshair is the aiming reference for marker drops.
+- **VIDEO is the resting mode, set AT CONNECT.** The camera remembers its mode across power
+  cycles and the app previously only changed mode reacting to a button, so it came up wherever
+  the camera was left. Setting it at connect is what makes "recording never moves the picture"
+  actually true.
+- **Upward gimbal tilt unlocked** via `setGimbalLimitUpward(true)`. Argument sense VERIFIED, not
+  assumed: the SDK's internal parameter is `isOpen` and `GimbalManager2` sends
+  `CMD_SET_PITCH_LIMIT_UPWARD` with data 1 for true.
+- **SPI is suppressed at/above the horizon.** There is no ground intersection up there;
+  `CameraSlantPoint` would fall back to a fixed 300m guess, and a fabricated look-point on the TAK
+  picture is worse than none because the team cannot tell and will act on it. Marker drops are
+  also blocked whenever the reticle is RED — gated on `CrosshairView.accuracyColorFor()`, the
+  same call that tints the reticle, so the cue and the gate cannot disagree.
+- **ISO read "UNKNOWN" above 100.** `CameraISO` holds only whole stops (100/200/400/…); auto
+  exposure routinely picks 1/3-stop values (125, 160, 250, 320…) which the SDK maps to UNKNOWN.
+  Fixed by reading the RAW int the SDK already parses
+  (`CameraAllSettingsWithParser…getImageISO().getISO()`), which cannot go stale as firmware adds
+  values. `ShutterSpeed` has the same lossy shape (56 members) but degrades to "—" rather than a
+  wrong value.
+
+### Video streaming — 2-second pixelated pulse
+
+Visible only to STREAM VIEWERS, never on the controller, because the artifact is created by our
+re-encode and exists only in the outgoing stream.
+
+Cause: a full IDR every `I_FRAME_INTERVAL_S` (2s) under FORCED CBR with no bit headroom, so the
+rate controller spikes the quantiser on each keyframe. The old profiles were tuned for constant
+quality-per-pixel and left **STANDARD and HIGH identical** in bits/pixel — which is why "just use
+HIGH" would not have helped. Bitrates roughly doubled (LOW 275k→475k, STANDARD 800k→1.6M, HIGH
+1.8M→3.6M), all three now at the same bits/pixel.
+
+Rejected by the operator, recorded so they are not re-proposed: **intra-refresh** (complexity plus
+unknown mid-stream-join behaviour) and a **longer GOP** (join latency, slower loss recovery).
+**VBR at the same average bitrate** remains untried and is the option to reach for if the pulse
+persists — screen capture is mostly static, so it would give keyframes headroom for no extra
+average bandwidth, at the cost of burstiness.
+
+⚠ LOW is no longer the minimum-bandwidth floor it was designed as. If a genuinely marginal link
+needs one, add a new profile BELOW LOW rather than pushing LOW back down.
+
+## 🚩 RELEASE BLOCKER — Autel Explorer steals the aircraft link BY ITSELF (found 2026-08-01)
+
+**Must be tested and addressed in a dedicated session before any full release.** Not a
+TAKPilot bug; a platform behaviour we have to defend against.
+
+### What happens
+
+Autel Explorer is a **system-privileged preinstalled app** (`com.autelrobotics.explorer`, uid
+`system`). It can start **without the pilot ever opening it**, and when it starts it takes the
+aircraft USB link. Straight from the log:
+
+```
+20:58:23.503  Start proc 14706:com.autelrobotics.explorer/1000
+              for service {…/com.google.android.gms.measurement.AppMeasurementJobService}
+20:58:23.936  broadcast com.autel.maxifly.usb.attach   from explorer   (433ms after start)
+20:59:50.555  broadcast com.autel.maxifly.usb.reset    from explorer
+21:01:45.738  broadcast com.autel.maxifly.usb.reset    from explorer
+21:03:45.479  broadcast com.autel.maxifly.usb.reset    from explorer
+```
+
+`AppMeasurementJobService` is **Google Firebase Analytics** — a batched telemetry upload. It has
+nothing to do with flight. But Android's JobScheduler starts the app PROCESS to run the job,
+which runs Explorer's `Application.onCreate`, which brings up its whole aircraft stack as a side
+effect. An analytics upload drags the flight stack with it and it seizes USB.
+
+There is at least a second waker: `com.mapbox.scheduler_flusher` fires from Explorer's package
+**every 3 minutes** (20:46:21, 20:49:21, 20:52:21, 20:55:21, 20:58:23, 21:01:21, 21:04:21).
+
+### What it looks like from TAKPilot
+
+Repeated `productConnected` → `productDisconnected` churn, camera enumerating then dropping, and
+every camera call failing with **"The execution of this process has timed out"**. Frozen HUD
+values. The distinction that matters: **timeouts mean nothing answered** (contention); *errors*
+mean the camera answered and refused (a real fault). On 2026-08-01 this was initially mistaken
+for a regression in the new build — the camera had in fact enumerated as XT709 five times while
+being fought over.
+
+### Why it is a release blocker
+
+This presents as **random, unreproducible mid-flight link loss with no pilot action to blame**,
+on a schedule Explorer chooses. A pilot cannot prevent it by "not opening Explorer" — they never
+opened it. `am force-stop` clears it only until the next scheduled wake.
+
+### Candidate mitigations — TEST, none of these are validated
+
+1. Disable just the waking component, narrower than disabling Explorer (a system app the
+   controller may need for firmware updates):
+   `pm disable-user --user 0 com.autelrobotics.explorer/com.google.android.gms.measurement.AppMeasurementJobService`
+   Then **verify Explorer still works normally** — unknown whether anything else depends on it.
+   Also find and handle the Mapbox flusher; disabling one waker is not enough.
+2. Detect and surface it: TAKPilot could watch for `com.autel.maxifly.usb.attach`/`.reset` or
+   poll for the Explorer process and TELL THE PILOT the link is being contended, rather than
+   showing a mystery disconnect. Honest failure beats silent failure.
+3. Establish whether the aircraft can be reacquired after an Explorer-induced reset without a
+   full app restart.
+
+### Also present, unexplained
+
+`com.airdata.uav.app` had been running **4+ hours** on the same device. Not observed touching the
+aircraft link, so not accused — but a second uninvited client on a device that tolerates one.
+Worth checking in the same session.
+
+**Open question:** whether Explorer's wake is purely scheduler-driven, or whether aircraft
+connection also triggers it (a USB-attach intent filter would do it). Not determined.
+
 ## Session 2026-08-01 — what changed, and what is untested
 
 **Uncommitted working tree** (standing constraint: do not commit without asking):
@@ -1337,7 +1536,23 @@ card); IR + both palettes; exposure; zoom read (×100 units); video fills screen
 centre held; VIDEO resting mode means REC no longer moves the picture; shutter greys out while
 recording.
 
+**BLOCKING before full release:** see the Explorer-steals-the-link section immediately above.
+
 **NOT verified — do these first next session:**
+
+- **The aim calibration has never been used.** Fly it shallow (15–25°) and find out whether a
+  single pitch/bearing offset closes the gap to the DJI Mini. Stage 2 depends on that answer.
+- **The stream bitrate increase is untested.** Confirm `1600kbps` in the encoder's start log, then
+  watch whether the 2s pulse goes. Unchanged ⇒ not the encoder, look at the RTSP path. Worse ⇒ it
+  was keyframe burst/loss after all; revert.
+- **Marker drops are now BLOCKED on a red reticle.** If that proves too aggressive in real use
+  (especially the stricter no-DTED thresholds) the numbers are in `CrosshairView`.
+- **IR toggled DURING a recording** — still untested; unknown whether the file splits or corrupts.
+- **The ISO fix** — point at bright then dark and confirm the number tracks instead of UNKNOWN.
+- **The failsafe-visibility gap.** Two low-battery events (one at ~14%, one at ~24% — so Autel's
+  threshold is computed, not fixed) and the app had NO idea either was happening. It cannot tell
+  the pilot or the team that the aircraft has taken control. On a situational-awareness screen
+  that is a real omission.
 
 - **The 800 ms `MODE_SWITCH_SETTLE_MS` on the record path.** Now that VIDEO is the resting mode,
   REC never switches modes, so that branch is effectively unreachable in normal use. The photo

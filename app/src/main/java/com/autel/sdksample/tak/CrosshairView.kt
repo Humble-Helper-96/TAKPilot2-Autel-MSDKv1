@@ -220,6 +220,10 @@ class CrosshairView @JvmOverloads constructor(
          *  regardless of DTED availability; only which pitch triggers it differs. */
         private val ACCURACY_POOR = Color.parseColor("#F44336")
 
+        /** The POOR tint, exposed so callers can ASK "is the reticle red?" instead of
+         *  re-deriving a pitch threshold that would drift from this one. */
+        val accuracyPoorColor: Int get() = ACCURACY_POOR
+
         /**
          * Single source for the accuracy tint, shared with the HUD's gimbal readout so the
          * number and the reticle cannot disagree about what state the pilot is in.
