@@ -51,6 +51,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
     private lateinit var fpvFaaCeiling: TextView
+    private lateinit var fpvRthAltitude: TextView
+    private lateinit var lightsButton: ImageButton
     private lateinit var fpvNotice: TextView
     private lateinit var crosshairView: CrosshairView
     private lateinit var arOverlay: ArOverlayView
@@ -135,6 +137,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
+        fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
         crosshairView = findViewById(R.id.flightCrosshair)
         arOverlay = findViewById(R.id.flightArOverlay)
@@ -264,11 +267,30 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             applyZoom(if (zoomLevel == 4) 1 else 4)
             true
         }
-        findViewById<ImageButton>(R.id.flightResyncButton).setOnClickListener {
-            AppLog.v(TAG, "tap: Video re-sync")
-            resyncVideo()
-            toast("Re-syncing video…")
+        // Exterior LEDs. Replaced the video re-sync button (2026-08-02): the video is stable on
+        // this airframe, and going dark at night is an operational requirement for a public-safety
+        // aircraft — crews get shot at when the aircraft advertises its position.
+        //
+        // The button reports the AIRCRAFT's state, never our request. See AutelLights for what
+        // this does and does not cover; it darkens the navigation LEDs, which is not the same
+        // claim as "every exterior light is off".
+        lightsButton = findViewById(R.id.flightLightsButton)
+        lightsButton.setOnClickListener {
+            val currentlyDark = AutelLights.isDark == true
+            AppLog.v(TAG, "tap: Exterior lights (currently dark=$currentlyDark)")
+            lightsButton.isEnabled = false
+            AutelLights.setAllOff(!currentlyDark) { confirmed ->
+                runOnUiThread {
+                    lightsButton.isEnabled = true
+                    renderLightsButton()
+                    if (!confirmed) toast("The drone did not change the lights.")
+                    else if (AutelLights.isDark == true) toast("Exterior lights OFF")
+                    else toast("Exterior lights ON")
+                }
+            }
         }
+        renderLightsButton()
+        AutelLights.refresh { runOnUiThread { renderLightsButton() } }
         recordToggle.setOnClickListener {
             AppLog.v(TAG, "tap: REC")
             onRecordToggleTapped()
@@ -639,6 +661,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         updateGimbalPitch(hud)
         updateFaaCeiling(hud, aglReading)
+        updateRthAltitude()
 
         // Same five-line readout as the DJI blueprint, imperial throughout (see Units).
         fpvOverlayText.text = buildString {
@@ -1758,6 +1781,44 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val why = dropRefusalReason() ?: return
         AppLog.w(TAG, "marker drop refused — $why")
         toast("Can't place a marker: $why")
+    }
+
+    /**
+     * RTH altitude, as reported BY THE AIRCRAFT.
+     *
+     * Never the Pre-Flight value. On 2026-08-02 the operator flew two sorties believing RTH was
+     * set to 50 ft: the write had been rejected as out-of-range, the aircraft kept a different
+     * value, and nothing anywhere said so. Echoing the requested number on the flight screen
+     * would have reproduced that failure in the one place it matters most.
+     *
+     * Grey "RTH --" until the aircraft answers. Unknown must look unknown.
+     */
+    /**
+     * Draws the exterior-lights button from the AIRCRAFT's reported lamp state.
+     *
+     * Plain bulb = lit, slashed bulb = dark, matching the IR buttons' convention that the icon
+     * shows the state of the hardware rather than what the next tap would do. When the aircraft
+     * has not answered, the button is dimmed: a pilot must be able to tell "confirmed lit" from
+     * "we do not know", because only one of those is safe to act on at night.
+     */
+    private fun renderLightsButton() {
+        if (!::lightsButton.isInitialized) return
+        val dark = AutelLights.isDark
+        lightsButton.setImageResource(
+            if (dark == true) R.drawable.ic_led_off else R.drawable.ic_led_on)
+        lightsButton.alpha = if (dark == null) 0.45f else 1.0f
+        lightsButton.contentDescription = when (dark) {
+            true -> "Exterior lights are off"
+            false -> "Exterior lights are on"
+            null -> "Exterior lights, state unknown"
+        }
+    }
+
+    private fun updateRthAltitude() {
+        val known = FlightLimitsController.aircraftReturnHeightM != null
+        fpvRthAltitude.text = FlightLimitsController.rthHudLabel()
+        fpvRthAltitude.setTextColor(
+            if (known) Color.parseColor("#B0B0B0") else Color.parseColor("#FFC107"))
     }
 
     private fun updateGimbalPitch(hud: AutelTakBridge.Hud?) {

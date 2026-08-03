@@ -81,6 +81,31 @@
             android:screenOrientation="sensorLandscape"
             android:theme="@style/CodecTheme" />
 
+        <!-- Device admin, for one purpose only: hiding Autel Explorer while we hold the
+             aircraft. See ExplorerSuppressor for why nothing weaker works. The policy file is
+             deliberately empty. -->
+        <receiver
+            android:name=".tak.TakDeviceAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Crash net: un-hides Explorer after a reboot, in case the app died while it was
+             hidden. The safe resting state for this controller is Explorer AVAILABLE. -->
+        <receiver
+            android:name=".tak.BootRestoreReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <receiver android:name=".UsbBroadCastReceiver">
             <intent-filter>
                 <action android:name="com.autel.sdk.action.USB_ACCESSORY_ATTACHED" />

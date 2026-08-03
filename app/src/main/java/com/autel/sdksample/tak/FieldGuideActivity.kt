@@ -421,13 +421,19 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(image(R.drawable.ic_resync) to "Re-sync"),
-            "Video re-sync",
-            "This button corrects the video image. Blocks or marks can occur in the image, " +
-                "usually when the camera looks at the same scene for a long time. If this " +
-                "occurs, touch the button. The image is black for a moment, then it becomes " +
-                "correct. This changes your image only. The aircraft continues to fly and the " +
-                "video to your team does not stop.",
+            listOf(
+                image(R.drawable.ic_led_on) to "Lights on",
+                image(R.drawable.ic_led_off) to "Lights off",
+            ),
+            "Exterior lights",
+            "This button turns the navigation lights of the drone on and off. Press it to " +
+                "change them. The icon shows the state of the drone: a plain bulb when the " +
+                "lights are on, a bulb with a line when they are off. A dim icon means the " +
+                "drone did not report the state yet.\n\n" +
+                "Turn the lights off to make the drone difficult to see at night.\n\n" +
+                "⚠ The lights make the drone visible to other aircraft. FAA rules require " +
+                "anti-collision lights at night. Turn them off only when your authority permits " +
+                "it.",
         )
 
         entry(

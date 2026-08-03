@@ -262,6 +262,60 @@ Not yet committed — awaiting go-ahead per the standing constraint.
       governed by the aircraft/RC's own firmware settings outside this app's control; call
       this out explicitly during Phase 5 field validation rather than assuming DJI-app
       parity. Revisit if hardware bring-up (Phase 4) or newer SDK docs turn up a real hook.
+
+      **✅ RE-SEARCHED AND CONFIRMED 2026-08-02.** The blocker list flagged this for re-search on
+      the grounds that "the SDK can't do this" had been wrong twice before. It was re-done from
+      scratch against `autel-sdk-release-xl726.aar`, deliberately not limited to one subsystem:
+      grepped the constant pools of **all 5,320 class files** for
+      `failsafe|fail_safe|lostaction|outofcontrol|signallost|losesignal|rclost`, then dumped the
+      complete `set*`/`do*`/`get*` surface of every public flycontroller **and** remotecontroller
+      interface in **both** the `com.autel.sdk` layer and the lower `com.autel.AutelNet2` layer
+      (`FlyControllerManager2`, `RemoteControllerManager2`).
+
+      **The conclusion holds — there is no global signal-loss failsafe setter.** Two things the
+      original audit did not name, neither of which changes the answer:
+
+      - `com.autel.common.mission.evo.RemoteControlLostSignalAction`
+        (`INVALID/RETURN_HOME/CONTINUE/UNKNOWN`) — this *is* a real RC-loss policy, but it is
+        **mission-scoped**: referenced only by `MissionConfig`, `AirLineCreator`, and the
+        Evo/Evo2 waypoint-mission classes. It governs what a running waypoint mission does on RC
+        loss. There is no non-mission path that writes it.
+      - `FlyControllerStatus.isFlightControllerLostRemoteControllerSignal()` — a live status
+        boolean. Useful for *reporting* an RC-loss event to TAK, which we are not yet doing.
+        Not a policy, and not a getter for one.
+
+      ⚠️ **BUT `doEmergencyAction()` IS NOT SETTLED — the "one-shot command" claim above is
+      probably WRONG, and this is the one thing to test on hardware.** Disassembling
+      `FlyControllerManager2.doEmergencyAction` shows it does not send a `DO_`-family command at
+      all. It sends:
+
+      ```
+      MAV_CMD_SET_MSN_EMERGENCY   (FmuCmdParams(EmergencyAction.getValue()))
+      ```
+
+      The whole `SET_` family in this SDK is **persistent configuration** —
+      `SET_BATTERY_DISCHARGE`, `SET_NFZ_ENABLE`, `SET_RTK_AUTH_INFO`. Immediate actions live in
+      the large `DO_` family (`DO_SET_MODE`, `DO_PARACHUTE`, `DO_FLIGHTTERMINATION`,
+      `DO_SET_HOME`), exactly as standard MAVLink does it. `SET_MSN_EMERGENCY` is **not** in the
+      `DO_` family. That is real evidence it stores a policy rather than firing an action, and it
+      means the original dismissal was made from the *Java wrapper name* (`doEmergencyAction`)
+      rather than from the wire command — the same naming-inference mistake logged three times
+      elsewhere in this doc.
+
+      Evidence against, kept honest: `MSN` appears in no other command, and mission-scoped
+      commands elsewhere spell `MISSION` out in full (`GET_CUR_MISSION_GUID`,
+      `GET_MISSION_BPINFO`, `FAVOR_MISSION_SET`), so `MSN` may still mean mission. There is also
+      no `GET_MSN_EMERGENCY` to read the value back with.
+
+      **This cannot be resolved from the aar. Resolve it on hardware:** call
+      `doEmergencyAction(GO_HOME)` on the ground, then power-cycle the aircraft and check whether
+      the setting survived, and whether an actual RC-loss (walk the controller out of range, or
+      power it off) produces GO_HOME rather than the default. If it persists, **blocker #3 has a
+      solution and the failsafe becomes app-settable.** Do not write it off again on naming.
+
+      Practical consequence *if* it turns out to be mission-scoped after all: the failsafe is
+      configured outside this app, which in practice means inside Autel Explorer. That would be a
+      hard constraint on the Explorer-suppression blocker — see the release-blocker section.
 - [~] **Gimbal-pitch HUD readout + crosshair accuracy cue — reclassified to Phase 2.**
       Audited: on the DJI side this logic lives in `CrosshairView.kt`/`ArOverlayView.kt`/
       `TAKPilot2GoFlightActivity.kt` (the `takpilot2` UI-screen package), not the vendor-
@@ -531,6 +585,14 @@ patched.
         one-shot reads, and pushes immediately if the aircraft is already connected rather
         than making the pilot reconnect. **No signal-loss failsafe selector**, unlike DJI —
         the Autel SDK exposes no equivalent (Phase 1 audit); absent beats present-but-inert.
+        > **SUPERSEDED, twice.** A failsafe picker WAS later built on `doEmergencyAction`
+        > (`MAV_CMD_SET_MSN_EMERGENCY` — a policy setter under a misleading name), and then cut
+        > back on 2026-08-02 to **Return to Home only**, because the write is never acknowledged
+        > and there is no getter. "Absent beats present-but-inert" was the right instinct and is
+        > where this ended up. Also superseded: this section's "pushes immediately if the
+        > aircraft is already connected" — pushing now happens on aircraft connect or on the
+        > **Apply to Drone** button, never as a side effect of typing. See the 2026-08-02
+        > (evening) session.
       - **5. Elevation Data (DTED)** — import a region .zip via `ACTION_OPEN_DOCUMENT`,
         per-region rows with size/date/file count, delete-region, clean-unused-tiles. Wired
         to the ported `DtedStore`. SAF deliberately (not a filesystem picker): it needs no
@@ -1556,8 +1618,14 @@ many times it fires. Assume repeating until proven otherwise.
     continuation, so repetition would be wasteful but not harmful. Left alone.
 
   So the rule is "verify per call", not "all getters repeat".
-- `LANDING_PROTECT` never took even when acknowledged. Unclear whether that is the channel flood
-  or the aircraft refusing the write; recheck once the flood is gone.
+- ~~`LANDING_PROTECT` never took even when acknowledged.~~ **RESOLVED 2026-08-02 — it was the
+  channel flood, not the aircraft refusing.** The aircraft now reads it back true:
+  `avoidance system ENABLED (rth-avoid=true landing-protect=true)` at 19:52:37, and
+  `avoidance already matches Pre-Flight — no writes` at 19:42:35.
+  ⚠ One trap for whoever revisits this: **"it lands softly" is not evidence.** LANDING_PROTECT
+  uses the downward vision sensors to REFUSE unsuitable ground (water, slope, uneven surface) —
+  it makes the aircraft hover or shift rather than descend. Gentle touchdowns happen with it off
+  too. The readback is the only confirmation.
 - ~~Explorer's HUD gives the spec for the FPV obstacle edges.~~ **Built and flown**
   (`ObstacleEdgeView`, 2026-08-02). Per-face arcs at the screen edge with a distance label, amber
   at range, red when close — modelled on Explorer so the two apps share a visual language.
@@ -1671,14 +1739,239 @@ Not yet designed. Things that will need answering when it is picked up:
 3. Establish whether the aircraft can be reacquired after an Explorer-induced reset without a
    full app restart.
 
+### ✅ MECHANISM VALIDATED ON HARDWARE (2026-08-02, bench — aircraft powered, nothing flying)
+
+Explorer's APK was pulled (`V3.1.134`, 213 MB) and its manifest and live scheduler state dumped.
+Three things are now measured rather than assumed.
+
+**1. The USB-attach question is ANSWERED: aircraft connection does NOT wake Explorer.**
+
+`com.autel.util.UsbStartActivity` really does carry a `USB_DEVICE_ATTACHED` intent filter, so the
+suspicion was reasonable — but its device filter (`res/IeO.xml`, resources are name-obfuscated)
+lists only:
+
+```
+0x4b4:0x1004   0x4b4:0x1104   0x483:0x5710   0xaaaa:0xaa97
+```
+
+and the aircraft enumerates on this controller as **`18d1:5a55` ("EVO")**. No match, so the
+filter never fires for this airframe. `com.autel.modelb.pad.personal.USBDiskReceiver` also
+listens for attach/detach but declares no device-filter meta-data at all.
+
+**Do not let this become a fourth "the SDK can't do that" call in reverse** — the filter exists,
+it simply does not match. If the airframe, the LC1881 module or the controller firmware ever
+changes, re-check the VID:PID before trusting this.
+
+**2. The wake surface is WIDER than the two known wakers.** From the manifest, Explorer also
+listens for:
+
+```
+CONNECTIVITY_CHANGE        BOOT_COMPLETED (x2)      TIME_SET / TIMEZONE_CHANGED
+ACTION_POWER_CONNECTED     ACTION_POWER_DISCONNECTED
+BATTERY_LOW / BATTERY_OKAY DEVICE_STORAGE_LOW / _OK
+```
+
+So the "cheap interim" of disabling only `AppMeasurementJobService` is **much weaker than this
+doc previously assumed** — `CONNECTIVITY_CHANGE` alone will wake it on any network transition.
+Per-component disabling is a losing game; whole-package suppression is the right shape.
+
+**3. `pm hide` / `pm unhide` does the job, and reverses cleanly.** Measured both directions:
+
+| | after `pm hide` | after `pm unhide` |
+|---|---|---|
+| launch | blocked (`Error type 3`) | restored, `…launch.SplashActivity` resolves |
+| Mapbox flusher alarm | **cancelled** | re-registers when Explorer next runs |
+| Firebase job | **deregistered** | **back, RUNNABLE** |
+| process | not running | — |
+
+`pm hide` is the same underlying mechanism as `DevicePolicyManager.setApplicationHidden()`, so
+this is direct evidence the device-owner design below will work. Package state was returned to
+baseline (`installed=true hidden=false suspended=false`) and verified.
+
+**Not yet verified:** that Explorer *functions normally* after an unhide — only that it resolves
+and relaunches. A functional check (firmware page, compass calibration) needs an operator session,
+and was deliberately skipped here because launching Explorer would have seized the aircraft link.
+
+### SECOND LIVE REPRODUCTION — 2026-08-02 ~17:22, caught on the bench
+
+Reproduced accidentally and usefully during the validation above. After `pm unhide` restored the
+Firebase job, Explorer self-woke about three minutes later while TAKPilot was sitting in
+FlightActivity with the aircraft connected (on the ground, 19 sats, 88%). No pilot action:
+
+```
+17:26:26.008  24375  AUTEL_USB: com.autel.maxifly.usb.reset            <- TAKPilot
+17:26:26.009  32696  AUTEL_USB: com.autel.maxifly.usb.reset            <- Explorer
+17:26:31.769  ActivityManager: Sending non-protected broadcast
+              com.autel.maxifly.usb.reset from system 32696:com.autelrobotics.explorer/1000
+```
+
+Explorer held 22 socket/usb fds. `am force-stop` cleared it; TAKPilot survived on the same pid
+and telemetry never stopped.
+
+**The important new datum: the link did NOT drop.** Explorer ran for roughly five minutes
+alongside TAKPilot and telemetry kept flowing throughout (`sat=19→20`, no `productDisconnected`,
+no `camera changed: UNKNOWN`). On 2026-08-02 at 13:42 the same wake dropped the aircraft in
+**3.8 seconds**.
+
+So **Explorer running is necessary but not sufficient for the drop.** Something else decides
+whether contention becomes a disconnect — plausibly whether Explorer gets far enough into its
+startup to claim the camera/USB endpoint before losing the race, or whether the aircraft was
+airborne and streaming video. That is precisely why this presents as random and unreproducible,
+and it means **"I ran Explorer alongside TAKPilot and it was fine" is not evidence the problem is
+absent.** Do not let a clean bench run be read as a fix.
+
+### THE DESIGN — device owner + setApplicationHidden (chosen by operator 2026-08-02)
+
+One-time provisioning per controller:
+
+```
+adb shell dpm set-device-owner com.tak.uastoollite/<DeviceAdminReceiver>
+```
+
+Then TAKPilot hides Explorer while it holds the aircraft and unhides on exit. Preconditions for
+provisioning are **currently satisfied on this controller and were checked**: no device owner or
+profile owner is set, and `dumpsys account` reports **`Accounts: 0`** (device-owner provisioning
+refuses if any account exists). Explorer is **not** the launcher — `launcher3` is — so hiding it
+does not strand the device.
+
+### ✅ BUILT 2026-08-02 (evening) — not yet provisioned, not yet tested on hardware
+
+Code is written and compiles. **It is deliberately inert**: every entry point is a no-op unless
+the controller is provisioned as device owner AND the operator has switched suppression on, so
+this can ship dark and be enabled per controller.
+
+| file | role |
+|---|---|
+| `TakDeviceAdminReceiver.kt` | device-admin component; `device_admin.xml` policy set is **empty on purpose** |
+| `ExplorerSuppressor.kt` | `suppress` / `restore` / `deprovision` / `isAvailable` / `isRestoreOwed` |
+| `TakSessionAnchor.kt` | arms on **first activity created**; owns the service-then-hide order |
+| `BootRestoreReceiver.kt` | `BOOT_COMPLETED` → restore |
+| `TakForegroundService.kt` | the anchor; `releaseIfIdle`, `stopForTeardown`, sticky-restart guard |
+| `AppTeardown.releaseAll` | restore after the link is released, service stopped **last** |
+| `DebugActivity` | status line, enable switch, **Restore Explorer now**, **Remove device-owner rights** |
+
+#### The invariant everything else follows from
+
+> **The foreground service must exist for exactly as long as an Explorer restore is owed.**
+
+The service is not incidentally running during suppression — it **is** the restore guarantee,
+because `onTaskRemoved` is the only "pilot swiped the app away" signal Android gives and it is
+only delivered to a RUNNING service. That produces two non-negotiable orderings:
+
+- **Arming:** start the service, *then* hide Explorer (`TakSessionAnchor.arm`). The reverse opens
+  a window where a restore is owed with no anchor.
+- **Teardown:** restore Explorer, *then* stop the service (`AppTeardown`). The reverse — which is
+  what the code did until this change — opens a window where the process can die with Explorer
+  hidden and nothing left to put it back.
+
+#### Why suppression fires on first activity, not `Application.onCreate`
+
+`onCreate` is earlier, and suppression lived there first. It was wrong: `onCreate` also runs when
+the process is started by a **broadcast** (`BootRestoreReceiver`, `UsbBroadCastReceiver`), where
+no pilot launched anything and **no task exists**, so no `onTaskRemoved` could ever fire. That
+stranded Explorer hidden until the next reboot, and made `BOOT_COMPLETED` hide Explorer and then
+immediately un-hide it — the boot receiver only worked by ordering luck.
+
+The cost is a few hundred ms on a cold launch (mostly `Autel.init`). Affordable because
+`setApplicationHidden(true)` **force-stops** the package, so an Explorer that woke moments earlier
+is killed rather than merely hidden — a slightly later call still recovers the situation.
+
+⚠ **Activity counts are never a "closed" signal.** Android destroys and recreates activities on
+configuration change; restoring on a zero count would un-hide Explorer mid-flight. Only
+`onActivityCreated` has a body in the callbacks.
+
+#### Other design points worth keeping
+
+- **Restore is called from six places** — teardown, boot, the Debug button, `onDisabled()` if
+  admin rights are revoked, the uncaught-exception handler, and the sticky-restart guard.
+  Explorer left hidden is a worse failure than Explorer left running.
+- **`deprovision()` was written before any provisioning step was documented**, on purpose.
+- **Restore is NOT gated on the enable switch** — turning suppression off must still restore, and
+  so must a boot after a crash.
+- **`isRestoreOwed()` is a pure prefs read**, no binder call, so it is safe from notification
+  building and any thread — and it survives process death, so a restore owed before an OOM kill
+  is still owed after.
+- **`releaseIfIdle()` replaced two bare `stop()` calls** on TAK disconnect and Logout. Those were
+  *already* a bug before suppression existed: the service is started on aircraft connect so a
+  swipe tears the aircraft down, and disconnecting TAK destroyed that anchor while the aircraft
+  was still held.
+- **The notification says how to undo it** — "Explorer paused · swipe TAKPilot away to restore
+  it". Hiding Explorer removes its launcher icon, so without this a pilot finds it simply gone.
+
+#### Strand-risk register
+
+| path | stranded? | covered by |
+|---|---|---|
+| launch → no aircraft → swipe | no | anchor exists from first activity |
+| Stop & Quit / swipe with aircraft | no | `AppTeardown` |
+| TAK disconnect / Logout | no | `releaseIfIdle` keeps the anchor while a restore is owed |
+| Debug toggle off / Restore button | no | `setEnabled(false)` restores |
+| device admin revoked | no | `TakDeviceAdminReceiver.onDisabled` |
+| uncaught exception | no | crash-handler restore (best effort) |
+| sticky restart into a task-less process | no | `getAppTasks().isEmpty()` guard in `onStartCommand` |
+| **OOM kill / Settings → Force stop** | **yes, until reboot** | `BootRestoreReceiver`, Debug button, notification hint. Not fixable in-app |
+| app backgrounded and never returned to | **yes, by design** | suppression must survive backgrounding or it un-hides mid-flight |
+
+#### Provisioning, when a controller is connected
+
+Preconditions — **both were true on this controller on 2026-08-02, re-check before running**:
+no device owner or profile owner set, and `dumpsys account` reports `Accounts: 0`
+(device-owner provisioning refuses if any account exists).
+
+```
+adb shell dpm set-device-owner com.tak.uastoollite/com.autel.sdksample.tak.TakDeviceAdminReceiver
+```
+
+Then verify, enable from the Debug screen, and confirm the status line reads
+`Explorer is HIDDEN...`:
+
+```
+adb shell dumpsys device_policy | grep -i "device owner"
+adb shell dumpsys package com.autelrobotics.explorer | grep -m1 hidden=
+```
+
+To undo: the **Remove device-owner rights** button on the Debug screen (restores Explorer first,
+then clears ownership). From a computer: `adb shell dpm remove-active-admin
+com.tak.uastoollite/com.autel.sdksample.tak.TakDeviceAdminReceiver`.
+
+#### ⚠ The gap no in-app code can close
+
+If the app is killed while Explorer is hidden and never launched again, Explorer stays hidden
+until the next boot or a manual restore. **This is not hypothetical** — the app was OOM-killed
+in flight on 2026-08-02. `BootRestoreReceiver` covers the reboot case and the Debug button covers
+the deliberate case, but a pilot who reaches for Explorer between those two and finds it missing
+needs to know the recovery:
+
+```
+adb shell pm unhide com.autelrobotics.explorer
+```
+
+That belongs in the field guide before this is enabled on any controller a pilot takes out.
+
+Still to design, and none of it is written yet:
+
+- **The restore path is the risky half.** If TAKPilot is force-stopped, crashes or is swiped away
+  while Explorer is hidden, Explorer stays hidden across reboot. Needs at minimum a
+  `BOOT_COMPLETED` receiver that unhides unless TAKPilot is genuinely starting up, plus a
+  pilot-reachable escape hatch that does not require adb.
+- **Device-owner removal is NOT cleanly reversible.** If the app does not implement
+  `clearDeviceOwnerApp()`, removing it can require a factory reset. Whatever ships MUST expose a
+  deprovision path before the first controller is provisioned in the field.
+- **Blocker #3 may interact with this — resolve it first.** *If* the signal-loss failsafe turns
+  out not to be settable from the SDK, it is configurable only in Explorer, and a pilot who
+  cannot open Explorer cannot set their failsafe — which makes the unhide path a safety
+  requirement rather than a convenience. That hinges on the unresolved
+  `MAV_CMD_SET_MSN_EMERGENCY` question in the failsafe section. A positive result there removes
+  this constraint entirely, so test it before finalising this design.
+- Candidates 2 and 3 below (detect-and-warn, reacquire-after-reset) are still worth building
+  **regardless** — they are unprivileged, and they make the failure honest if suppression has a
+  gap.
+
 ### Also present, unexplained
 
 `com.airdata.uav.app` had been running **4+ hours** on the same device. Not observed touching the
 aircraft link, so not accused — but a second uninvited client on a device that tolerates one.
-Worth checking in the same session.
-
-**Open question:** whether Explorer's wake is purely scheduler-driven, or whether aircraft
-connection also triggers it (a USB-attach intent filter would do it). Not determined.
+Worth checking in the same session. Still running as of 2026-08-02 17:10.
 
 ## Session 2026-08-01 — what changed, and what is untested
 
@@ -1729,6 +2022,199 @@ recording.
 - **Own-ship chevron rotation** — still unverified from earlier sessions.
 - **Controller GPS** — `getLastKnownLocation()` reads a cache nothing fills; still needs a real
   `requestLocationUpdates()`.
+
+## Session 2026-08-02 (evening) — limits that lied, and an OOM kill in flight
+
+Flight-tested throughout with the operator. Everything below is measured on hardware unless it
+says otherwise. **None of it is committed.**
+
+### 🚩 RELEASE BLOCKER — Android killed the flight app while the aircraft was airborne
+
+At **19:52:34**, with the aircraft at **60.9 m (200 ft), 7.5 m/s, ~250 m out**:
+
+```
+19:52:34.307  lowmemorykiller: Kill 'com.tak.uastoollite' (18657), oom_adj 0, free 21672kB
+19:52:34.423  Process com.tak.uastoollite has died: fg  TOP
+19:52:34.656  Force removing FlightActivity: app died, no saved state
+19:52:34.733  Start proc 15141 ... TakPilotHomeActivity
+```
+
+`oom_adj 0` is the **foreground app** — the last thing the LMK touches. It spent 22 seconds
+killing 20+ processes first (`qcrilmsgtunnel`, `settings`, `acore`, `externalstorage`,
+`android.process.media`, `keychain`, `com.Autel.maxitools`, `permissioncontroller`,
+**`com.airdata.uav.app`**, the keyboard, finally **`launcher3`**) before taking the flight app.
+Device-wide exhaustion, not a TAKPilot leak.
+
+**16-second telemetry blackout** (last 19:52:29, restored 19:52:50). Stick control was never
+lost — the RC link is hardware and independent of the app — which is the only reason this was
+recoverable.
+
+Two defects beyond "use less memory":
+
+1. **It restarts at `TakPilotHomeActivity`, not `FlightActivity`** ("app died, no saved state").
+   Mid-flight that costs the pilot navigation at the worst possible moment.
+2. **`TakForegroundService` restart was scheduled 56 seconds out**, so the service meant to
+   protect the app was down for the entire event.
+
+Numbers for whoever picks this up: device has **3.76 GB**; TAKPilot sits at **~232 MB PSS**, of
+which **~86 MB is graphics** (video decode + map + AR overlay). `com.airdata.uav.app` should come
+off the controller. Also note **`/system/bin/logrecord.sh`** — Autel ships a persistent
+root-owned `logcat` recorder that cannot be killed from shell; unquantified but continuous.
+
+Contributing load from the session itself, recorded for honesty: an on-device `logcat -f` capture
+was running through the flight, and six builds were installed during the session. The last
+install was 19:42:26 and the first airborne telemetry 19:44:37, so **no install interrupted a
+flight** — but neither should have been running while the operator was flying.
+
+### RTH altitude — the floor is 25 m, and the app was hiding the rejection
+
+**`FlyControllerParameterRangeManager` exposes the valid ranges and this app never called it.**
+`FlightLimitsController` claimed "no documented range like DJI's 20-500m, so out-of-range values
+are left for the aircraft's own rejection to catch". Both halves were wrong: the ranges are
+queryable at runtime, and letting the aircraft catch it is not a strategy when the rejection is
+invisible. Measured off the aircraft:
+
+```
+returnHeight = 25.0 - 800.0 m   ->    82 - 2625 ft
+maxHeight    = 10.0 - 800.0 m   ->    33 - 2625 ft
+maxRange     = 30.0 - 20000.0 m ->    98 - 65617 ft
+```
+
+**The pilot could not set 50 ft because the aircraft's minimum is 82 ft.** `setReturnHeight(15)`
+returns `The command parameters are out of range` — a real error, answered and refused — and the
+aircraft keeps its previous value. Pre-Flight went on displaying 50 ft. Two flights were flown on
+a setting the pilot believed they had changed.
+
+Fixed: ranges are read at connect and logged, out-of-range values are refused **before** being
+sent with the accepted range named, and Pre-Flight shows the range live and turns red on a bad
+value.
+
+✅ **VERIFIED END TO END, flight test 2026-08-02 (evening).** With RTH altitude set to **200 ft**
+— deliberately chosen well clear of the 82 ft floor so the result could not be confused with it —
+the aircraft pushed, read back, and **flew 200 ft on a commanded RTH**. The HUD readout matched.
+Pre-Flight → push → readback → flown altitude all agree.
+
+Recorded because it was briefly feared otherwise: mid-session a readback of `46.0 m` appeared
+alongside an observed climb of ~28.8 m, which looked like the getter reporting a value the
+aircraft does not fly. That was measured while **both** the TAK-session latch (value never
+pushed) and the out-of-range rejections were still in play, so the aircraft was running its own
+floor while the app displayed something else — exactly the bug being fixed, not a second one.
+The 46.0 reading itself is still unexplained, but the chain is verified working with those bugs
+removed. **Re-open only if a set/readback/flown triple disagrees again on a current build.**
+
+Note when comparing figures: HUD AGL and the logged `relAlt` differ by the terrain offset (~16 ft
+on that site). Compare like with like — `relAlt` is referenced to takeoff, which is what the RTH
+altitude parameter uses.
+
+### AircraftSettingsDump was firing too early and collecting nothing
+
+The read-only dump written specifically to answer these questions had **16 of its reads time out
+together** on the shared 10 s sweeper. Cause was timing, not the reads: it fired 4 s after
+connect, mid XT709 camera enumeration (camera up at T+4.1s, gimbal unlock T+11s, the camera's own
+`getDigitalZoomScale` timed out at T+14s). Vision and RC reads, which do not share that path,
+answered in under 200 ms.
+
+Moved to **15 s** with a single retry. Every read now returns in ~440 ms. That is why the aircraft
+data in this section exists at all.
+
+### Flight limits were gated on a TAK session
+
+`applyDefaults` ran from `AutelTakBridge`'s first-telemetry one-shot, latched on the TAK session:
+
+- **No TAK server meant no limits, ever** — altitude, distance, RTH and battery settings were
+  never sent for a flight without TAK.
+- **A reconnect never re-applied**, because `onProductConnected()` re-armed listeners but left
+  the latch set. A battery swap silently dropped every limit.
+
+Operator's call, and correct: *"the TAKBridge is not the correct place to be triggering flight
+controls from"*. Moved to `FlightLimitsController.applyAtConnect`, driven from
+`AutelProductHolder` alongside the other at-connect settings.
+
+### Pre-Flight now applies on a button, not on typing
+
+Briefly implemented as a 2 s debounce after typing stopped; the operator rejected it and was
+right. Typing is not intent, a pause mid-edit would push a half-considered value, and a
+mid-flight change to RTH or max altitude should be deliberate. Now: applied on **aircraft
+connect**, or on **Apply to Drone**, which resends everything and then **reads back what the
+aircraft actually holds**.
+
+The keystroke hazard this avoids is real — those fields fire per keystroke, so an unguarded push
+would have sent `2 ft`, `20 ft`, `200 ft` while typing "200".
+
+### Signal-loss failsafe — behaviour confirmed, control is not
+
+**Flight-tested twice: the aircraft returns to home on link loss.** ~10 s hover, then climb, then
+return. That is the desired behaviour and it is the aircraft's own.
+
+But `doEmergencyAction` (`MAV_CMD_SET_MSN_EMERGENCY`) **is not acknowledged** — 10 s timeout on a
+clean channel, Explorer closed, camera init finished. Not contention, not the old flood. Since the
+app cannot set it and cannot read it back, offering Hover/Land implied a control that does not
+exist: **the picker is now Return to Home only**, and the `HOVER`/`LAND` enum values are gone so a
+stale pref cannot select a missing option.
+
+The flight HUD now shows **RTH altitude read from the aircraft** (`fpvRthAltitude`), amber
+`RTH --` until it answers, cleared on disconnect. Never the requested value — that is the whole
+point.
+
+### Control Response never persisted, and actively undid itself
+
+`AutelControlRates.saveSelection()` **had no callers anywhere in the codebase.** The preference
+was never written, `savedPrecision()` returned its `false` default, and `applyAtConnect` then
+pushed **NORMAL** on every connect. A pilot selecting Precision did not merely lose it — the app
+undid it each launch. Confirmed from the prefs file: `stick_mode_id` present, `precision_selected`
+absent entirely.
+
+Fixed, and given the same "not chosen yet" contract as stick mode so it is never imposed on a
+pilot who has not chosen.
+
+### Exterior lights — what is actually controllable
+
+Public-safety requirement: the aircraft must be able to go dark at night. The SDK has **four**
+separate light systems and only one is ours:
+
+| system | control | |
+|---|---|---|
+| Pilot lamp (arm/nav LEDs) | `setLedPilotLamp(ALL_OFF)` + getter | the bright one; **this is the button** |
+| Auxiliary LED | **read-only** | only on `VisualSettingInfo`; no setter anywhere in the aar |
+| Night light | `doNightCtrl` → `MAV_CMD_NLIGHT_CTRL` | sent as `AccessoryCmdRequest` — an accessory |
+| Search light | `doSlightCtrl` → `MAV_CMD_SLIGHT_CTRL` | also an accessory |
+
+So the strict claim is **"navigation lights off"**, not "every exterior light is off". If an
+accessory light is ever fitted, `doNightCtrl`/`doSlightCtrl` must be driven too or a pilot will
+believe they are dark and be lit.
+
+✅ **OPERATOR-VERIFIED COMPLETE (2026-08-02):** in the field this does what the mission needs —
+the aircraft goes dark. The remaining uncontrollable auxiliary LED is not a practical problem on
+this airframe. Treat this as done rather than as a partial implementation.
+
+Replaced the video re-sync button (video is stable on this airframe). Icon shows the **aircraft's**
+lamp state, dimmed when unknown. `resyncVideo()` and `ic_resync.xml` are now orphaned but kept.
+
+### Pre-Flight copy rewritten to STE
+
+Whole screen, not just the section that prompted it. Developer detail (SDK behaviour, what the app
+can verify, transcode internals) is out of the UI and in code comments. One term per concept:
+**drone**, everywhere, so the button is *Apply to Drone*. FAA 107.29 and the UASFM advisory-only
+warning were deliberately kept explicit — they are the two places a pilot can get into regulatory
+trouble.
+
+### Debug log — radar filter
+
+Radar readouts fill the log. Added an **"Include obstacle radar logs"** checkbox, off by default.
+
+⚠ It matches the **message prefix** `radar(`, not the log level. The obvious implementation —
+suppress V/D from `AutelAvoidance` — silently does nothing, because the readout is emitted at
+**I**, the same level as the switch-state lines that must be kept. If that line in
+`AutelAvoidance.logRadar` is reworded, the filter stops working.
+
+### Also settled
+
+- **RF power is a genuine refusal, not contention.** `rc.rfPower = CE` read back from hardware;
+  `setRFPower(FCC)` returns `The command failed`. The app-side path is a bare packet write with no
+  precondition, so this is the RC refusing.
+- Baseline captured: `maxHorizontalSpeed 10.0 m/s`, `maxVZUp 4.4`, `maxVZDown 1.7`,
+  `aircraft.serial HL7825031094`.
+- Home-screen aircraft image done — real EVO II art at mdpi/hdpi/xhdpi/xxhdpi, alpha verified.
 
 ## To resume
 

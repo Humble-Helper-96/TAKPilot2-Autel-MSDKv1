@@ -92,6 +92,17 @@ class DebugActivity : AppCompatActivity() {
             AppLog.i(TAG, "TAK/CoT logs ${if (on) "INCLUDED" else "HIDDEN"}")
         }
 
+        val radarToggle = findViewById<CheckBox>(R.id.debugRadarToggle)
+        radarToggle.isChecked = AppLog.radarLogging
+        radarToggle.setOnCheckedChangeListener { _, on ->
+            AppLog.radarLogging = on
+            // Same reasoning as the TAK toggle above: logged from an app-side tag so the line
+            // survives the filter it is describing, and marks where the log changed shape.
+            AppLog.i(TAG, "obstacle radar logs ${if (on) "INCLUDED" else "HIDDEN"}")
+        }
+
+        setupExplorerControls()
+
         findViewById<android.widget.Button>(R.id.debugExportButton).setOnClickListener {
             AppLog.v(TAG, "export tapped")
             exportLog()
@@ -176,6 +187,73 @@ class DebugActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(intent, "Export debug log"))
+    }
+
+    /**
+     * Autel Explorer suppression controls.
+     *
+     * The restore button is deliberately ALWAYS enabled when provisioned, regardless of the
+     * checkbox. It is the escape hatch: if the app ever dies with Explorer hidden, a pilot needs
+     * one obvious way to get Explorer back without adb, and it must not be gated behind the
+     * setting that caused the problem.
+     */
+    private fun setupExplorerControls() {
+        val status = findViewById<TextView>(R.id.debugExplorerStatus)
+        val toggle = findViewById<CheckBox>(R.id.debugExplorerToggle)
+        val restoreBtn = findViewById<android.widget.Button>(R.id.debugExplorerRestoreButton)
+        val deprovisionBtn = findViewById<android.widget.Button>(R.id.debugExplorerDeprovisionButton)
+
+        fun render() {
+            val provisioned = ExplorerSuppressor.isDeviceOwner(this)
+            status.text = ExplorerSuppressor.statusLine(this)
+            toggle.isEnabled = provisioned
+            restoreBtn.isEnabled = provisioned
+            deprovisionBtn.isEnabled = provisioned
+            toggle.setOnCheckedChangeListener(null)
+            toggle.isChecked = ExplorerSuppressor.isEnabled(this)
+            toggle.setOnCheckedChangeListener { _, on ->
+                // setEnabled FIRST: arm() gates on isAvailable(), which reads this very pref.
+                // Reversed, the toggle is a silent no-op — an invisible failure.
+                ExplorerSuppressor.setEnabled(this, on)
+                if (on) {
+                    // We are an activity, so a task provably exists and onTaskRemoved can fire.
+                    TakSessionAnchor.arm(this, "operator enabled suppression")
+                } else {
+                    // setEnabled(false) already restored; drop the anchor unless something else
+                    // still needs it.
+                    TakForegroundService.releaseIfIdle(applicationContext)
+                }
+                render()
+            }
+        }
+        render()
+
+        restoreBtn.setOnClickListener {
+            AppLog.v(TAG, "tap: Restore Explorer")
+            val ok = ExplorerSuppressor.restore(this, "operator pressed Restore")
+            // Nothing is owed now, so the anchor can go unless the aircraft or TAK still need it.
+            TakForegroundService.releaseIfIdle(applicationContext)
+            toast(if (ok) "Explorer is available again." else "Could not restore Explorer.")
+            render()
+        }
+
+        // Confirmed, because device-owner status cannot be granted back from inside the app —
+        // re-provisioning needs adb, and on a device with accounts it may not be possible at all.
+        deprovisionBtn.setOnClickListener {
+            AppLog.v(TAG, "tap: Remove device-owner rights")
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Remove device-owner rights?")
+                .setMessage("Explorer will be restored and this app will no longer be able to " +
+                    "keep it closed. To turn this back on, the controller must be set up again " +
+                    "over USB from a computer.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove") { _, _ ->
+                    val ok = ExplorerSuppressor.deprovision(this)
+                    toast(if (ok) "Device-owner rights removed." else "Could not remove rights.")
+                    render()
+                }
+                .show()
+        }
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()

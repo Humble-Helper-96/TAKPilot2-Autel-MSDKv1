@@ -36,6 +36,7 @@ object AppLog {
     private const val KEY_ENABLED = "debug_logging_enabled"
     private const val KEY_VERBOSE = "debug_logging_verbose"
     private const val KEY_TAK = "debug_logging_tak"
+    private const val KEY_RADAR = "debug_logging_radar"
     private const val ACTIVE_FILE_NAME = "app.log"
     private const val MAX_FILE_SIZE_BYTES = 1L * 1024 * 1024
     private const val RETENTION_MS = 2L * 60 * 60 * 1000
@@ -100,6 +101,23 @@ object AppLog {
         }
 
     /**
+     * Whether obstacle-radar lines (see [RADAR_TAGS]) reach the log file. Default **false**.
+     *
+     * The radar reports continuously while the aircraft is powered, so these are by far the
+     * highest-volume lines in the app — enough to bury everything else in the tail view and to
+     * churn the log files (operator, 2026-08-02). Off by default because the radar is almost
+     * never what is being diagnosed; turn it on deliberately when it is.
+     *
+     * Same contract as [takLogging]: FILE sink only, logcat still receives everything.
+     */
+    @JvmStatic
+    var radarLogging: Boolean
+        get() = initialized && prefs.getBoolean(KEY_RADAR, false)
+        set(value) {
+            if (initialized) prefs.edit().putBoolean(KEY_RADAR, value).apply()
+        }
+
+    /**
      * Tags owned by the TAK/CoT side of the app, suppressed when [takLogging] is off.
      *
      * Deliberately an explicit set rather than a "starts with Tak" prefix test: several
@@ -127,6 +145,34 @@ object AppLog {
         "TakMapMarkers",
         "TakDropMarkers",
     )
+
+    /**
+     * Obstacle-radar tags, hidden from the log file unless [radarLogging] is on.
+     *
+     * `AutelAvoidance` carries both the per-report radar distances AND the avoidance switch
+     * state. That is deliberate and the switch lines are worth keeping — so the filter is
+     * applied per LINE by [isRadarNoise] rather than by tag alone, which would throw away the
+     * switch changes along with the noise.
+     */
+    private val RADAR_TAGS = setOf("AutelAvoidance")
+
+    /**
+     * True only for the repeating radar-distance readout, false for everything else.
+     *
+     * MATCHED ON THE MESSAGE, NOT THE LEVEL. The obvious implementation — hide V/D lines from
+     * radar tags — silently does nothing here: `AutelAvoidance` emits its per-report distances at
+     * **I** level (`radar(clear) F=[...] R=[...]`), the same level as the switch-state lines that
+     * must be kept. Filtering by level would have left the noise exactly where it was.
+     *
+     * So this matches the one prefix that is the repeating readout, and keeps every other
+     * AutelAvoidance line — switches accepted or refused, enforcement, airborne skips, warnings.
+     * Those are what someone diagnosing an avoidance problem actually needs.
+     *
+     * If that log line is ever reworded, this filter stops working. It is a prefix match against
+     * the emitter in AutelAvoidance.logRadar.
+     */
+    private fun isRadarNoise(tag: String, msg: String): Boolean =
+        tag in RADAR_TAGS && msg.startsWith("radar(")
 
     /** Verbose-tier detail log: UI actions, navigation, per-tick internals. Only written
      * to file when both [enabled] and [verbose] are on; always forwarded to Log.d. */
@@ -196,6 +242,7 @@ object AppLog {
         // FATAL (crash traces) is never filtered — losing a crash to a log-noise setting
         // would be the worst possible failure mode for this switch.
         if (level != "FATAL" && !takLogging && tag in TAK_TAGS) return
+        if (level != "FATAL" && !radarLogging && isRadarNoise(tag, msg)) return
         val line = buildString {
             append(timestampFormat.format(Date()))
             append(' ').append(level)

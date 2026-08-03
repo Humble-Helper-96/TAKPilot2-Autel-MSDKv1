@@ -25,7 +25,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Applied automatically when the aircraft connects. Leave a field blank to use the aircraft's own current setting."
+            android:text="Press Apply to Drone to send these settings. A change does not go to the drone until you press the button. Leave a box empty to keep the present setting."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="12dp" />
@@ -59,17 +59,31 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Signal-loss failsafe. Sent to the aircraft on connect via
-             AutelFlyController.doEmergencyAction() — which despite its name is the policy
-             SETTER (it emits MAV_CMD_SET_MSN_EMERGENCY); see FlightLimitsController's doc.
-             Unlike the DJI blueprint there's no getter to read the value back, so the status
-             line tells the pilot to confirm it in Autel's own app rather than implying more
-             certainty than the SDK actually provides. -->
+        <!-- Live range check. The aircraft rejects out-of-range values with "The command
+             parameters are out of range" and KEEPS ITS OLD SETTING, which used to happen
+             silently: on 2026-08-02 a pilot had 50 ft entered here while the aircraft was
+             actually flying a 151 ft RTH. This line reads the aircraft's own accepted range
+             (FlyControllerParameterRangeManager) and says so before takeoff. -->
+        <TextView
+            android:id="@+id/limitRangeStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingTop="6dp" />
+
+        <!-- Signal-loss failsafe. RETURN TO HOME IS THE ONLY OPTION (operator, 2026-08-02).
+             Hover and Land were removed deliberately: this app cannot verify that any of them
+             took. doEmergencyAction() emits MAV_CMD_SET_MSN_EMERGENCY, that write is NOT
+             acknowledged on this firmware (10s timeout on a clean channel), and the SDK exposes
+             no getter to read the value back. Offering three choices implied a control we do not
+             have. Flight testing on 2026-08-02 confirmed the aircraft returns home on link loss
+             of its own accord, so RTH is both the safe default and the observed behaviour. -->
         <TextView style="@style/takLabelStyle" android:text="If the signal is lost" />
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="What the aircraft does on its own if it loses the controller link — including if this app or the controller stops working. Return to Home is recommended."
+            android:text="If the drone loses the signal, it returns to home."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -85,15 +99,6 @@
                 style="@style/takColumnRadio"
                 android:text="Return Home" />
 
-            <RadioButton
-                android:id="@+id/failsafeHover"
-                style="@style/takColumnRadio"
-                android:text="Hover" />
-
-            <RadioButton
-                android:id="@+id/failsafeLand"
-                style="@style/takColumnRadio"
-                android:text="Land" />
         </RadioGroup>
 
         <TextView
@@ -103,6 +108,29 @@
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingTop="6dp" />
+
+        <!-- Resends every setting above and then READS BACK what the aircraft actually holds.
+             Editing a field only saves it locally; this is the deliberate act that sends it, and
+             the only thing that reports the aircraft's real state rather than what we asked for.
+             Doubles as recovery: one tap re-asserts everything after a reconnect or an Autel
+             Explorer link steal. -->
+        <Button
+            android:id="@+id/limitApplyButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Apply to Drone"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#2E7D32" />
+
+        <TextView
+            android:id="@+id/limitApplyStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#909090"
+            android:textSize="12sp"
+            android:paddingTop="6dp"
+            android:text="Press the button to send the settings to the drone." />
 
         <!-- Obstacle avoidance. A SUBSECTION of Drone Settings, placed under the signal-loss
              failsafe because both describe what the aircraft does on its own.
@@ -122,7 +150,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="The aircraft sends these settings to the app. Connect the aircraft to see them. If you change a switch, the app sends the change to the aircraft immediately. The app does not keep these settings, and it does not change them when it connects."
+            android:text="These switches show the settings in the drone. Connect the drone to see them. A change goes to the drone immediately."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -135,7 +163,7 @@
             android:textColor="#FFB300"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:text="The aircraft is not connected." />
+            android:text="The drone is not connected." />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -208,7 +236,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Precision makes the gimbal wheel and the yaw of the aircraft move more slowly. Use it to point the camera accurately, or to make a smooth video. It does not change the speed of the aircraft. Connect the aircraft to use this control."
+            android:text="Precision mode moves the gimbal wheel and the drone yaw more slowly. Use it to aim the camera accurately and to make smooth video. It does not change the speed of the drone."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -248,7 +276,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="The app sends this mode to the controller each time it connects. Thus the sticks always do what you select here, even if a different app changed them. The ENTER FLIGHT card shows the mode before you fly."
+            android:text="The app sets this mode on the controller at each connection. The sticks always do what you select here. The ENTER FLIGHT card shows the mode before you fly."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -323,7 +351,7 @@
         </RadioGroup>
 
         <TextView style="@style/takLabelStyle"
-            android:text="Custom tile URL (used when &quot;Custom&quot; is selected)" />
+            android:text="Custom map address. Used only when you select Custom." />
         <EditText
             android:id="@+id/mapCustomUrl"
             style="@style/takFieldStyle"
@@ -333,7 +361,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Standard XYZ template — must include {z}, {x} and {y}. Tiles are cached offline as you view them."
+            android:text="The address must contain {z}, {x} and {y}. The app keeps the tiles you look at for offline use."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingTop="4dp" />
@@ -358,7 +386,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Tiles you view are cached automatically. This downloads an area in advance, so the map works over ground you have not flown yet. Check the size first — the tile count grows with the square of the radius."
+            android:text="The app keeps the map tiles you look at. Download an area to get the map for ground you have not flown. Press Check Size first. A larger radius increases the size quickly."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="10dp" />
@@ -566,7 +594,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Send camera look-point (sensor point of interest)"
+                android:text="Send the camera look-point to TAK"
                 android:textColor="#FFFFFF"
                 android:textSize="15sp" />
         </LinearLayout>
@@ -618,7 +646,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Channels your TAK login belongs to. Selected ones receive this drone's PLI and markers (none selected = server default)."
+            android:text="These are the channels for your TAK login. The channels you select receive the drone position and the markers. If you select none, the server default applies."
             android:textColor="#909090"
             android:textSize="12sp" />
 
@@ -730,7 +758,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Transcoded on device with a 2s keyframe so remote viewers (ATAK) can join and recover cleanly. Aspect ratio is preserved. Published to a -Low path (e.g. Feed-A → Feed-A-Low) so the media server passes it through without re-transcoding. Standard is the default; Low suits marginal links."
+            android:text="Select the quality of the video you send to TAK. Standard is the default. Use Low if the network signal is weak."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -803,7 +831,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Starting/stopping the stream is done from the LIVE pill on the flight screen."
+            android:text="Use the LIVE button on the flight screen to start and stop the video."
             android:textColor="#909090"
             android:textSize="12sp" />
 
@@ -828,7 +856,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Terrain regions for Sensor-Point-of-Interest ground accuracy — import a .zip per flight area (e.g. Anchorage.zip). Tiles are shared across regions; a repeat import overwrites in place."
+            android:text="Terrain data makes the marker positions more accurate. Import one .zip file for each flight area. A new import of the same area replaces the old data."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="8dp" />
@@ -894,7 +922,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="FAA UAS Facility Map altitude ceilings, shown on the flight HUD. Download over wifi before you head out — it is read offline in flight. Advisory only: this shows altitudes the FAA is likely to authorise, it is NOT an authorisation, and it does not change the aircraft's altitude limit."
+            android:text="These are the FAA altitude ceilings. The flight screen shows them. Download the data on wifi before you go to the flight area.\n\n⚠ This is advice only. It is NOT an FAA authorisation. It does not change the altitude limit of the drone."
             android:textColor="#909090"
             android:textSize="12sp"
             android:paddingBottom="10dp" />

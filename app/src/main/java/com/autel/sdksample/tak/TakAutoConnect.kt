@@ -54,7 +54,10 @@ object TakAutoConnect {
         if (TakManager.getInstance().isConnected) {
             Log.i(TAG, "TAK icon tap — disconnecting")
             runCatching { TakManager.getInstance().disconnect() }
-            runCatching { TakForegroundService.stop(context.applicationContext) }
+            // NOT stop(): disconnecting TAK does not mean the app is done. The aircraft may
+            // still be connected — AutelProductHolder started this service precisely so a swipe
+            // tears the aircraft down — and an Explorer restore may be owed.
+            runCatching { TakForegroundService.releaseIfIdle(context.applicationContext) }
             onResult(true, "TAK disconnected")
             return
         }

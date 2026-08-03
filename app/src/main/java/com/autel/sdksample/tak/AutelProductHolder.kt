@@ -268,12 +268,30 @@ object AutelProductHolder {
                     mainHandler.postDelayed({
                         AutelControlRates.applyAtConnect(ctx)
                         AutelAvoidance.applyAtConnect(ctx)
+                        // Flight-safety limits belong here, with the other at-connect settings —
+                        // NOT in AutelTakBridge where they used to live. Latched on the TAK
+                        // session, they were never applied at all without a TAK server, and never
+                        // re-applied after an aircraft reconnect. See
+                        // FlightLimitsController.applyAtConnect for what that cost on 2026-08-02.
+                        FlightLimitsController.applyAtConnect(ctx)
                     }, 4500)
+                    // Then ask the aircraft what RTH altitude it ACTUALLY holds, for the flight
+                    // HUD. Deliberately after the writes above have had time to land, and read
+                    // once rather than polled — the fly-controller channel is the one that must
+                    // stay quiet. See FlightLimitsController.aircraftReturnHeightM.
+                    mainHandler.postDelayed({ FlightLimitsController.refreshReturnHeight() }, 9000)
                 }
                 // Read-only snapshot of everything the SDK exposes, logged once per
                 // connect. Delayed so the fly controller and RC are actually answering —
                 // the same not-ready-yet window the camera calls hit.
-                mainHandler.postDelayed({ AircraftSettingsDump.dumpOnce() }, 4000)
+                //
+                // 15s, not 4s. MEASURED 2026-08-02: at 4s this lands mid camera-enumeration
+                // (XT709 came up at T+4.1s, gimbal unlock at T+11s, the camera's own
+                // getDigitalZoomScale timed out at T+14s) and every fly-controller read in the
+                // dump expired together on the shared 10s timeout. The vision and RC reads,
+                // which do not share that path, answered in under 200ms. Waiting until camera
+                // init is done is the whole fix; AircraftSettingsDump also retries once.
+                mainHandler.postDelayed({ AircraftSettingsDump.dumpOnce() }, 15000)
                 // Bring the foreground service up as soon as we hold the aircraft, whether or
                 // not TAK is connected. This is NOT about keeping anything alive: Android only
                 // delivers onTaskRemoved to RUNNING services, and that callback is the only
@@ -281,9 +299,7 @@ object AutelProductHolder {
                 // aircraft without TAK meant a swipe released nothing and the cached process
                 // kept the camera and video channels — see AppTeardown.
                 com.autel.sdksample.TestApplication.getInstance()?.let { ctx ->
-                    val callsign = ctx.getSharedPreferences("takpilot2_tak", android.content.Context.MODE_PRIVATE)
-                        .getString("callsign", "TAKPilot2-EVO2") ?: "TAKPilot2-EVO2"
-                    runCatching { TakForegroundService.start(ctx, callsign) }
+                    runCatching { TakForegroundService.start(ctx, TakForegroundService.callsignFor(ctx)) }
                         .onFailure { AppLog.w(TAG, "foreground service start failed: ${it.message}") }
                 }
                 notifyAll(true)
@@ -298,6 +314,8 @@ object AutelProductHolder {
                 AutelAvoidance.onProductDisconnected()
                 AutelControlRates.onProductDisconnected()
                 AircraftSettingsDump.onProductDisconnected()
+                FlightLimitsController.onProductDisconnected()
+                AutelLights.onProductDisconnected()
                 notifyAll(false)
             }
         }

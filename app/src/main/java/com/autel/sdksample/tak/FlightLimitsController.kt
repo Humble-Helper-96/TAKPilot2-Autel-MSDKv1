@@ -58,10 +58,10 @@ object FlightLimitsController {
      *  strings as the DJI sibling, so the two ports' prefs stay conceptually parallel. */
     enum class Failsafe(val id: String, val label: String, val sdk: EmergencyAction) {
         GO_HOME("gohome", "Return to Home", EmergencyAction.GO_HOME),
-        HOVER("hover", "Hover in place", EmergencyAction.HOVER),
-        LAND("land", "Land immediately", EmergencyAction.LAND),
         ;
         companion object {
+            /** Anything else — including "hover"/"land" saved by an older build — becomes
+             *  GO_HOME. Those options were removed on 2026-08-02, see the enum doc. */
             fun fromId(id: String?): Failsafe = values().firstOrNull { it.id == id } ?: GO_HOME
         }
     }
@@ -101,6 +101,49 @@ object FlightLimitsController {
     private fun pref(context: Context, key: String, default: String): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, default) ?: default
 
+    // ---- Aircraft-accepted ranges -------------------------------------------------------
+    //
+    // WHY THIS EXISTS. This class used to say "no documented range like DJI's 20-500m, so
+    // out-of-range values are left for the aircraft's own rejection to catch". That was wrong on
+    // both counts: the SDK DOES expose the ranges (FlyControllerParameterRangeManager, reachable
+    // from getParameterRangeManager()), and letting the aircraft catch it is not a strategy
+    // because the rejection is invisible to the pilot.
+    //
+    // MEASURED 2026-08-02: with 50 ft entered here, `setReturnHeight(15)` came back "The command
+    // parameters are out of range" and the aircraft carried on holding 46 m / 151 ft. Pre-Flight
+    // showed 50 ft the whole time. A readback (getReturnHeight) confirmed the aircraft's real
+    // value. Nothing surfaced the difference. That is the bug this section closes.
+    //
+    // These are plain synchronous getters — getParameterRangeManager() returns the manager
+    // directly, and RangePair is a value object. No callback, so none of the
+    // is-this-a-subscription hazard that applies to the get*(callback) family.
+
+    /** An aircraft-accepted range, in METERS. */
+    data class RangeM(val fromM: Float, val toM: Float) {
+        val fromFt: Int get() = Math.round(fromM * FT_PER_M).toInt()
+        val toFt: Int get() = Math.round(toM * FT_PER_M).toInt()
+        fun containsM(m: Int): Boolean = m >= Math.floor(fromM.toDouble()) &&
+            m <= Math.ceil(toM.toDouble())
+    }
+
+    private fun rangeManager(): com.autel.common.flycontroller.FlyControllerParameterRangeManager? =
+        runCatching { AutelProductHolder.evo2?.flyController?.parameterRangeManager }.getOrNull()
+
+    private fun rangeOf(
+        pick: (com.autel.common.flycontroller.FlyControllerParameterRangeManager) ->
+            com.autel.common.RangePair<Float>?,
+    ): RangeM? = runCatching {
+        val pair = rangeManager()?.let(pick) ?: return null
+        val from = pair.valueFrom ?: return null
+        val to = pair.valueTo ?: return null
+        RangeM(from, to)
+    }.getOrNull()
+
+    /** Null when no aircraft is connected — the ranges come from the live product. */
+    fun returnHeightRange(): RangeM? = rangeOf { it.returnHeightRange }
+    fun maxHeightRange(): RangeM? = rangeOf { it.heightRange }
+    fun maxRangeRange(): RangeM? = rangeOf { it.rangeOfMaxRange }
+
     fun save(context: Context, maxAltFt: String, maxRadiusFt: String, rthAltFt: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_MAX_ALT_FT, maxAltFt.trim())
@@ -109,8 +152,197 @@ object FlightLimitsController {
             .apply()
     }
 
-    /** Apply whichever limits are configured (called once on aircraft connect). Skips any limit
-     *  whose field is empty/unparseable — that limit is simply not touched. */
+    @Volatile private var appliedForThisConnect = false
+
+    fun onProductDisconnected() {
+        appliedForThisConnect = false
+        // The HUD must not keep showing the last aircraft's RTH altitude as if it were current.
+        aircraftReturnHeightM = null
+    }
+
+    /**
+     * Applies the pilot's limits once per AIRCRAFT CONNECT.
+     *
+     * WHY THIS MOVED. This used to be driven from `AutelTakBridge`'s first-telemetry one-shot,
+     * latched on the TAK session. That had two consequences, both found on 2026-08-02:
+     *
+     *  1. **No TAK session meant no limits, ever.** The push lived inside the bridge's telemetry
+     *     listener, so an aircraft flown without a TAK server connected got none of the pilot's
+     *     altitude, distance, RTH or battery settings. A network link to a TAK server has no
+     *     business gating aircraft safety parameters.
+     *  2. **A reconnect never re-applied.** `onProductConnected()` re-armed the listeners but
+     *     left the latch set, so after a battery swap or an aircraft reboot mid-session the
+     *     limits were silently never re-sent. The operator changed the RTH altitude in
+     *     Pre-Flight, flew twice, and both flights used the stale value — because nothing
+     *     between the edit and the flight ever started a TAK session.
+     *
+     * Pre-Flight tells the pilot "Applied automatically when the aircraft connects". This is now
+     * driven by exactly that, alongside the other at-connect settings in [AutelProductHolder].
+     */
+    fun applyAtConnect(context: Context) {
+        if (appliedForThisConnect) return
+        val fc = AutelProductHolder.evo2?.flyController ?: run {
+            AppLog.i(TAG, "applyAtConnect: no aircraft yet, will retry on next connect")
+            return
+        }
+        appliedForThisConnect = true
+        applyDefaults(context, fc)
+    }
+
+    /**
+     * Pushes JUST the numeric limits, immediately, if an aircraft is connected.
+     * Returns false when there is nothing to push to.
+     *
+     * Called from the DEBOUNCED Pre-Flight edit path — never wire this straight to a TextWatcher.
+     * Those fields fire on every keystroke, so typing "200" without a debounce would send three
+     * separate writes (2ft, 20ft, 200ft) to the fly-controller channel. Bursting writes at that
+     * channel is what put an aircraft into a wall on 2026-08-02.
+     */
+    fun pushLimitsNow(context: Context): Boolean {
+        val fc = AutelProductHolder.evo2?.flyController ?: return false
+        applyNumericLimits(context, fc)
+        return true
+    }
+
+    /** As [pushLimitsNow], for the failsafe selection. */
+    fun pushFailsafeNow(context: Context): Boolean {
+        val fc = AutelProductHolder.evo2?.flyController ?: return false
+        applyFailsafe(context, fc)
+        return true
+    }
+
+    /** As [pushLimitsNow], for the battery thresholds and RF power. */
+    fun pushBatteryAndRfNow(context: Context): Boolean {
+        AutelProductHolder.evo2 ?: return false
+        applyBatteryThresholds(context)
+        applyRfPower(context)
+        return true
+    }
+
+    /**
+     * The RTH altitude **the aircraft last reported**, in metres. Null until it answers.
+     *
+     * This is what the flight HUD displays. It is deliberately NOT the Pre-Flight value: a
+     * requested number and an applied number diverged on 2026-08-02 and the pilot had no way to
+     * see it. Null renders as "RTH --" — unknown has to look unknown, because a confident wrong
+     * number on a flight screen is worse than no number.
+     *
+     * Only ever written from an aircraft reply.
+     */
+    @Volatile var aircraftReturnHeightM: Float? = null
+        private set
+
+    /**
+     * One-shot read of the aircraft's RTH altitude, cached into [aircraftReturnHeightM].
+     *
+     * `getReturnHeight` is a one-shot `ParamsQueryPacket` (`SM_RTH_Height`) — verified in the
+     * bytecode, not one of the repeating-listener getters. Called at connect and after an Apply,
+     * NOT polled: the fly-controller channel is the one that must not be loaded.
+     */
+    fun refreshReturnHeight() {
+        val fc = AutelProductHolder.evo2?.flyController ?: return
+        runCatching {
+            fc.getReturnHeight(object : com.autel.common.CallbackWithOneParam<Float> {
+                override fun onSuccess(v: Float?) {
+                    aircraftReturnHeightM = v
+                    AppLog.i(TAG, "aircraft reports RTH altitude = ${v}m " +
+                        "(${v?.let { Math.round(it * FT_PER_M) }}ft)")
+                }
+                override fun onFailure(error: AutelError?) {
+                    aircraftReturnHeightM = null
+                    AppLog.w(TAG, "RTH altitude read failed: ${error?.description} — HUD shows unknown")
+                }
+            })
+        }
+    }
+
+    /** HUD string. "RTH --" whenever the aircraft has not told us. */
+    fun rthHudLabel(): String =
+        aircraftReturnHeightM?.let { "RTH ${Math.round(it * FT_PER_M)} ft" } ?: "RTH --"
+
+    /** What the aircraft actually reports back, rendered for the pilot. */
+    data class ReadBackReport(val text: String, val allMatched: Boolean)
+
+    /**
+     * Reads the three numeric limits back off the aircraft and compares them to what Pre-Flight
+     * says, then hands the caller a line fit to show a pilot.
+     *
+     * WHY THIS IS THE IMPORTANT HALF. On 2026-08-02 every layer was found capable of lying on its
+     * own: `setReturnHeight` reported OK for a value the aircraft did not fly, an out-of-range
+     * value was rejected while Pre-Flight kept displaying it, and the pilot flew two sorties on a
+     * setting they believed they had changed. The only statement worth making to a pilot is what
+     * the aircraft answers when asked.
+     *
+     * The getters are one-shot ParamsQueryPackets (`SM_RTH_Height` and friends) — verified in the
+     * bytecode, NOT the repeating-listener kind. Safe to call on demand.
+     */
+    fun readBack(context: Context, done: (ReadBackReport) -> Unit) {
+        val fc = AutelProductHolder.evo2?.flyController ?: run {
+            done(ReadBackReport("Aircraft disconnected before it could be verified.", false)); return
+        }
+        val wantAlt = ftToM(savedMaxAltitudeFt(context))
+        val wantRad = ftToM(savedMaxRadiusFt(context))
+        val wantRth = ftToM(savedRthAltitudeFt(context))
+
+        val got = java.util.concurrent.ConcurrentHashMap<String, Float>()
+        val failed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val outstanding = java.util.concurrent.atomic.AtomicInteger(3)
+
+        fun finish() {
+            if (outstanding.decrementAndGet() > 0) return
+            val parts = mutableListOf<String>()
+            var matched = true
+            fun cmp(label: String, key: String, want: Int?) {
+                val g = got[key]
+                if (g == null) { matched = false; return }
+                val ft = Math.round(g * FT_PER_M).toInt()
+                if (want != null && Math.abs(g - want) > 0.6f) {
+                    parts += "$label is $ft ft, not ${Math.round(want * FT_PER_M)} ft"
+                    matched = false
+                } else {
+                    parts += "$label $ft ft"
+                }
+            }
+            cmp("Max altitude", "alt", wantAlt)
+            cmp("Max distance", "rad", wantRad)
+            cmp("RTH altitude", "rth", wantRth)
+
+            // Pilot-facing text. Says what the drone reports, and nothing about how we asked it.
+            val text = when {
+                failed.isNotEmpty() ->
+                    "⚠ The drone did not answer for: ${failed.joinToString(", ")}. " +
+                        "Press the button again."
+                matched -> "The drone confirms: ${parts.joinToString(", ")}."
+                else -> "⚠ The drone did not take all the settings. " +
+                    "${parts.joinToString(", ")}. Correct the values, then press the button again."
+            }
+            done(ReadBackReport(text, matched && failed.isEmpty()))
+        }
+
+        fun read(key: String, label: String, call: (com.autel.common.CallbackWithOneParam<Float>) -> Unit) {
+            runCatching {
+                call(object : com.autel.common.CallbackWithOneParam<Float> {
+                    override fun onSuccess(v: Float?) {
+                        v?.let { got[key] = it }
+                        // Keep the flight HUD in step with what we just learned.
+                        if (key == "rth") aircraftReturnHeightM = v
+                        finish()
+                    }
+                    override fun onFailure(error: AutelError?) {
+                        if (key == "rth") aircraftReturnHeightM = null
+                        failed += label
+                        finish()
+                    }
+                })
+            }.onFailure { failed += label; finish() }
+        }
+        read("alt", "max altitude") { fc.getMaxHeight(it) }
+        read("rad", "max distance") { fc.getMaxRange(it) }
+        read("rth", "RTH altitude") { fc.getReturnHeight(it) }
+    }
+
+    /** Apply whichever limits are configured. Skips any limit whose field is empty/unparseable —
+     *  that limit is simply not touched. */
     fun applyDefaults(context: Context, fc: Evo2FlyController) {
         val maxAltM = ftToM(savedMaxAltitudeFt(context))
         val maxRadiusM = ftToM(savedMaxRadiusFt(context))
@@ -118,7 +350,44 @@ object FlightLimitsController {
         AppLog.i(TAG, "applyDefaults: maxAltM=$maxAltM maxRadiusM=$maxRadiusM rthAltM=$rthAltM " +
             "(null = not configured, skipped)")
 
+        applyNumericLimits(context, fc)
+        applyBatteryThresholds(context)
+        applyRfPower(context)
+        applyFailsafe(context, fc)
+    }
+
+    /**
+     * The three numeric limits, each checked against the aircraft's own accepted range first.
+     *
+     * Split out from [applyDefaults] so a Pre-Flight edit can push JUST these. Re-running the
+     * whole of applyDefaults on every edit would also re-fire the failsafe write, which takes a
+     * 10-second timeout to fail on this firmware — turning one keystroke into ten seconds of
+     * pending traffic on the fly-controller channel.
+     */
+    fun applyNumericLimits(context: Context, fc: Evo2FlyController) {
+        val maxAltM = ftToM(savedMaxAltitudeFt(context))
+        val maxRadiusM = ftToM(savedMaxRadiusFt(context))
+        val rthAltM = ftToM(savedRthAltitudeFt(context))
+
+        val rthRange = returnHeightRange()
+        val altRange = maxHeightRange()
+        val radRange = maxRangeRange()
+        AppLog.i(TAG, "aircraft-accepted ranges: returnHeight=$rthRange maxHeight=$altRange " +
+            "maxRange=$radRange (null = aircraft did not report one)")
+
+        /** Refuses a push we already know the aircraft will reject, and says why. Pushing it
+         *  anyway would only produce "out of range" in the log and leave the pilot's Pre-Flight
+         *  value looking applied. */
+        fun inRange(name: String, m: Int, range: RangeM?): Boolean {
+            if (range == null || range.containsM(m)) return true
+            AppLog.w(TAG, "REFUSING $name(${m}m / ${Math.round(m * FT_PER_M)}ft): aircraft " +
+                "accepts ${range.fromM}-${range.toM}m (${range.fromFt}-${range.toFt}ft). " +
+                "THE AIRCRAFT KEEPS ITS CURRENT VALUE — Pre-Flight does not match the aircraft.")
+            return false
+        }
+
         maxAltM?.let { m ->
+            if (!inRange("setMaxHeight", m, altRange)) return@let
             fc.setMaxHeight(m.toDouble(), object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() { AppLog.i(TAG, "setMaxHeight($m): OK") }
                 override fun onFailure(error: AutelError?) {
@@ -127,6 +396,7 @@ object FlightLimitsController {
             })
         }
         maxRadiusM?.let { m ->
+            if (!inRange("setMaxRange", m, radRange)) return@let
             fc.setMaxRange(m.toDouble(), object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() { AppLog.i(TAG, "setMaxRange($m): OK") }
                 override fun onFailure(error: AutelError?) {
@@ -135,6 +405,7 @@ object FlightLimitsController {
             })
         }
         rthAltM?.let { m ->
+            if (!inRange("setReturnHeight", m, rthRange)) return@let
             fc.setReturnHeight(m.toDouble(), object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() { AppLog.i(TAG, "setReturnHeight($m): OK") }
                 override fun onFailure(error: AutelError?) {
@@ -142,14 +413,22 @@ object FlightLimitsController {
                 }
             })
         }
+    }
 
-        // Signal-loss failsafe. Logged loudly either way: this is the one limit a pilot can't
-        // casually verify in the air (confirming it for real means deliberately dropping the RC
-        // link mid-flight), and unlike the DJI side there's no getter to read it back — so this
-        // log line is the only evidence the aircraft accepted it.
-        applyBatteryThresholds(context)
-        applyRfPower(context)
-
+    /**
+     * Signal-loss failsafe. Logged loudly either way: this is the one limit a pilot can't
+     * casually verify in the air (confirming it for real means deliberately dropping the RC
+     * link mid-flight), and unlike the DJI side there's no getter to read it back — so this
+     * log line is the only evidence the aircraft accepted it.
+     *
+     * ⚠ MEASURED 2026-08-02: on this firmware this write is NOT acknowledged. It fails with
+     * "The execution of this process has timed out" after 10s, on a clean channel, with Autel
+     * Explorer closed and camera init finished. Flight testing separately confirmed the aircraft
+     * DOES return to home on link loss — so the behaviour is right, but it is the aircraft's own
+     * setting and this call is not what puts it there. Do not present this as a working control
+     * until that is resolved.
+     */
+    fun applyFailsafe(context: Context, fc: Evo2FlyController) {
         val failsafe = savedFailsafe(context)
         fc.doEmergencyAction(failsafe.sdk, object : com.autel.common.CallbackWithNoParam {
             override fun onSuccess() {

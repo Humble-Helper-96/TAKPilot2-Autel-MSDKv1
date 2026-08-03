@@ -28,6 +28,15 @@ import com.taklite.util.AppLog
 object AircraftSettingsDump {
     private const val TAG = "AircraftSettings"
 
+    /** How long to wait before re-issuing a read that timed out. */
+    private const val RETRY_DELAY_MS = 6000L
+
+    /** Total attempts per value. One retry: enough to survive a slow camera init, not enough
+     *  to become traffic on a channel whose saturation once put an aircraft into a wall. */
+    private const val MAX_ATTEMPTS = 2
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
     @Volatile private var dumpedForThisConnect = false
 
     fun onProductDisconnected() { dumpedForThisConnect = false }
@@ -46,12 +55,32 @@ object AircraftSettingsDump {
         val evo = AutelProductHolder.evo2 ?: run { dumpedForThisConnect = false; return }
         AppLog.i(TAG, "---- aircraft settings dump (read-only) ----")
 
-        fun <T> read(name: String, call: (CallbackWithOneParam<T>) -> Unit) {
+        // Retries once on failure. WHY: on 2026-08-02 this dump ran 4s after connect, landed in
+        // the middle of XT709 camera enumeration, and SIXTEEN of its reads — every fly-controller
+        // parameter, including flight.returnHeight_m — expired together on the SDK's shared 10s
+        // timeout. The reads themselves are fine; they were issued into a saturated channel. The
+        // dump written to answer these questions was therefore never able to answer them.
+        //
+        // The retry is deliberately ONE. These are diagnostics, and re-issuing reads at volume on
+        // a contended fly-controller channel is the exact shape of the mistake that caused the
+        // wall strike. A value that stays missing is a fine outcome; a read storm is not.
+        fun <T> read(name: String, attempt: Int = 1, call: (CallbackWithOneParam<T>) -> Unit) {
             runCatching {
                 call(object : CallbackWithOneParam<T> {
-                    override fun onSuccess(v: T?) { AppLog.i(TAG, "  $name = $v") }
+                    override fun onSuccess(v: T?) {
+                        AppLog.i(TAG, "  $name = $v" + if (attempt > 1) " (attempt $attempt)" else "")
+                    }
                     override fun onFailure(error: AutelError?) {
-                        AppLog.i(TAG, "  $name = <failed: ${error?.description}>")
+                        if (attempt < MAX_ATTEMPTS && AutelProductHolder.evo2 != null) {
+                            handler.postDelayed({
+                                // Re-check: the aircraft may have gone away while we waited.
+                                if (AutelProductHolder.evo2 != null) read(name, attempt + 1, call)
+                                else AppLog.i(TAG, "  $name = <failed, aircraft gone before retry>")
+                            }, RETRY_DELAY_MS)
+                        } else {
+                            AppLog.i(TAG, "  $name = <failed after $attempt attempt(s): " +
+                                "${error?.description}>")
+                        }
                     }
                 })
             }.onFailure { AppLog.i(TAG, "  $name = <threw: ${it.message}>") }

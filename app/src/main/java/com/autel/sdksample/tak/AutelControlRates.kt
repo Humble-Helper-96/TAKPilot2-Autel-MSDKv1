@@ -249,8 +249,23 @@ object AutelControlRates {
     private const val KEY_PRECISION = "precision_selected"
     private const val KEY_STICK_MODE = "stick_mode_id"
 
-    fun savedPrecision(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_PRECISION, false)
+    /**
+     * The pilot's control-response choice, or **null until they have made one** — the same
+     * contract as [savedStickModeId], so the app never imposes a setting it was not told.
+     *
+     * It used to be a plain Boolean defaulting to false, and [saveSelection] was never called
+     * from anywhere. The two faults compounded: the preference stayed unwritten, so every connect
+     * pushed NORMAL. A pilot who selected Precision had it actively undone at each launch rather
+     * than merely forgotten (operator, 2026-08-02).
+     */
+    fun savedPrecisionOrNull(context: Context): Boolean? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_PRECISION)) return null
+        return prefs.getBoolean(KEY_PRECISION, false)
+    }
+
+    /** For UI that needs a concrete value; treats "never chosen" as Normal. */
+    fun savedPrecision(context: Context): Boolean = savedPrecisionOrNull(context) ?: false
 
     fun saveSelection(context: Context, precision: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -274,18 +289,28 @@ object AutelControlRates {
      * swap throttle and pitch for anyone who never opened Pre-Flight. Once chosen, it IS pushed
      * every connect — which is the point, and why the Enter Flight card shows it before the
      * pilot can reach the flight screen.
+     *
+     * CONTROL RESPONSE FOLLOWS THE SAME RULE (2026-08-02). It previously pushed a hardcoded
+     * default of NORMAL on every connect, so Precision could not survive a launch. It is now
+     * pushed only once the pilot has chosen, and then on every connect — so the choice holds
+     * between sessions and is re-asserted if anything else changed it.
      */
     fun applyAtConnect(context: Context) {
         if (appliedForThisConnect) return
         appliedForThisConnect = true
         pushStickMode(context) { }
+        val want = savedPrecisionOrNull(context)
+        if (want == null) {
+            AppLog.i(TAG, "control response: no pilot choice saved, leaving the controller as it is")
+            return
+        }
         // READ FIRST. Without the current values the "already correct" check below has nothing
         // to compare against, so a controller that was already in the right state would still be
         // written to — and still beep.
         refresh(context) {
-            setPrecision(context, savedPrecision(context)) { ok ->
+            setPrecision(context, want) { ok ->
                 AppLog.i(TAG, "control response applied at connect " +
-                    "(${if (savedPrecision(context)) "PRECISION" else "NORMAL"}): ${if (ok) "OK" else "FAILED"}")
+                    "(${if (want) "PRECISION" else "NORMAL"}): ${if (ok) "OK" else "FAILED"}")
             }
         }
     }

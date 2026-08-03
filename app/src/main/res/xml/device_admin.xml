@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Device-admin policy set for TakDeviceAdminReceiver.
+
+  DELIBERATELY EMPTY. setApplicationHidden() — the only thing this app needs device-owner status
+  for — is gated on being device owner, not on any declared policy. Declaring policies we do not
+  use would hand a public-safety controller password/wipe/camera controls as a side effect of a
+  link-contention fix. Keep it empty.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies />
+</device-admin>

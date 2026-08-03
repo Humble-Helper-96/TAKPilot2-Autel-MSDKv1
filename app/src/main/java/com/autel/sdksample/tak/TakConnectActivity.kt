@@ -31,6 +31,13 @@ class TakConnectActivity : AppCompatActivity() {
 
     private lateinit var status: TextView
 
+    override fun onDestroy() {
+        // A debounced write must not outlive the screen that scheduled it — leaving the pilot's
+        // half-typed value to land on the aircraft after they navigated away.
+        cancelPendingSettingPushes()
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_tak_connect)
@@ -134,7 +141,8 @@ class TakConnectActivity : AppCompatActivity() {
             runCatching { TakBridgeHolder.stop() }
             runCatching { TakManager.getInstance().disconnect() }
             runCatching { TakManager.getInstance().setChannels(emptyList()) }
-            runCatching { TakForegroundService.stop(applicationContext) }
+            // NOT stop(): logging out of TAK does not mean the app is done. See releaseIfIdle.
+            runCatching { TakForegroundService.releaseIfIdle(applicationContext) }
             runCatching { clearEnrollment(prefs) }
             // Reset the UI fields so it's clearly a fresh login.
             username.setText("")
@@ -404,12 +412,74 @@ class TakConnectActivity : AppCompatActivity() {
 
     /**
      * Flight-safety limits, persisted here and pushed to the aircraft by
-     * [FlightLimitsController] on the next connect (via [AutelTakBridge]'s one-shot). Blank
-     * leaves the aircraft's own current setting alone.
+     * [FlightLimitsController.applyAtConnect] on the next AIRCRAFT connect. Blank leaves the
+     * aircraft's own current setting alone.
      *
-     * No signal-loss failsafe control, unlike the DJI blueprint — the Autel SDK exposes none.
-     * See [FlightLimitsController]'s doc for the audit.
+     * These used to be pushed from [AutelTakBridge], latched on the TAK session — which meant no
+     * TAK server, no limits, and no re-apply after an aircraft reconnect. Flight controls are not
+     * the TAK bridge's business; they now run from [AutelProductHolder] with the other
+     * at-connect settings.
+     *
+     * ⚠ A value the aircraft rejects is NOT applied and it keeps its previous setting, so the
+     * range check below is not cosmetic — see the `limitRangeStatus` wiring.
      */
+    // ---- Applying settings to the aircraft ---------------------------------------------------
+    //
+    // TWO PATHS, BOTH DELIBERATE, NEITHER TIED TO TYPING:
+    //   1. On AIRCRAFT CONNECT, automatically (FlightLimitsController.applyAtConnect, driven from
+    //      AutelProductHolder).
+    //   2. On demand, via "Apply to Drone" — resends everything and then READS BACK what the
+    //      aircraft actually holds.
+    //
+    // Editing a field only saves it locally. An earlier revision pushed on a 2s debounce after
+    // typing stopped; the operator called that correctly (2026-08-02) and it was removed. Typing
+    // is not intent: a pause mid-edit would push a half-considered value, and a mid-flight change
+    // to RTH or max altitude should be an explicit act. It also deletes a whole class of hazard —
+    // these fields fire per keystroke, so "200" would have been three writes (2ft, 20ft, 200ft)
+    // at the same fly-controller channel whose saturation put an aircraft into a wall.
+    //
+    // The read-back is the point. Today proved every layer can lie independently: a write can
+    // report OK, the getter can report a value the aircraft does not fly, and an out-of-range
+    // value is silently kept at the old setting. "Sent" is not "set".
+    private val applyHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingVerify: Runnable? = null
+
+    private fun cancelPendingSettingPushes() {
+        pendingVerify?.let { applyHandler.removeCallbacks(it) }
+        pendingVerify = null
+    }
+
+    /** Resends every aircraft-bound Pre-Flight setting, then reports what the aircraft holds. */
+    private fun applyAllToAircraft(status: TextView) {
+        if (AutelProductHolder.evo2 == null) {
+            status.text = "The drone is not connected. The settings are saved. " +
+                "Connect the drone, then press the button again."
+            status.setTextColor(0xFFFFC107.toInt())
+            return
+        }
+        status.text = "Sending the settings to the drone…"
+        status.setTextColor(0xFF909090.toInt())
+
+        FlightLimitsController.pushLimitsNow(this)
+        FlightLimitsController.pushBatteryAndRfNow(this)
+        FlightLimitsController.pushFailsafeNow(this)
+
+        // Verify AFTER the writes have had time to land. The failsafe write in particular takes a
+        // 10s timeout to fail on this firmware, so a verify any sooner would read mid-flight.
+        cancelPendingSettingPushes()
+        val verify = Runnable {
+            pendingVerify = null
+            FlightLimitsController.readBack(this) { report ->
+                runOnUiThread {
+                    status.text = report.text
+                    status.setTextColor(if (report.allMatched) 0xFF4CAF50.toInt() else 0xFFFF6B6B.toInt())
+                }
+            }
+        }
+        pendingVerify = verify
+        applyHandler.postDelayed(verify, VERIFY_DELAY_MS)
+    }
+
     private fun setupDroneSettingsSection() {
         val maxAlt = findViewById<EditText>(R.id.limitMaxAltitude)
         val maxRadius = findViewById<EditText>(R.id.limitMaxRadius)
@@ -429,12 +499,62 @@ class TakConnectActivity : AppCompatActivity() {
                 this, maxAlt.text.toString(), maxRadius.text.toString(), rthAlt.text.toString(),
             )
         }
+        // Live range check against the aircraft's own accepted limits. Without this the aircraft
+        // rejects an out-of-range value, keeps its old one, and Pre-Flight goes on displaying the
+        // number the pilot typed — which on 2026-08-02 meant 50 ft on screen and a 151 ft RTH in
+        // the air. Only possible when an aircraft is connected; says so plainly when it is not.
+        val rangeStatus = findViewById<android.widget.TextView>(R.id.limitRangeStatus)
+        val refreshRanges = {
+            val rth = FlightLimitsController.returnHeightRange()
+            val alt = FlightLimitsController.maxHeightRange()
+            val rad = FlightLimitsController.maxRangeRange()
+            if (rth == null && alt == null && rad == null) {
+                rangeStatus.setText("Connect the drone to see the limits it accepts.")
+                rangeStatus.setTextColor(0xFF909090.toInt())
+            } else {
+                val problems = mutableListOf<String>()
+                fun check(label: String, text: String, r: FlightLimitsController.RangeM?) {
+                    r ?: return
+                    val ft = text.trim().toIntOrNull() ?: return
+                    val m = Math.round(ft / 3.28084).toInt()
+                    if (!r.containsM(m)) {
+                        problems += "$label $ft ft. It accepts ${r.fromFt} to ${r.toFt} ft"
+                    }
+                }
+                check("Max altitude", maxAlt.text.toString(), alt)
+                check("Max distance", maxRadius.text.toString(), rad)
+                check("RTH altitude", rthAlt.text.toString(), rth)
+                if (problems.isEmpty()) {
+                    rangeStatus.setText("The drone accepts: " +
+                        (alt?.let { "max altitude ${it.fromFt} to ${it.toFt} ft, " } ?: "") +
+                        (rad?.let { "max distance ${it.fromFt} to ${it.toFt} ft, " } ?: "") +
+                        (rth?.let { "RTH altitude ${it.fromFt} to ${it.toFt} ft" } ?: ""))
+                    rangeStatus.setTextColor(0xFF909090.toInt())
+                } else {
+                    rangeStatus.setText("⚠ The drone will refuse " + problems.joinToString("; ") +
+                        ". Correct the value. If you do not, the drone keeps the setting it has now.")
+                    rangeStatus.setTextColor(0xFFFF6B6B.toInt())
+                }
+            }
+        }
+        refreshRanges()
+
         val watcher = object : android.text.TextWatcher {
-            override fun afterTextChanged(s: android.text.Editable?) = save()
+            // Saves locally and re-checks the range. Does NOT push — typing is not intent.
+            // "Apply to Drone" is what sends it. See applyAllToAircraft.
+            override fun afterTextChanged(s: android.text.Editable?) {
+                save()
+                refreshRanges()
+            }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
         listOf(maxAlt, maxRadius, rthAlt).forEach { it.addTextChangedListener(watcher) }
+
+        val applyStatus = findViewById<TextView>(R.id.limitApplyStatus)
+        findViewById<android.widget.Button>(R.id.limitApplyButton).setOnClickListener {
+            applyAllToAircraft(applyStatus)
+        }
 
         setupFailsafe()
     }
@@ -454,27 +574,13 @@ class TakConnectActivity : AppCompatActivity() {
         val group = findViewById<android.widget.RadioGroup>(R.id.limitFailsafeGroup)
         val status = findViewById<TextView>(R.id.limitFailsafeStatus)
 
-        val idFor = { f: FlightLimitsController.Failsafe ->
-            when (f) {
-                FlightLimitsController.Failsafe.GO_HOME -> R.id.failsafeGoHome
-                FlightLimitsController.Failsafe.HOVER -> R.id.failsafeHover
-                FlightLimitsController.Failsafe.LAND -> R.id.failsafeLand
-            }
-        }
-        group.check(idFor(FlightLimitsController.savedFailsafe(this)))
-
-        status.text = "Sent to the aircraft the next time it connects."
-
-        group.setOnCheckedChangeListener { _, checkedId ->
-            val choice = when (checkedId) {
-                R.id.failsafeHover -> FlightLimitsController.Failsafe.HOVER
-                R.id.failsafeLand -> FlightLimitsController.Failsafe.LAND
-                else -> FlightLimitsController.Failsafe.GO_HOME
-            }
-            AppLog.i("TP2LimitsAutel",
-                "signal-loss failsafe set to '${choice.label}' (applies on next connect)")
-            FlightLimitsController.saveFailsafe(this, choice)
-        }
+        // Return to Home is the only option, so this is effectively a labelled statement of what
+        // the aircraft does rather than a choice. It stays as a checked radio (not plain text) so
+        // the pref, the push path and the pilot's mental model all keep working unchanged, and so
+        // re-adding an option later is a layout edit rather than a rewrite.
+        group.check(R.id.failsafeGoHome)
+        FlightLimitsController.saveFailsafe(this, FlightLimitsController.Failsafe.GO_HOME)
+        status.visibility = android.view.View.GONE
     }
 
     // ---- 2. Map Display ----
@@ -518,9 +624,8 @@ class TakConnectActivity : AppCompatActivity() {
         setupOneLock(
             R.id.takLockConfig, KEY_TAK_LOCKED, takLockedFields,
             "Unlock TAK server settings?",
-            "These fields and the Log Out button are locked so a working server configuration " +
-                "is not changed by accident. Editing them can stop this aircraft reaching " +
-                "your team.",
+            "The lock prevents an accidental change to a server that works. " +
+                "A wrong value stops the drone sending data to your team.",
         )
         setupOneLock(
             R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
@@ -683,9 +788,9 @@ class TakConnectActivity : AppCompatActivity() {
             AppLog.v(TAG, "tap: Map cache Check Size -> $tiles tiles, ${MapTileCache.human(bytes)}")
             status.text = "$tiles tiles, about ${MapTileCache.human(bytes)}." +
                 if (bytes > MapTileCache.MAX_BYTES)
-                    "\nThat is more than the ${MapTileCache.human(MapTileCache.MAX_BYTES)} " +
-                        "cache holds. Use a smaller radius."
-                else "\nTouch Download Area to store them."
+                    "\nThis is too large. The limit is " +
+                        "${MapTileCache.human(MapTileCache.MAX_BYTES)}. Use a smaller radius."
+                else "\nPress Download Area to keep them."
         }
 
         downloadBtn.setOnClickListener {
@@ -693,9 +798,9 @@ class TakConnectActivity : AppCompatActivity() {
             val source = MapStyle.tileSource(this)
             val (tiles, bytes) = MapTileCache.estimate(bbox)
             if (bytes > MapTileCache.MAX_BYTES) {
-                status.text = "$tiles tiles is about ${MapTileCache.human(bytes)}, more than " +
-                    "the ${MapTileCache.human(MapTileCache.MAX_BYTES)} cache holds. " +
-                    "Use a smaller radius."
+                status.text = "$tiles tiles is about ${MapTileCache.human(bytes)}. " +
+                    "This is too large. The limit is " +
+                    "${MapTileCache.human(MapTileCache.MAX_BYTES)}. Use a smaller radius."
                 return@setOnClickListener
             }
             // The street map needs an explicit go-ahead: OSM's usage policy asks apps not to
@@ -785,12 +890,11 @@ class TakConnectActivity : AppCompatActivity() {
         val used = MapTileCache.usedBytes(this)
         val needsOverride = !MapTileCache.allowsBulkDownload(MapStyle.tileSource(this))
         status.text = buildString {
-            append("Cached: ${MapTileCache.human(used)} of ")
+            append("Stored: ${MapTileCache.human(used)} of ")
             append(MapTileCache.human(MapTileCache.MAX_BYTES))
-            append(". Oldest tiles are removed when it is full.")
+            append(". The app removes the oldest tiles when the space is full.")
             if (needsOverride) {
-                append("\n\nArea download of the Street map will ask you to confirm — " +
-                    "OpenStreetMap asks apps not to bulk-download from their donated servers.")
+                append("\n\nThe app asks you to confirm an area download of the Street map.")
             }
             append(extra)
         }
@@ -832,8 +936,8 @@ class TakConnectActivity : AppCompatActivity() {
         container.orientation = LinearLayout.VERTICAL
         container.removeAllViews()
         val regions = DtedStore.listRegions(this)
-        dtedStatus.text = if (regions.isEmpty()) "No terrain regions imported."
-            else "${regions.size} region(s) imported."
+        dtedStatus.text = if (regions.isEmpty()) "No terrain areas are imported."
+            else "${regions.size} terrain area(s) imported."
         for (region in regions) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -886,8 +990,10 @@ class TakConnectActivity : AppCompatActivity() {
         val dtedStatus = findViewById<TextView>(R.id.dtedStatus)
         val result = DtedStore.import(this, uri, name)
         dtedStatus.text = when {
-            result.error != null && result.importedCount == 0 -> "Failed to import $name: ${result.error}"
-            result.error != null -> "Imported ${result.importedCount} tile(s) from $name (${result.error})"
+            result.error != null && result.importedCount == 0 ->
+                "The app cannot import $name. ${result.error}"
+            result.error != null ->
+                "Imported ${result.importedCount} tile(s) from $name. ${result.error}"
             else -> "Imported ${result.importedCount} tile(s) from $name."
         }
         if (result.importedCount == 0) Toast.makeText(this, dtedStatus.text, Toast.LENGTH_SHORT).show()
@@ -955,11 +1061,10 @@ class TakConnectActivity : AppCompatActivity() {
             UasfmStore.countAsync(bbox) { result ->
                 checkBtn.isEnabled = true
                 uasfmStatus.text = when {
-                    result.error != null -> "Couldn't reach the FAA service: ${result.error}"
+                    result.error != null -> "The app cannot reach the FAA service. ${result.error}"
                     result.count == 0 ->
-                        "No facility-map cells in that area — it's likely all uncontrolled " +
-                            "airspace, where the Part 107 400 ft limit applies."
-                    else -> "${result.count} cell(s) in that area. Tap Download to store them."
+                        "There are no FAA cells in this area. The Part 107 limit of 400 ft applies."
+                    else -> "${result.count} cell(s) in this area. Press Download to keep them."
                 }
             }
         }
@@ -1010,7 +1115,7 @@ class TakConnectActivity : AppCompatActivity() {
         val uasfmStatus = findViewById<TextView>(R.id.uasfmStatus)
         val meta = UasfmStore.meta(this)
         uasfmStatus.text = if (meta == null) {
-            "No FAA ceiling data downloaded — the flight HUD will show the Part 107 400 ft default."
+            "No FAA data is downloaded. The flight screen shows the Part 107 limit of 400 ft."
         } else {
             "${meta.cellCount} cell(s) for ${meta.areaLabel}\n" +
                 "Downloaded ${dtedDateFormat.format(java.util.Date(meta.downloadedAtMs))}  ·  " +
@@ -1067,7 +1172,7 @@ class TakConnectActivity : AppCompatActivity() {
         if (loc == null) {
             Toast.makeText(
                 this,
-                "No position available — connect the aircraft, or type the centre manually",
+                "No position is available. Connect the drone, or type the centre.",
                 Toast.LENGTH_LONG,
             ).show()
             return
@@ -1132,6 +1237,11 @@ class TakConnectActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "TakConnectActivity"
+
+        /** How long "Apply to aircraft" waits before reading back. Must clear the slowest write:
+         *  the failsafe takes a full 10s to time out on this firmware, so verifying sooner would
+         *  read while writes are still in flight and report a false mismatch. */
+        private const val VERIFY_DELAY_MS = 11000L
         private const val REQUEST_CODE_DTED_PICK = 4301
         private const val REQUEST_CODE_LOCATION = 4302
         private const val PREFS = "takpilot2_tak"
@@ -1185,8 +1295,8 @@ class TakConnectActivity : AppCompatActivity() {
             // Simplified Technical English, as with the field guide: short sentences, active
             // voice, one idea each. A pilot reads this on the ground in a hurry.
             status.text = when {
-                !connected -> "The aircraft is not connected."
-                !known -> "Wait. The aircraft did not send the state yet."
+                !connected -> "The drone is not connected."
+                !known -> "Wait. The drone did not send the state yet."
                 AutelAvoidance.systemEnabled == true -> "Obstacle avoidance is ON."
                 else -> "Obstacle avoidance is OFF."
             }
@@ -1219,7 +1329,7 @@ class TakConnectActivity : AppCompatActivity() {
             AutelAvoidance.setSwitch(which, enabled) { ok ->
                 runOnUiThread {
                     if (!ok) android.widget.Toast.makeText(this@TakConnectActivity,
-                        "The aircraft did not accept the change.", android.widget.Toast.LENGTH_SHORT).show()
+                        "The drone did not accept the change.", android.widget.Toast.LENGTH_SHORT).show()
                     render()
                 }
             }
@@ -1305,13 +1415,20 @@ class TakConnectActivity : AppCompatActivity() {
             normal.isEnabled = connected && known
             precision.isEnabled = connected && known
             status.text = when {
-                !connected -> "The aircraft is not connected."
+                !connected -> "The drone is not connected."
                 !known -> "Wait. The controller did not send the values yet."
                 else -> "Gimbal wheel ${AutelControlRates.dialSpeed}, yaw ${"%.2f".format(AutelControlRates.yawCoefficient)}."
             }
             group.setOnCheckedChangeListener { _, id ->
                 normal.isEnabled = false; precision.isEnabled = false
-                AutelControlRates.setPrecision(this, id == R.id.ratesPrecision) { ok ->
+                val wantPrecision = id == R.id.ratesPrecision
+                // Record the INTENT, exactly as the stick mode and the avoidance switches do.
+                // Without this, saveSelection() was never called from anywhere: the preference
+                // stayed at its default of false, and applyAtConnect then pushed NORMAL to the
+                // controller on every connect. A pilot who chose Precision did not merely lose
+                // the choice, the app actively undid it each launch (operator, 2026-08-02).
+                AutelControlRates.saveSelection(this, wantPrecision)
+                AutelControlRates.setPrecision(this, wantPrecision) { ok ->
                     runOnUiThread {
                         if (!ok) android.widget.Toast.makeText(this,
                             "The controller did not accept the change.",

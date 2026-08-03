@@ -76,10 +76,6 @@ class AutelTakBridge(
     @Volatile private var homeLon = Double.NaN
     @Volatile private var homeSet = false
 
-    // One-shot guard so the pilot-configured flight-safety limits (max altitude/radius/RTH
-    // height) are pushed exactly once per connect, off the first real telemetry report — a
-    // reliable "the flight controller is actually up" signal, same pattern as the DJI sibling.
-    @Volatile private var limitsApplied = false
 
     // ---- Link quality ----
     //
@@ -135,7 +131,6 @@ class AutelTakBridge(
         // New session = new flight = a new takeoff point, so the latched terrain reference
         // from the last one must not carry over (see TerrainAgl).
         TerrainAgl.reset()
-        limitsApplied = false
         subscribe()
         handler.post(tick)
         AppLog.i(TAG, "AutelTakBridge started ($droneCallsign / $droneUid, every ${intervalMs}ms)")
@@ -162,13 +157,10 @@ class AutelTakBridge(
             CallbackWithOneParam<EvoFlyControllerInfo> {
             override fun onSuccess(info: EvoFlyControllerInfo?) {
                 info ?: return
-                if (!limitsApplied) {
-                    limitsApplied = true
-                    val context = com.autel.sdksample.TestApplication.getInstance()
-                    if (context != null) {
-                        FlightLimitsController.applyDefaults(context, evo.flyController)
-                    }
-                }
+                // Flight limits used to be pushed from here, latched on the TAK session. They are
+                // now applied on AIRCRAFT connect by AutelProductHolder — a TAK server link has
+                // no business gating aircraft safety parameters, and latching on it meant a
+                // reconnect never re-applied them. See FlightLimitsController.applyAtConnect.
                 info.gpsInfo?.let { gps ->
                     lat = gps.latitude
                     lon = gps.longitude

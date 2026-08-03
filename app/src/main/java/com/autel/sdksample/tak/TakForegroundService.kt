@@ -28,7 +28,28 @@ class TakForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val callsign = intent?.getStringExtra(EXTRA_CALLSIGN) ?: "TAKPilot2"
+        // startForeground FIRST, before anything that could throw or take time: Android gives a
+        // started foreground service ~5s to post its notification or it ANRs the app.
         startForeground(NOTIF_ID, buildNotification(callsign))
+
+        // A null intent means START_STICKY resurrected us, not that somebody started us. If there
+        // is also no task, this process has no activity, no recents entry, and therefore no
+        // onTaskRemoved will EVER be delivered — so an Explorer restore owed at this point would
+        // never be paid, and the notification would sit there permanently with no way to clear
+        // it. This is reachable: the app was OOM-killed in flight on 2026-08-02, and a pilot
+        // swiping the dead task away afterwards produces exactly this state.
+        if (intent == null) {
+            val tasks = runCatching {
+                (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).appTasks
+            }.getOrDefault(emptyList())
+            if (tasks.isEmpty()) {
+                AppLog.w("TP2Explorer", "sticky restart with no task — restoring Explorer, stopping")
+                runCatching { ExplorerSuppressor.restore(applicationContext, "sticky restart, no task") }
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
         AppLog.i(TAG, "TAK foreground service started ($callsign)")
         // Restart if the system kills us while flying — the bridge/connection persist.
         return START_STICKY
@@ -99,13 +120,22 @@ class TakForegroundService : Service() {
         // "Streaming to TAK" in that state would be a lie sitting in the notification shade.
         val aircraft = AutelProductHolder.isConnected
         val tak = runCatching { TakManager.getInstance().isConnected }.getOrDefault(false)
-        val text = when {
+        val base = when {
             aircraft && tak -> "Aircraft connected · streaming $callsign to TAK"
             aircraft -> "Aircraft connected · not connected to TAK"
             tak -> "Streaming $callsign to TAK"
             else -> "Holding the link"
         }
+        // Tell the pilot how to get Explorer back. Hiding Explorer removes its launcher icon, so
+        // someone who needs a firmware update, compass calibration or aircraft registration finds
+        // it simply GONE with no explanation. Without this line the only answers are the Debug
+        // screen or adb — neither of which is discoverable in a field. The shade is where they
+        // are already looking when they wonder what this app is doing.
+        val text = if (ExplorerSuppressor.isRestoreOwed(this)) {
+            "$base\nExplorer paused · swipe TAKPilot away to restore it"
+        } else base
         return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentTitle("TAKPilot2 running")
             .setContentText(text)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -143,8 +173,55 @@ class TakForegroundService : Service() {
             }
         }
 
-        fun stop(context: Context) {
+        /**
+         * The pilot's callsign, from the one place it is stored.
+         *
+         * Hoisted because three call sites had their own copy of the same
+         * prefs-file / key / default triple, and a fourth was about to be added.
+         */
+        fun callsignFor(context: Context): String =
+            context.applicationContext
+                .getSharedPreferences("takpilot2_tak", Context.MODE_PRIVATE)
+                .getString("callsign", "TAKPilot2-EVO2") ?: "TAKPilot2-EVO2"
+
+        /**
+         * Stops the service. **Teardown only.**
+         *
+         * Named to be awkward on purpose. This service is the delivery mechanism for
+         * [onTaskRemoved], which is the only hook for "the pilot swiped the app away" — and that
+         * is now what guarantees Autel Explorer gets un-hidden. Stopping it from anywhere except
+         * [AppTeardown] silently removes that guarantee. If you want "my subsystem is finished
+         * with this", use [releaseIfIdle] instead.
+         */
+        fun stopForTeardown(context: Context) {
             context.stopService(Intent(context, TakForegroundService::class.java))
+        }
+
+        /**
+         * "This subsystem no longer needs the service — stop it only if nobody else does."
+         *
+         * Replaces the bare `stop()` calls that used to sit on TAK disconnect and Logout. Those
+         * were already wrong before Explorer suppression existed: [AutelProductHolder] starts
+         * this service on aircraft connect precisely so a swipe tears the aircraft down, and
+         * tapping the TAK badge to disconnect destroyed that anchor while the aircraft was still
+         * held. With suppression on it is worse — it would strand Explorer hidden.
+         *
+         * Keeps the service alive while the aircraft is connected, TAK is connected, or an
+         * Explorer restore is owed. Otherwise stops it, which is byte-for-byte the old behaviour
+         * on a controller with suppression off and nothing connected.
+         */
+        fun releaseIfIdle(context: Context) {
+            val ctx = context.applicationContext
+            val aircraft = AutelProductHolder.isConnected
+            val tak = runCatching { TakManager.getInstance().isConnected }.getOrDefault(false)
+            val owed = ExplorerSuppressor.isRestoreOwed(ctx)
+            if (aircraft || tak || owed) {
+                // Refresh rather than stop — this also corrects the notification wording for
+                // whatever just disconnected.
+                start(ctx, callsignFor(ctx))
+            } else {
+                stopForTeardown(ctx)
+            }
         }
     }
 }

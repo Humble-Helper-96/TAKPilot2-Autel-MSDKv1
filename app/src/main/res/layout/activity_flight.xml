@@ -246,15 +246,15 @@
              image controls and a bare glyph among framed ones reads as a different class of
              control. Same 46x34 as the rest. -->
         <ImageButton
-            android:id="@+id/flightResyncButton"
+            android:id="@+id/flightLightsButton"
             android:layout_marginStart="16dp"
             android:layout_width="46dp"
             android:layout_height="34dp"
             android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Video re-sync"
+            android:contentDescription="Exterior lights"
             android:padding="5dp"
             android:scaleType="fitCenter"
-            android:src="@drawable/ic_resync" />
+            android:src="@drawable/ic_led_on" />
 
         <com.autel.sdksample.tak.LiveToggleView
             android:id="@+id/flightStreamButton"
@@ -414,6 +414,20 @@
             android:gravity="end"
             android:text=""
             android:visibility="gone" />
+
+        <!-- RTH altitude the AIRCRAFT reports, never the value Pre-Flight requested.
+             This is a safety readout: on 2026-08-02 a pilot flew two sorties believing the RTH
+             altitude was 50 ft while the aircraft was on a different value entirely, because the
+             write had been rejected and nothing said so. Showing the requested number here would
+             reproduce exactly that failure on the flight screen.
+             Shows a dashed placeholder when the aircraft has not answered, in amber: unknown
+             must look unknown. -->
+        <TextView
+            android:id="@+id/fpvRthAltitude"
+            style="@style/hudText"
+            android:layout_marginBottom="6dp"
+            android:gravity="end"
+            android:text="RTH --" />
 
         <!-- Locked TAK mini-map (operator's spec, matching the DJI flight screen): no pan, zoom
              or rotate — north-up, fixed zoom, recentred on the aircraft each telemetry tick,
