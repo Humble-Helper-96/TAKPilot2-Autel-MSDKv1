@@ -1034,6 +1034,13 @@ of one-flight calibration items the DJI app already resolved once, using the sam
 
 ## Phase 5 — Field validation
 
+> ✅ **COMPLETE — operator-verified, 2026-08-03.** The full flight-test checklist
+> (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed end to end: connect/fly, live PLI+SPI correctly
+> symbolized on a second TAK client, callsign correct, video path, backgrounding recovery, RTH,
+> link-loss failsafe, and the calibration constants (GPS units, gimbal bearing → absolute model,
+> FOV, IR, HAE, pitch). Aim offsets for this airframe: Pitch −1.0° / Bearing −3.75°. The only
+> anomaly was an aircraft-side hover wander from GNSS-velocity multipath — not an app defect.
+
 Mirror the DJI app's now-proven validation checklist, adapted to Autel's aircraft/link:
 
 - [ ] Connect + fly the EVO II 640T V3 via the Smart Controller V3.

@@ -71,6 +71,14 @@ rework.
 
 ## Flight-test / calibration items (marked `⚠` in code)
 
+> ✅ **FLIGHT-VALIDATED — operator-verified, 2026-08-03.** The full flight-test checklist
+> (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed. Highlights: GPS accuracy units confirmed
+> (`ACC_DIVISOR=1000`, 31 sats / ~0.7 m); gimbal bearing resolved to the **absolute** model
+> (`BEARING_MODE_RELATIVE=false`) with per-airframe aim offsets Pitch −1.0° / Bearing −3.75°;
+> FOV, IR, HAE, pitch sign, RTH, link-loss failsafe, backgrounding and RC-button capture all
+> passed. A slow hover yaw/wander was traced to aircraft-side GNSS-velocity multipath, not the app.
+> The table below is retained as the reference for what each constant means and how to re-tune it.
+
 | Item | Where | Note |
 |---|---|---|
 | HAE altitude sanity | `AutelTakBridge` (`EvoGpsInfo.getAltitude()`) | Tracker §4.1: high-confidence structural inference; spot-check vs a known HAE |

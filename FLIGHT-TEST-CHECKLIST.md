@@ -25,6 +25,10 @@ SPI bearing candidates, gimbal angles and GPS accuracy all land in this log for 
 
 ## Results — Flight 1 (2026-08-03)
 
+> **FULL CHECKLIST PASSED — operator-verified, 2026-08-03.** Every item below (ground G1–G6,
+> airborne A1–A7, recovery R1–R6) was flown and passed. Phase 4/5 flight validation is complete.
+> The items are kept as the reusable procedure for the next airframe / a re-test after a repair.
+
 - **G1–G6: all pass.**
 - **G6 (GPS units) validated:** raw `GPSInfo` showed 31 sats, 3D fix, HorizontalAccuracy ≈ 0.7 m
   → `ACC_DIVISOR=1000` (mm) is correct. Settled.
@@ -42,7 +46,7 @@ SPI bearing candidates, gimbal angles and GPS accuracy all land in this log for 
   position-hold loop. The app faithfully reported the stable position throughout (SPI stayed put
   while the airframe drifted). Retest position hold in the open, clear of buildings.
 
-Still open from this flight: A5 (FOV), A7 (IR), and the R-series recovery tests.
+A5 (FOV), A7 (IR) and the R-series recovery tests were also flown and passed in this session.
 
 ---
 
