@@ -81,7 +81,7 @@ class DataSyncActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((12 * d).toInt(), (12 * d).toInt(), (12 * d).toInt(), (12 * d).toInt())
-            setBackgroundColor(Color.parseColor("#1A1F26"))
+            setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_surface_card))
         }
         val lp = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -98,14 +98,21 @@ class DataSyncActivity : AppCompatActivity() {
             val role = f.defaultRole?.takeIf { it.isNotEmpty() } ?: "—"
             text = "${f.itemCount} items · role $role" +
                     (if (!f.description.isNullOrEmpty()) "\n${f.description}" else "")
-            setTextColor(Color.parseColor("#9AA4B2")); textSize = 12f
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_text_tertiary)); textSize = 12f
         }
         row.addView(meta)
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
         val isJoined = f.name == TakMissionManager.joinedFeed
-        val btn = Button(this).apply { text = if (isJoined) "Leave" else "Join" }
+        val btn = Button(this).apply {
+            text = if (isJoined) "Leave" else "Join"
+            // Match the app's button convention (the layout uses TakButton.* styles; a
+            // programmatic Button cannot take an XML style, so set the role colours directly).
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_btn_info))
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_text_primary))
+        }
         btn.setOnClickListener {
             if (isJoined) {
                 AppLog.v(TAG, "Leave feed tapped: ${f.name}")
@@ -126,8 +133,9 @@ class DataSyncActivity : AppCompatActivity() {
         if (isCreator) {
             val del = Button(this).apply {
                 text = "Delete"
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#B71C1C"))
-                setTextColor(Color.WHITE)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_btn_danger))
+                setTextColor(androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_text_primary))
             }
             val dlp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -232,7 +240,7 @@ class DataSyncActivity : AppCompatActivity() {
         // Default role for users who join this feed.
         val roleLabel = TextView(this).apply {
             text = "Default role for members who join:"
-            setTextColor(Color.parseColor("#9AA4B2")); textSize = 12f
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_text_tertiary)); textSize = 12f
             setPadding(0, (10 * d).toInt(), 0, (2 * d).toInt())
         }
         col.addView(roleLabel)
@@ -247,7 +255,7 @@ class DataSyncActivity : AppCompatActivity() {
         // Channel (group) the feed is scoped to — who can see it.
         val chanLabel = TextView(this).apply {
             text = "Channel (who can access this feed):"
-            setTextColor(Color.parseColor("#9AA4B2")); textSize = 12f
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@DataSyncActivity, R.color.tp_text_tertiary)); textSize = 12f
             setPadding(0, (10 * d).toInt(), 0, (2 * d).toInt())
         }
         col.addView(chanLabel)

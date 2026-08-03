@@ -31,6 +31,7 @@
 
         <Button
             android:id="@+id/dsRefresh"
+            style="@style/TakButton.Neutral"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -38,6 +39,7 @@
 
         <Button
             android:id="@+id/dsCreate"
+            style="@style/TakButton.Info"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
