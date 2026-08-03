@@ -2056,6 +2056,28 @@ Two defects beyond "use less memory":
 2. **`TakForegroundService` restart was scheduled 56 seconds out**, so the service meant to
    protect the app was down for the entire event.
 
+✅ **Defect #1 resolved — but landing on Home is the CORRECT outcome, not the defect it was
+first read as (commit 2f4b41c).** The original note wanted the flight screen restored to save the
+pilot a re-navigation. That instinct is wrong here: a cold-process `FlightActivity` comes up with
+a **dead aircraft link and a HUD frozen on stale values that looks live** — the "launch from the
+home screen" rule ([memory] `autel-launch-from-home-screen`) exists precisely because a direct
+Flight entry never arms `AutelProductHolder.install()`. So the safe landing is Home, which
+re-arms the product listener and silently reconnects TAK, then the pilot taps back into flight —
+one deliberate tap against a *working* screen beats a frozen one.
+
+The observed event already went to Home because there was *no saved state*. The gap this closes is
+the **other** branch: an OOM where Android *does* hold saved state would have restored
+`FlightActivity` straight into the cold process. `TakPilotHomeActivity.visitedThisProcess`
+(process-static; reset on process death) + a `savedInstanceState != null` check in
+`FlightActivity.onCreate` now force that branch to Home too. Normal Home→Flight entry is
+unaffected (verified on-device: `savedInstanceState` is null on a fresh launch). The true LMK path
+can't be reproduced without root, but the two conditions the guard reads are framework/JVM
+guarantees.
+
+**Defect #2 (foreground-service restart scheduled ~56 s out) is still open** — that is Android's
+`START_STICKY` restart backoff, not something the guard touches. Revisit alongside the memory-load
+reduction (below); a lighter process is less likely to be killed in the first place.
+
 Numbers for whoever picks this up: device has **3.76 GB**; TAKPilot sits at **~232 MB PSS**, of
 which **~86 MB is graphics** (video decode + map + AR overlay). `com.airdata.uav.app` should come
 off the controller. Also note **`/system/bin/logrecord.sh`** — Autel ships a persistent
