@@ -61,6 +61,12 @@ class ObstacleEdgeView @JvmOverloads constructor(
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val rect = RectF()
 
+    // Reused across draws. This view redraws at the radar's push rate, so onDraw must not
+    // allocate: the chevron Path is reset and refilled, and one FontMetrics is filled in place
+    // (the `fontMetrics` property allocates a fresh object on every read).
+    private val chevronPath = android.graphics.Path()
+    private val fontMetrics = Paint.FontMetrics()
+
     /**
      * Feeds the latest radar sample. Safe to call at the sensor's own rate.
      *
@@ -123,8 +129,7 @@ class ObstacleEdgeView @JvmOverloads constructor(
         // Nearer = more opaque, thicker and redder. A binary red/not-red gives the pilot no
         // sense of closing rate, which is the thing they actually steer on.
         val t = (1f - (cm.toFloat() / WARN_CM)).coerceIn(0f, 1f)
-        arcPaint.color = if (cm <= DANGER_CM) Color.parseColor("#FF3B30")
-                         else Color.parseColor("#FFCC00")
+        arcPaint.color = if (cm <= DANGER_CM) COLOR_DANGER else COLOR_WARN
         arcPaint.alpha = (90 + 165 * t).toInt().coerceAtMost(255)
         arcPaint.strokeWidth = dp(5f) + dp(9f) * t
 
@@ -181,8 +186,7 @@ class ObstacleEdgeView @JvmOverloads constructor(
         if (cm == CLEAR || cm > WARN_CM) return
 
         val t = (1f - (cm.toFloat() / WARN_CM)).coerceIn(0f, 1f)
-        arcPaint.color = if (cm <= DANGER_CM) Color.parseColor("#FF3B30")
-                         else Color.parseColor("#FFCC00")
+        arcPaint.color = if (cm <= DANGER_CM) COLOR_DANGER else COLOR_WARN
         arcPaint.alpha = (110 + 145 * t).toInt().coerceAtMost(255)
         arcPaint.strokeWidth = dp(4f) + dp(5f) * t
 
@@ -194,13 +198,12 @@ class ObstacleEdgeView @JvmOverloads constructor(
         val drop = dp(9f)
         for (i in 0 until 2) {
             val yTop = cy + dp(13f) + i * dp(9f)
-            val path = android.graphics.Path().apply {
-                moveTo(cx - half, yTop)
-                lineTo(cx, yTop + drop)
-                lineTo(cx + half, yTop)
-            }
+            chevronPath.reset()
+            chevronPath.moveTo(cx - half, yTop)
+            chevronPath.lineTo(cx, yTop + drop)
+            chevronPath.lineTo(cx + half, yTop)
             arcPaint.style = Paint.Style.STROKE
-            canvas.drawPath(path, arcPaint)
+            canvas.drawPath(chevronPath, arcPaint)
         }
 
         drawLabel(canvas, cx, cy, cm, "REAR ")
@@ -213,7 +216,7 @@ class ObstacleEdgeView @JvmOverloads constructor(
         textPaint.textSize = dp(15f)
         val tw = textPaint.measureText(text)
         val padH = dp(8f); val padV = dp(5f)
-        val fm = textPaint.fontMetrics
+        val fm = fontMetrics.also { textPaint.getFontMetrics(it) }
         rect.set(cx - tw / 2f - padH, cy - (-fm.ascent) - padV,
                  cx + tw / 2f + padH, cy + fm.descent + padV)
         labelBg.color = arcPaint.color
@@ -231,6 +234,11 @@ class ObstacleEdgeView @JvmOverloads constructor(
         /** Start drawing at this range, go red at this one. Both in the raw sensor units. */
         private const val WARN_CM = 1200      // ~39 ft
         private const val DANGER_CM = 400     // ~13 ft
+
+        // Precomputed so onDraw never runs Color.parseColor (a string parse + allocation) per
+        // edge per frame. Red inside DANGER_CM, amber beyond it.
+        private const val COLOR_DANGER = 0xFFFF3B30.toInt()
+        private const val COLOR_WARN = 0xFFFFCC00.toInt()
 
         /**
          * ⚠ THE ONE ASSUMPTION IN THIS FILE. Nothing in the SDK documents the radar's units;

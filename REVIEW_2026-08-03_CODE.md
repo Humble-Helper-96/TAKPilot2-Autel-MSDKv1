@@ -202,6 +202,22 @@ channel and put an aircraft into a wall (2026-08-02). Findings 1–3 are variati
 (per-frame allocation is the one efficiency question that actually matters on this screen). None
 were opened; do not assume they are clean.
 
+**Update 2026-08-03 — `onDraw` allocation paths reviewed and fixed (commit pending).** Audited all
+eight flight custom views. Most correctly hoist their `Paint`/`RectF` to fields. Three had genuine
+per-frame allocation, now removed:
+- **`ObstacleEdgeView`** (safety display, redraws at the radar push rate): `Color.parseColor` per
+  edge per frame → precomputed `COLOR_DANGER`/`COLOR_WARN` ints; a `Path()` per rear chevron →
+  reused `chevronPath`; `textPaint.fontMetrics` (allocates each read) → a cached `FontMetrics`
+  filled via `getFontMetrics(fm)`.
+- **`LiveToggleView`** (blinks while RECONNECTING): a `RectF` + `Paint` allocated per blink frame
+  → hoisted `sweepRect` + `ringPaint` fields.
+- **`CrosshairView`** (redraws each HUD tick): `arrayOf(outline, line)` per frame → an `armPaints`
+  field.
+Verified on-device with live obstacle radar: the red edge arc (2.2 ft), the REAR chevron
+(1.6 ft) and the crosshair all render pixel-identically. `ArOverlayView`'s `.format()` diag calls
+are throttled to 1 Hz and gated (`logThisPass`), not per-frame — left as-is. `taklite/` TLS/CoT/cert
+and the video pipeline are STILL unopened.
+
 ---
 
 ## Summary

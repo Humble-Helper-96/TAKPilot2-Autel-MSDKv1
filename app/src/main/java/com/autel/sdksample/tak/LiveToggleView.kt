@@ -45,6 +45,15 @@ class LiveToggleView @JvmOverloads constructor(
     private val trackRect = RectF()
     private val iconPath = Path()
 
+    // Reused by the RECONNECTING branch. It blinks (invalidate every BLINK_INTERVAL_MS), so
+    // onDraw must not allocate a RectF/Paint each frame; the stroke style is fixed here and the
+    // colour/width are set per draw.
+    private val sweepRect = RectF()
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+
     private val blinkHandler = Handler(Looper.getMainLooper())
     private val blinkRunnable = object : Runnable {
         override fun run() {
@@ -128,12 +137,9 @@ class LiveToggleView @JvmOverloads constructor(
             }
             State.RECONNECTING -> {
                 // Circular reconnect arrows — a broken ring with two arrowheads.
-                val sweepRect = RectF(knobCx - iconRadius, knobCy - iconRadius, knobCx + iconRadius, knobCy + iconRadius)
-                val ringPaint = Paint(iconPaint).apply {
-                    style = Paint.Style.STROKE
-                    strokeWidth = iconRadius * 0.35f
-                    strokeCap = Paint.Cap.ROUND
-                }
+                sweepRect.set(knobCx - iconRadius, knobCy - iconRadius, knobCx + iconRadius, knobCy + iconRadius)
+                ringPaint.color = iconPaint.color
+                ringPaint.strokeWidth = iconRadius * 0.35f
                 canvas.drawArc(sweepRect, -30f, 150f, false, ringPaint)
                 canvas.drawArc(sweepRect, 150f, 150f, false, ringPaint)
             }
