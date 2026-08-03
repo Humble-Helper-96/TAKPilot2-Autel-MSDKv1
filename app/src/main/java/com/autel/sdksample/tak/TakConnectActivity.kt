@@ -38,10 +38,24 @@ class TakConnectActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    /** The action-bar menu button returns to the home screen, same as the flight toolbar's. */
+    override fun onSupportNavigateUp(): Boolean {
+        AppLog.v(TAG, "menu tapped — back to home")
+        finish()
+        return true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_tak_connect)
         AppLog.v(TAG, "onCreate")
+
+        // Menu button on the left of the action bar, matching the flight screen's ic_menu — it
+        // returns to the home screen (finish(), same as the flight toolbar's back button).
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setHomeAsUpIndicator(R.drawable.ic_menu)
+        }
 
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
 
