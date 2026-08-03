@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
-    android:background="#0E0E10"
+    android:background="@color/tp_bg_home"
     android:padding="20dp"
     android:baselineAligned="false">
 
@@ -46,7 +46,7 @@
                     android:layout_height="wrap_content"
                     android:maxLines="1"
                     android:text="@string/app_name"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/tp_text_primary"
                     android:textSize="22sp"
                     android:textStyle="bold" />
                 <LinearLayout
@@ -66,7 +66,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="TAK: Disconnected"
-                        android:textColor="#AAAAAA"
+                        android:textColor="@color/tp_text_secondary"
                         android:textSize="13sp" />
                 </LinearLayout>
             </LinearLayout>
@@ -75,46 +75,51 @@
         <!-- Quick Controls -->
         <LinearLayout style="@style/homeCard">
             <TextView style="@style/homeCardTitle" android:text="Quick Controls" />
+            <!-- Navigation / setup actions group together first. STOP / QUIT is deliberately
+                 pulled out below, separated by a divider and a gap: it force-stops the app, and
+                 grouped in with the routine buttons a hurried pilot could tap it as if it were a
+                 menu item (REVIEW_2026-08-03_UI #6). -->
             <Button
+            style="@style/TakButton.Primary"
                 android:id="@+id/homeTakSetup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:text="Pre-Flight Setup"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#2E7D32" />
+                android:text="Pre-Flight Setup" />
             <Button
-                android:id="@+id/homeQuit"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="STOP / QUIT"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#B71C1C" />
-            <Button
+            style="@style/TakButton.Info"
                 android:id="@+id/homeFieldGuide"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Field Guide"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#1565C0" />
+                android:text="Field Guide" />
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/homeDataSync"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Data Sync"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:text="Data Sync" />
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/homeDebug"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Debug Log"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:text="Debug Log" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="16dp"
+                android:background="@color/tp_divider" />
+            <Button
+            style="@style/TakButton.Danger"
+                android:id="@+id/homeQuit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="STOP / QUIT" />
         </LinearLayout>
 
     </LinearLayout>
@@ -158,7 +163,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="ENTER FLIGHT"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="26sp"
             android:textStyle="bold"
             android:letterSpacing="0.05" />
@@ -167,7 +172,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Live FPV · Telemetry · TAK"
-            android:textColor="#9AC4FF"
+            android:textColor="@color/tp_accent"
             android:textSize="15sp"
             android:layout_marginTop="6dp" />
 
@@ -237,7 +242,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="4dp"
             android:text="TAP TO ENTER ›"
-            android:textColor="#9AC4FF"
+            android:textColor="@color/tp_accent"
             android:textSize="14sp"
             android:textStyle="bold"
             android:letterSpacing="0.08" />

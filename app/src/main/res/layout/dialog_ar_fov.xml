@@ -16,7 +16,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Put a marker on something you can identify, aim so it sits near the EDGE of frame, then adjust until the icon sits on it. Error is invisible at centre and grows toward the edges, so the edge is where this is measured."
-        android:textColor="#B0B0B0"
+        android:textColor="@color/tp_text_secondary"
         android:textSize="12sp"
         android:paddingBottom="12dp" />
 
@@ -27,7 +27,7 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="Horizontal"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="15sp" />
         <Button
             android:id="@+id/arFovHMinus"
@@ -49,7 +49,7 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="Vertical"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="15sp" />
         <Button
             android:id="@+id/arFovVMinus"
@@ -69,6 +69,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:textColor="#9AC4FF"
+        android:textColor="@color/tp_accent"
         android:textSize="12sp" />
 </LinearLayout>

@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
-    android:background="#0E0E10"
+    android:background="@color/tp_bg_home"
     android:padding="20dp"
     android:baselineAligned="false">
 
@@ -24,7 +24,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Debug Log"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"
             android:layout_marginBottom="6dp" />
@@ -37,9 +37,9 @@
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:paddingTop="6dp">
                 <CheckBox android:id="@+id/debugLoggingToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="#1565C0" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Logging enabled" android:textColor="#DDDDDD" android:textSize="15sp" />
+                    android:text="Logging enabled" android:textColor="@color/tp_text_light" android:textSize="15sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -47,9 +47,9 @@
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:paddingTop="4dp">
                 <CheckBox android:id="@+id/debugVerboseToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="#1565C0" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Detailed (all app functions)" android:textColor="#DDDDDD" android:textSize="15sp" />
+                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_light" android:textSize="15sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -57,32 +57,32 @@
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:paddingTop="4dp">
                 <CheckBox android:id="@+id/debugTakToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="#1565C0" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include TAK / CoT logs" android:textColor="#DDDDDD" android:textSize="15sp" />
+                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_light" android:textSize="15sp" />
             </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
                 android:text="Uncheck to hide the TAK bridge/CoT chatter (2s telemetry push, TakManager, CotParser) and leave only app logs — video, camera, DTED, UI."
-                android:textColor="#7A7A7A" android:textSize="12sp" />
+                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:paddingTop="4dp">
                 <CheckBox android:id="@+id/debugRadarToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="#1565C0" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include obstacle radar logs" android:textColor="#DDDDDD" android:textSize="15sp" />
+                    android:text="Include obstacle radar logs" android:textColor="@color/tp_text_light" android:textSize="15sp" />
             </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
                 android:text="The radar reports continuously and fills the log. Leave this off unless you are examining obstacle avoidance. Avoidance switch changes and warnings are always kept."
-                android:textColor="#7A7A7A" android:textSize="12sp" />
+                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <!-- Autel Explorer suppression. Lives on the Debug screen, not Pre-Flight: it is a
                  provisioning-level control, and the restore button here is the pilot-reachable
@@ -90,23 +90,23 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="16dp"
-                android:text="Autel Explorer" android:textColor="#FFFFFF"
+                android:text="Autel Explorer" android:textColor="@color/tp_text_primary"
                 android:textSize="16sp" android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/debugExplorerStatus"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="2dp"
-                android:textColor="#9E9E9E" android:textSize="12sp" />
+                android:textColor="@color/tp_text_tertiary" android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:paddingTop="4dp">
                 <CheckBox android:id="@+id/debugExplorerToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="#1565C0" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Keep Explorer closed while this app runs" android:textColor="#DDDDDD"
+                    android:text="Keep Explorer closed while this app runs" android:textColor="@color/tp_text_light"
                     android:textSize="15sp" />
             </LinearLayout>
 
@@ -114,46 +114,43 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
                 android:text="Autel Explorer can start on its own and take the drone link, which stops the video with no warning. This keeps it closed. Explorer comes back when you close this app. You need Explorer for firmware updates, compass calibration and registration."
-                android:textColor="#7A7A7A" android:textSize="12sp" />
+                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/debugExplorerRestoreButton"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Restore Explorer now"
-                android:textColor="#FFFFFF" android:backgroundTint="#37474F" />
+                android:text="Restore Explorer now" />
 
             <Button
+            style="@style/TakButton.DangerSoft"
                 android:id="@+id/debugExplorerDeprovisionButton"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Remove device-owner rights"
-                android:textColor="#FFFFFF" android:backgroundTint="#5C2E2E" />
+                android:text="Remove device-owner rights" />
 
             <Button
+            style="@style/TakButton.Primary"
                 android:id="@+id/debugExportButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:text="Export Log"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#2E7D32" />
+                android:text="Export Log" />
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/debugClearButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Clear Log"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:text="Clear Log" />
             <Button
+            style="@style/TakButton.Danger"
                 android:id="@+id/debugDeleteButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Delete Log"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#B71C1C" />
+                android:text="Delete Log" />
         </LinearLayout>
 
         <TextView
@@ -176,7 +173,7 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="2.4"
-        android:background="#1A1B1E"
+        android:background="@color/tp_surface_card"
         android:padding="12dp">
 
         <TextView
@@ -184,7 +181,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textColor="#CCFFCC"
+            android:textColor="@color/tp_state_go_soft"
             android:textSize="12sp"
             android:textIsSelectable="true"
             android:text="" />

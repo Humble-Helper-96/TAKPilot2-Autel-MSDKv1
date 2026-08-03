@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1A1A"
+    android:background="@color/tp_bg_screen"
     android:fillViewport="true">
 
     <LinearLayout
@@ -17,7 +17,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="1. Drone Settings"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"
             android:paddingBottom="4dp" />
@@ -26,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Press Apply to Drone to send these settings. A change does not go to the drone until you press the button. Leave a box empty to keep the present setting."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="12dp" />
 
@@ -68,7 +68,7 @@
             android:id="@+id/limitRangeStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="6dp" />
 
@@ -84,7 +84,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="If the drone loses the signal, it returns to home."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
 
@@ -105,7 +105,7 @@
             android:id="@+id/limitFailsafeStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="6dp" />
 
@@ -115,19 +115,18 @@
              Doubles as recovery: one tap re-asserts everything after a reconnect or an Autel
              Explorer link steal. -->
         <Button
+            style="@style/TakButton.Primary"
             android:id="@+id/limitApplyButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="Apply to Drone"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#2E7D32" />
+            android:text="Apply to Drone" />
 
         <TextView
             android:id="@+id/limitApplyStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="6dp"
             android:text="Press the button to send the settings to the drone." />
@@ -151,7 +150,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="These switches show the settings in the drone. Connect the drone to see them. A change goes to the drone immediately."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
 
@@ -160,7 +159,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="6dp"
-            android:textColor="#FFB300"
+            android:textColor="@color/tp_state_caution"
             android:textSize="14sp"
             android:textStyle="bold"
             android:text="The drone is not connected." />
@@ -176,12 +175,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:enabled="false"
-                android:buttonTint="#2E7D32" />
+                android:buttonTint="@color/tp_btn_primary" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Obstacle avoidance system"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/tp_text_primary"
                 android:textSize="15sp" />
         </LinearLayout>
 
@@ -196,12 +195,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:enabled="false"
-                android:buttonTint="#2E7D32" />
+                android:buttonTint="@color/tp_btn_primary" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Avoid obstacles in Return to Home"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/tp_text_primary"
                 android:textSize="15sp" />
         </LinearLayout>
 
@@ -216,12 +215,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:enabled="false"
-                android:buttonTint="#2E7D32" />
+                android:buttonTint="@color/tp_btn_primary" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Landing protection"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/tp_text_primary"
                 android:textSize="15sp" />
         </LinearLayout>
 
@@ -237,7 +236,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Precision mode moves the gimbal wheel and the drone yaw more slowly. Use it to aim the camera accurately and to make smooth video. It does not change the speed of the drone."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
 
@@ -262,7 +261,7 @@
             android:id="@+id/ratesStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="6dp" />
 
@@ -277,7 +276,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="The app sets this mode on the controller at each connection. The sticks always do what you select here. The ENTER FLIGHT card shows the mode before you fly."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
 
@@ -309,7 +308,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="4dp"
             android:paddingTop="6dp"
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:text="" />
 
@@ -317,7 +316,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="20dp"
-            android:background="#333333" />
+            android:background="@color/tp_border" />
 
         <!-- 2. Map Display — flight mini-map tile source. Street + Custom only; DJI's third
              "Hybrid" (satellite) option is deliberately absent here, since providing imagery
@@ -327,7 +326,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="2. Map Display"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
@@ -362,32 +361,31 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="The address must contain {z}, {x} and {y}. The app keeps the tiles you look at for offline use."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="4dp" />
 
         <Button
+            style="@style/TakButton.Neutral"
             android:id="@+id/mapDisplaySaveButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:text="Save Map Display"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#37474F" />
+            android:text="Save Map Display" />
 
         <!-- Offline map tiles. Same shape as the UASFM download below on purpose: centre,
              radius, check the size, then download. A pilot who has done one already knows
              how to do the other. -->
         <TextView style="@style/takLabelStyle"
             android:text="Offline map area"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="15sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="The app keeps the map tiles you look at. Download an area to get the map for ground you have not flown. Press Check Size first. A larger radius increases the size quickly."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="10dp" />
 
@@ -424,55 +422,51 @@
             android:layout_marginTop="10dp">
 
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/mapCacheUseLocationButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:text="Use My Location"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:text="Use My Location" />
 
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/mapCacheCheckButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="4dp"
-                android:text="Check Size"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:text="Check Size" />
         </LinearLayout>
 
         <LinearLayout style="@style/takFormRow"
             android:layout_marginTop="8dp">
 
             <Button
+            style="@style/TakButton.Confirm"
                 android:id="@+id/mapCacheDownloadButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:text="Download Area"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#2E5C3A" />
+                android:text="Download Area" />
 
             <Button
+            style="@style/TakButton.DangerSoft"
                 android:id="@+id/mapCacheClearButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="4dp"
-                android:text="Clear Cache"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#5C2E2E" />
+                android:text="Clear Cache" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/mapCacheStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#9AC4FF"
+            android:textColor="@color/tp_accent"
             android:textSize="13sp"
             android:paddingTop="10dp" />
 
@@ -480,13 +474,13 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="20dp"
-            android:background="#333333" />
+            android:background="@color/tp_border" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="3. TAK Server Connection"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
@@ -574,9 +568,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:buttonTint="#9AC4FF"
+            android:buttonTint="@color/tp_accent"
             android:text="Lock configuration (fields read-only)"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="14sp" />
 
 
@@ -590,39 +584,37 @@
                 android:id="@+id/takCameraPoint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:buttonTint="#2E7D32" />
+                android:buttonTint="@color/tp_btn_primary" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Send the camera look-point to TAK"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/tp_text_primary"
                 android:textSize="15sp" />
         </LinearLayout>
 
         <Button
+            style="@style/TakButton.Primary"
             android:id="@+id/takConnectButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="Enroll &amp; Connect"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#2E7D32" />
+            android:text="Enroll &amp; Connect" />
 
         <Button
+            style="@style/TakButton.Neutral"
             android:id="@+id/takDisconnectButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Log Out (switch user)"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#555555" />
+            android:text="Log Out (switch user)" />
 
         <TextView
             android:id="@+id/takStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:textColor="#B0B0B0"
+            android:textColor="@color/tp_text_secondary"
             android:textSize="14sp"
             android:text="" />
 
@@ -630,7 +622,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="20dp"
-            android:background="#333333" />
+            android:background="@color/tp_border" />
 
         <!-- My Channels: pull the groups the logged-in user belongs to and pick which ones this
              drone's markers/PLI are directed to. Requires an active connection. -->
@@ -639,7 +631,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="My Channels"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textStyle="bold"
             android:textSize="16sp" />
 
@@ -647,24 +639,23 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="These are the channels for your TAK login. The channels you select receive the drone position and the markers. If you select none, the server default applies."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
         <Button
+            style="@style/TakButton.Info"
             android:id="@+id/takPullChannels"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Pull Channels"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#1565C0" />
+            android:text="Pull Channels" />
 
         <TextView
             android:id="@+id/takChannelsStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:textColor="#B0B0B0"
+            android:textColor="@color/tp_text_secondary"
             android:textSize="13sp"
             android:text="" />
 
@@ -679,13 +670,13 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="20dp"
-            android:background="#333333" />
+            android:background="@color/tp_border" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="4. Video Streaming"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
@@ -748,9 +739,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:buttonTint="#9AC4FF"
+            android:buttonTint="@color/tp_accent"
             android:text="Lock configuration (fields read-only)"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="14sp" />
 
 
@@ -759,7 +750,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Select the quality of the video you send to TAK. Standard is the default. Use Low if the network signal is weak."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
 
@@ -772,21 +763,21 @@
             <RadioButton
                 android:id="@+id/videoProfileLow"
                 style="@style/takColumnRadio"
-                android:buttonTint="#1565C0"
+                android:buttonTint="@color/tp_btn_info"
                 android:textSize="12sp"
                 android:text="Low\n480 max · 10fps\n475 kbps" />
 
             <RadioButton
                 android:id="@+id/videoProfileStandard"
                 style="@style/takColumnRadio"
-                android:buttonTint="#1565C0"
+                android:buttonTint="@color/tp_btn_info"
                 android:textSize="12sp"
                 android:text="Standard\n720 max · 15fps\n1.6 Mbps" />
 
             <RadioButton
                 android:id="@+id/videoProfileHigh"
                 style="@style/takColumnRadio"
-                android:buttonTint="#1565C0"
+                android:buttonTint="@color/tp_btn_info"
                 android:textSize="12sp"
                 android:text="High\n1080 max · 15fps\n3.6 Mbps" />
 
@@ -803,12 +794,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:checked="true"
-                android:buttonTint="#1565C0" />
+                android:buttonTint="@color/tp_btn_info" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Use TCP transport (append ?tcp)"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/tp_text_primary"
                 android:textSize="15sp" />
         </LinearLayout>
 
@@ -819,9 +810,9 @@
             android:id="@+id/videoFullUrl"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#202020"
+            android:background="@color/tp_surface_dialog"
             android:padding="12dp"
-            android:textColor="#4CAF50"
+            android:textColor="@color/tp_state_go"
             android:textSize="14sp"
             android:textIsSelectable="true"
             android:fontFamily="monospace"
@@ -832,14 +823,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Use the LIVE button on the flight screen to start and stop the video."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="20dp"
-            android:background="#333333" />
+            android:background="@color/tp_border" />
 
         <!-- 5. Elevation Data (DTED) — imported terrain regions for the local flight area.
              Feeds TerrainAgl + CameraSlantPoint's terrain-corrected SPoI. -->
@@ -847,7 +838,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="5. Elevation Data (DTED)"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
@@ -857,7 +848,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Terrain data makes the marker positions more accurate. Import one .zip file for each flight area. A new import of the same area replaces the old data."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="8dp" />
 
@@ -866,23 +857,21 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal">
             <Button
+            style="@style/TakButton.Info"
                 android:id="@+id/dtedUploadButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
-                android:text="+ Import Region"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#1565C0" />
+                android:text="+ Import Region" />
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/dtedCleanButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Clean Unused Tiles"
-                android:textSize="12sp"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -897,7 +886,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:textColor="#B0B0B0"
+            android:textColor="@color/tp_text_secondary"
             android:textSize="13sp"
             android:text="" />
 
@@ -905,7 +894,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="20dp"
-            android:background="#333333" />
+            android:background="@color/tp_border" />
 
         <!-- 6. FAA Airspace Ceilings (UASFM) — downloaded once on wifi, read offline in flight.
              Advisory display only; nothing here is applied to the aircraft's flight limits. -->
@@ -913,7 +902,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="6. FAA Airspace Ceilings (UASFM)"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/tp_text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
@@ -923,7 +912,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="These are the FAA altitude ceilings. The flight screen shows them. Download the data on wifi before you go to the flight area.\n\n⚠ This is advice only. It is NOT an FAA authorisation. It does not change the altitude limit of the drone."
-            android:textColor="#909090"
+            android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="10dp" />
 
@@ -962,24 +951,22 @@
             android:orientation="horizontal"
             android:layout_marginTop="10dp">
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/uasfmUseLocationButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
                 android:text="Use My Location"
-                android:textSize="12sp"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:textSize="12sp" />
             <Button
+            style="@style/TakButton.Neutral"
                 android:id="@+id/uasfmCheckButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Check Size"
-                android:textSize="12sp"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#37474F" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -988,23 +975,21 @@
             android:orientation="horizontal"
             android:layout_marginTop="8dp">
             <Button
+            style="@style/TakButton.Info"
                 android:id="@+id/uasfmDownloadButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
-                android:text="Download"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#1565C0" />
+                android:text="Download" />
             <Button
+            style="@style/TakButton.Danger"
                 android:id="@+id/uasfmClearButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Clear Data"
-                android:textSize="12sp"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#B71C1C" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <TextView
@@ -1013,7 +998,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:layout_marginBottom="24dp"
-            android:textColor="#B0B0B0"
+            android:textColor="@color/tp_text_secondary"
             android:textSize="13sp"
             android:text="" />
 

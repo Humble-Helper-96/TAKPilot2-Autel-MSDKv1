@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TAKPilot2 colour tokens — the single source of truth for the pilot-facing screens.
+
+  WHY. Before this, every colour was an inline #RRGGBB literal repeated across layouts,
+  styles.xml, and Kotlin, with no shared names (REVIEW_2026-08-03_UI #1/#9). This file names each
+  colour by its ROLE so the same role always uses the same value, and a change is made in one
+  place. Reference these as @color/tp_* from layouts and styles.
+
+  VALUES ARE PRESERVED from the pre-token palette — introducing tokens changed no pixels. The few
+  near-duplicate greys/ambers that the review flagged (#2) were folded onto one token per role;
+  those shifts are sub-perceptual (e.g. #AAAAAA→#B0B0B0) and are the intended consolidation.
+
+  ⚠ NOT covered here yet: the flight-HUD custom views (ArOverlayView, CrosshairView,
+  ObstacleEdgeView, BatteryGaugeView, etc.) still hold their own literals. Those colours are
+  safety-relevant and were tuned in flight (accuracy ring, obstacle arc, battery bands, the ADS-B
+  magenta), so migrating and consolidating them needs an on-device visual check — deferred to a
+  controller-connected session. See REVIEW_2026-08-03_UI #3.
+-->
+<resources>
+
+    <!-- Surfaces / backgrounds -->
+    <color name="tp_bg_home">#0E0E10</color>       <!-- home screen root -->
+    <color name="tp_bg_flight">#000000</color>     <!-- flight screen root (under the video) -->
+    <color name="tp_bg_screen">#1A1A1A</color>     <!-- pre-flight / general screen bg, no-video cover -->
+    <color name="tp_bg_data_sync">#0E1116</color>  <!-- data-sync screen bg -->
+    <color name="tp_surface_card">#1A1B1E</color>  <!-- raised card on the home screen -->
+    <color name="tp_surface_field">#2A2A2A</color> <!-- text-input background -->
+    <color name="tp_surface_dialog">#202020</color><!-- dialog background -->
+    <color name="tp_border">#333333</color>        <!-- hairline borders / dim separators -->
+    <color name="tp_divider">#33FFFFFF</color>     <!-- translucent-white divider -->
+
+    <!-- Text (a muted-grey scale, brightest first) -->
+    <color name="tp_text_primary">#FFFFFF</color>
+    <color name="tp_text_light">#DDDDDD</color>    <!-- slightly dimmed body (debug labels) -->
+    <color name="tp_text_secondary">#B0B0B0</color>
+    <color name="tp_text_tertiary">#909090</color>
+    <color name="tp_text_muted">#7A7A7A</color>    <!-- card titles, captions -->
+    <color name="tp_text_hint">#666666</color>     <!-- input hint / disabled -->
+
+    <!-- Accent — the one "interactive / link" blue -->
+    <color name="tp_accent">#9AC4FF</color>
+
+    <!-- Button backgrounds (roles, not statuses) -->
+    <color name="tp_btn_primary">#2E7D32</color>      <!-- primary / go (Pre-Flight, Apply) -->
+    <color name="tp_btn_info">#1565C0</color>         <!-- informational (Field Guide); also checkbox tint -->
+    <color name="tp_btn_neutral">#37474F</color>      <!-- neutral secondary -->
+    <color name="tp_btn_confirm">#2E5C3A</color>      <!-- confirm a heavier action (area download) -->
+    <color name="tp_btn_danger">#B71C1C</color>       <!-- destructive (Stop/Quit) -->
+    <color name="tp_btn_danger_soft">#5C2E2E</color>  <!-- destructive, less alarming (clear cache, deprovision) -->
+    <color name="tp_btn_danger_dialog">#EF5350</color><!-- destructive-confirm dialog highlight -->
+
+    <!-- Status indicators (bright, used for text/dots that report a state) -->
+    <color name="tp_state_go">#4CAF50</color>       <!-- connected / on / accepted -->
+    <color name="tp_state_caution">#FFB300</color>  <!-- caution / unknown-waiting -->
+    <color name="tp_state_danger">#F44336</color>   <!-- off / rejected / danger -->
+    <color name="tp_state_go_soft">#CCFFCC</color>  <!-- pale confirmation text (debug) -->
+
+    <!-- Effects -->
+    <color name="tp_shadow">#CC000000</color>       <!-- HUD text drop-shadow -->
+
+</resources>
