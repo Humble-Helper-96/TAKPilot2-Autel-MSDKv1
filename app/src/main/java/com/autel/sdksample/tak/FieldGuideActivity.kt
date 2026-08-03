@@ -503,8 +503,6 @@ class FieldGuideActivity : AppCompatActivity() {
                 "The app uses the terrain data at the current position of the aircraft. If " +
                     "you fly out of the area of your data, the ring changes to the angles for " +
                     "no terrain data.",
-                "A person measured these angles on a Mini 2 aircraft. No person measured them " +
-                    "on the EVO II. Use them as a guide until a person measures them again.",
                 "If markers go to a position that is not correct at all angles, the aim of " +
                     "the camera can have an error. See section 4 to correct it.",
             ),
