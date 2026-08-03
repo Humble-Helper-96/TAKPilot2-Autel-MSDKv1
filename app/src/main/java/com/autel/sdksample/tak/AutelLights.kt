@@ -58,9 +58,10 @@ object AutelLights {
     /**
      * Reads the current lamp state off the aircraft.
      *
-     * `getLedPilotLamp` resolves to `queryLedPilotLamp`, a one-shot query packet — checked in the
-     * bytecode, not assumed from the name. It is NOT one of the repeating-listener getters that
-     * caused the 2026-08-02 wall strike, so it is safe to call on demand.
+     * `getLedPilotLamp` sends `MAV_CMD_GET_LED` via `sendPacket(…, callback)` — a one-shot
+     * request/response, verified in the aar bytecode 2026-08-03, not assumed from the name. It is
+     * NOT one of the repeating-subscription getters that caused the 2026-08-02 wall strike, so it
+     * is safe to call on demand.
      */
     fun refresh(then: (() -> Unit)? = null) {
         val fc = AutelProductHolder.evo2?.flyController ?: run { then?.invoke(); return }

@@ -34,6 +34,19 @@ object AutelProductHolder {
     @Volatile var product: BaseProduct? = null
         private set
 
+    /**
+     * The product we have already run the connect-time arming sequence for.
+     *
+     * ⚠ Idempotency guard for a flood hazard. `productConnected` can fire more than once on the
+     * SAME product — camera-enumeration churn, or the global product listener being re-registered
+     * on every `onResume` (Home and Flight both call [install]). The arming sequence includes
+     * subscriptions that cannot be de-registered (e.g. AutelAvoidance's visual-setting feed), so
+     * re-running it stacks another ~2Hz stream on the fly-controller channel each time — the exact
+     * shape of the 2026-08-02 wall strike, through a different door. Arm once per product; a
+     * re-fire on the same instance only refreshes observers.
+     */
+    @Volatile private var armedForProduct: BaseProduct? = null
+
     /** The EVO II V3 view of the product, or null if not connected / different airframe. */
     val evo2: Evo2Aircraft? get() = product as? Evo2Aircraft
 
@@ -254,6 +267,16 @@ object AutelProductHolder {
             override fun productConnected(baseProduct: BaseProduct?) {
                 AppLog.i(TAG, "productConnected: ${baseProduct?.type}")
                 product = baseProduct
+                // Arm ONCE per product. A re-fire on the same instance (camera churn, or the
+                // global listener being re-registered on onResume) must not re-run the arming
+                // sequence — see armedForProduct. Observers are still refreshed so the UI stays
+                // current; only the subscription/enforcement work is skipped.
+                if (baseProduct != null && baseProduct === armedForProduct) {
+                    AppLog.i(TAG, "productConnected re-fired for the same product — already armed")
+                    notifyAll(true)
+                    return
+                }
+                armedForProduct = baseProduct
                 // Re-arm telemetry subscriptions on every (re)connect — Autel listener
                 // registrations don't survive a product cycle.
                 TakBridgeHolder.onProductConnected()
@@ -308,6 +331,7 @@ object AutelProductHolder {
             override fun productDisconnected() {
                 AppLog.i(TAG, "productDisconnected")
                 product = null
+                armedForProduct = null
                 camera = null
                 isRecording = false
                 TakBridgeHolder.onProductDisconnected()

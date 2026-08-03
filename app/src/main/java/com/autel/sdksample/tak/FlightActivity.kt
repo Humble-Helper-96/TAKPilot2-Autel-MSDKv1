@@ -545,6 +545,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     override fun onDestroy() {
         super.onDestroy()
         AppLog.v(TAG, "onDestroy")
+        // Drop every pending delayed callback on this screen's handler. onPause removes the HUD
+        // refresh loop, but the one-shot postDelayed lambdas (record-verify after a mode-switch
+        // settle, the transient-notice auto-hide) capture the camera/context and would otherwise
+        // fire against a destroyed activity if it is torn down inside their delay window. None
+        // needs to survive the screen — they touch this screen's views.
+        handler.removeCallbacksAndMessages(null)
         arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         TakMapMarkers.onMapDestroyed()
@@ -1453,6 +1459,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      */
     private fun syncIrStateFromCamera() {
         val cam = AutelProductHolder.xt706 ?: return
+        // getDisplayMode / getIrColor / getISO / getShutter / getMediaMode are ONE-SHOT — the
+        // XT706 impl routes them through CameraHttpRequest (an HTTP GET returns once). Verified in
+        // the aar 2026-08-03; none is a repeating subscription, so calling them on demand is safe.
         cam.getDisplayMode(object : CallbackWithOneParam<DisplayMode> {
             override fun onSuccess(mode: DisplayMode?) {
                 irOn = mode == DisplayMode.IR

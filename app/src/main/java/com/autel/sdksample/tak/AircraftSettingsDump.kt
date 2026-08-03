@@ -86,6 +86,13 @@ object AircraftSettingsDump {
             }.onFailure { AppLog.i(TAG, "  $name = <threw: ${it.message}>") }
         }
 
+        // SUBSCRIPTION CHECK, verified in the aar 2026-08-03: every getter read here is a ONE-SHOT
+        // request/response — the fly-controller getters route through `query*` →
+        // `getParamsGetPacket` → `ParamsQueryPacket` → `sendPacket(…, callback)` (one reply); the
+        // RC getters are measured one-shot; the camera getters are one-shot HTTP. NONE is a
+        // repeating subscription. The one fly-controller getter that WAS a 2Hz subscription,
+        // `getVisualSettingInfo`, is deliberately absent — its vision fields are read from
+        // AutelAvoidance's cache instead (see the vision block below).
         val fc = evo.flyController
         read<String>("aircraft.serial") { fc.getSerialNumber(it) }
         read<Float>("flight.maxHeight_m") { fc.getMaxHeight(it) }
@@ -130,27 +137,20 @@ object AircraftSettingsDump {
         // often a positioning or compass problem, and until now nothing recorded whether the
         // vision system was even switched on. This app does not set it.
         //
-        // ⚠ The `printed` latch is NOT optional. getVisualSettingInfo fires ~2 Hz forever, so the
-        // first version of this block printed four lines twice a second for the whole flight and
-        // buried the log — the same repeating-getter trap that caused the 2026-08-02 wall strike,
-        // committed again in the code written to investigate it. See AutelAvoidance.readOnce.
-        val printed = java.util.concurrent.atomic.AtomicBoolean(false)
-        runCatching {
-            fc.getVisualSettingInfo(object : CallbackWithOneParam<
-                com.autel.common.flycontroller.visual.VisualSettingInfo> {
-                override fun onSuccess(v: com.autel.common.flycontroller.visual.VisualSettingInfo?) {
-                    v ?: return
-                    if (!printed.compareAndSet(false, true)) return
-                    AppLog.i(TAG, "  vision.locationEnabled = ${v.isVisualLocationEnable}")
-                    AppLog.i(TAG, "  vision.landingAccurately = ${v.isLandingAccuratelyEnable}")
-                    AppLog.i(TAG, "  vision.mainFlyState = ${v.visualMainFlyState}")
-                    AppLog.i(TAG, "  vision.warnState = ${v.visualWarnState}")
-                    AppLog.i(TAG, "  (avoidance switches are logged by AutelAvoidance)")
-                }
-                override fun onFailure(error: AutelError?) {
-                    AppLog.i(TAG, "  vision.* = <failed: ${error?.description}>")
-                }
-            })
+        // Read the vision fields from AutelAvoidance's cache — do NOT open our own
+        // getVisualSettingInfo. That call is an uncancellable ~2Hz subscription, not a one-shot;
+        // opening it here just to log four lines left a permanent stream on the fly-controller
+        // channel (the repeating-getter trap behind the 2026-08-02 wall strike). AutelAvoidance
+        // owns the single subscription and publishes the latest object; we read it.
+        val v = AutelAvoidance.latestVisualSetting
+        if (v == null) {
+            AppLog.i(TAG, "  vision.* = <not reported yet>")
+        } else {
+            AppLog.i(TAG, "  vision.locationEnabled = ${v.isVisualLocationEnable}")
+            AppLog.i(TAG, "  vision.landingAccurately = ${v.isLandingAccuratelyEnable}")
+            AppLog.i(TAG, "  vision.mainFlyState = ${v.visualMainFlyState}")
+            AppLog.i(TAG, "  vision.warnState = ${v.visualWarnState}")
+            AppLog.i(TAG, "  (avoidance switches are logged by AutelAvoidance)")
         }
     }
 }

@@ -53,7 +53,16 @@ object AutelAvoidance {
     @Volatile var radar: AvoidanceRadarInfo? = null
         private set
 
-    @Volatile private var loggedConnectState: Boolean? = null
+    /**
+     * The most recent full [VisualSettingInfo], or null until the standing listener has fired.
+     *
+     * Exposed so other readers can get the vision fields (location/landing/mainFlyState/warnState)
+     * WITHOUT opening their own `getVisualSettingInfo` — which is an uncancellable ~2Hz
+     * subscription, not a one-shot. This object owns the single subscription; everyone else reads
+     * this cache. See [AircraftSettingsDump].
+     */
+    @Volatile var latestVisualSetting: VisualSettingInfo? = null
+        private set
 
     /** Wired from [AutelProductHolder] on every (re)connect — listener registrations do not
      *  survive a product cycle. */
@@ -63,6 +72,7 @@ object AutelAvoidance {
             fc.setVisualSettingInfoListener(object : CallbackWithOneParam<VisualSettingInfo> {
                 override fun onSuccess(info: VisualSettingInfo?) {
                     info ?: return
+                    latestVisualSetting = info
                     val was = systemEnabled
                     systemEnabled = info.isAvoidanceSystemEnable
                     avoidDuringRth = info.isDetectObstacleEnableWhenReturn
@@ -78,28 +88,13 @@ object AutelAvoidance {
                     AppLog.w(TAG, "visual setting listener error: ${error?.description}")
                 }
             })
-            // One-shot read as well: the listener only fires on the aircraft's own schedule, and
-            // the home screen wants an answer as soon as the product syncs rather than whenever
-            // the next push happens to arrive.
-            fc.getVisualSettingInfo(object : CallbackWithOneParam<VisualSettingInfo> {
-                override fun onSuccess(info: VisualSettingInfo?) {
-                    info ?: return
-                    systemEnabled = info.isAvoidanceSystemEnable
-                    avoidDuringRth = info.isDetectObstacleEnableWhenReturn
-                    landingProtect = info.isLandingProtectEnable
-                    // Logged only on CHANGE. getVisualSettingInfo LOOKS like a one-shot read
-                    // but its callback fires about twice a second on this firmware, so an
-                    // unconditional line here buried the rest of the flight log.
-                    if (loggedConnectState != systemEnabled) {
-                        loggedConnectState = systemEnabled
-                        AppLog.i(TAG, "avoidance at connect: enabled=$systemEnabled " +
-                            "rth-avoid=$avoidDuringRth landing-protect=$landingProtect")
-                    }
-                }
-                override fun onFailure(error: AutelError?) {
-                    AppLog.w(TAG, "getVisualSettingInfo failed: ${error?.description}")
-                }
-            })
+            // NO separate getVisualSettingInfo here. It LOOKS like a one-shot read but its
+            // callback fires ~2Hz forever on this firmware and cannot be de-registered, so calling
+            // it created a second permanent stream of the same three booleans the listener above
+            // already delivers — and, when productConnected re-fired, those streams accumulated
+            // into the fly-controller flood that caused the 2026-08-02 wall strike. The standing
+            // setVisualSettingInfoListener is the single source: it populates the cache within
+            // about half a second of connect, which is soon enough for the Enter Flight card.
             fc.setAvoidanceRadarInfoListener(object : CallbackWithOneParam<AvoidanceRadarInfo> {
                 override fun onSuccess(info: AvoidanceRadarInfo?) {
                     info ?: return
@@ -114,50 +109,11 @@ object AutelAvoidance {
         }.onFailure { AppLog.w(TAG, "avoidance listener install failed: ${it.message}") }
     }
 
-    /**
-     * Invokes [then] EXACTLY ONCE, after the aircraft's live state is known.
-     *
-     * ⚠ THIS IS THE BUG THAT PUT AN AIRCRAFT INTO A WALL (2026-08-02). The previous version
-     * passed [then] straight to `getVisualSettingInfo`'s callback, on the assumption that a
-     * getter calls back once. It does not — on this firmware that callback fires about twice a
-     * second, forever, a fact this very file already documented a few lines above. So the
-     * "apply once at connect" enforcement actually ran at 2 Hz for the whole flight, and because
-     * each write's completion handler kicked off ANOTHER perpetual reader, every write added a
-     * new 2 Hz stream on top of the last. The fly-controller channel — the same one carrying
-     * vision positioning and obstacle data — ended up saturated. The flight log shows the shape
-     * of it: fourteen enforcement attempts, six acknowledgements inside one 700 ms burst, then
-     * the channel timing out. The hover went unstable and avoidance did not stop an impact.
-     *
-     * So: latch on the first callback and never call back again. Do NOT "simplify" this by
-     * handing the lambda to the SDK callback directly.
-     *
-     * No new listener is needed for the cached values themselves — [onProductConnected] already
-     * arms a continuous one. This exists only for callers that need a "state is known now" edge.
-     */
-    private fun readOnce(then: () -> Unit) {
-        val fc = AutelProductHolder.evo2?.flyController ?: run { then(); return }
-        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
-        fun once() { if (fired.compareAndSet(false, true)) then() }
-        runCatching {
-            fc.getVisualSettingInfo(object : CallbackWithOneParam<VisualSettingInfo> {
-                override fun onSuccess(info: VisualSettingInfo?) {
-                    info?.let {
-                        systemEnabled = it.isAvoidanceSystemEnable
-                        avoidDuringRth = it.isDetectObstacleEnableWhenReturn
-                        landingProtect = it.isLandingProtectEnable
-                    }
-                    once()
-                }
-                override fun onFailure(error: AutelError?) { once() }
-            })
-        }.onFailure { once() }
-    }
-
     fun onProductDisconnected() {
         systemEnabled = null; avoidDuringRth = null; landingProtect = null
         radar = null
+        latestVisualSetting = null
         lastRadarLogMs = 0L
-        loggedConnectState = null
         appliedForThisConnect = false
     }
 
@@ -177,8 +133,10 @@ object AutelAvoidance {
      * READING A SAMPLE. Each face is a float[6] of sub-sectors. Two sentinel values, both
      * confirmed against live data: 0 means "this face was not in this push" (the aircraft sends
      * one face at a time, round-robin), and 10000 means "clear, nothing detected". Anything else
-     * is a real distance. Units are believed CENTIMETRES and are still not confirmed — see
-     * [nearestCm].
+     * is a real distance. Units are CENTIMETRES — FIELD-VALIDATED 2026-08-02 when the operator
+     * flew the [ObstacleEdgeView] display (which reads these same values) against real obstacles
+     * and judged the distances accurate at flight-relevant ranges. Good to rely on; nobody should
+     * quote it to the inch.
      */
     private fun logRadarSample(info: AvoidanceRadarInfo) {
         val now = android.os.SystemClock.elapsedRealtime()
@@ -252,7 +210,6 @@ object AutelAvoidance {
      */
     fun applyAtConnect(context: android.content.Context) {
         if (appliedForThisConnect) return
-        appliedForThisConnect = true
         // NEVER rewrite a safety switch on an aircraft that is already flying. Enforcement is a
         // pre-flight act: the pilot reads what was applied on the Enter Flight card and then
         // launches. Writing avoidance settings underneath an airborne aircraft changes how it
@@ -261,24 +218,36 @@ object AutelAvoidance {
             AppLog.w(TAG, "aircraft is airborne — SKIPPING avoidance enforcement this connect")
             return
         }
-        readOnce {
-            val want = listOf<Triple<com.autel.common.flycontroller.visual.VisualSettingSwitchblade, Boolean, Boolean?>>(
-                Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM,
-                    savedSystem(context), systemEnabled),
-                Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE,
-                    savedRth(context), avoidDuringRth),
-                Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT,
-                    savedLanding(context), landingProtect),
-            )
-            var changed = 0
-            for ((which, desired, actual) in want) {
-                if (actual == desired) continue
-                changed++
-                AppLog.i(TAG, "enforcing $which -> $desired (aircraft had $actual)")
-                setSwitch(which, desired) { }
-            }
-            if (changed == 0) AppLog.i(TAG, "avoidance already matches Pre-Flight — no writes")
+        // Read the aircraft's live state from the cache the standing listener maintains — NOT by
+        // firing our own getVisualSettingInfo, which is a permanent 2Hz subscription (that was
+        // the wall-strike bug). This runs ~4.5s after connect, by which time the listener has
+        // populated the cache many times over. If it is still null, the visual-setting feed is
+        // dead, enforcement is impossible anyway, and we do NOT write blind — leave
+        // appliedForThisConnect false so a later call can still try.
+        val sys = systemEnabled
+        val rth = avoidDuringRth
+        val land = landingProtect
+        if (sys == null || rth == null || land == null) {
+            AppLog.w(TAG, "avoidance state not known yet — deferring enforcement this connect")
+            return
         }
+        appliedForThisConnect = true
+        val want = listOf<Triple<com.autel.common.flycontroller.visual.VisualSettingSwitchblade, Boolean, Boolean>>(
+            Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM,
+                savedSystem(context), sys),
+            Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE,
+                savedRth(context), rth),
+            Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT,
+                savedLanding(context), land),
+        )
+        var changed = 0
+        for ((which, desired, actual) in want) {
+            if (actual == desired) continue
+            changed++
+            AppLog.i(TAG, "enforcing $which -> $desired (aircraft had $actual)")
+            setSwitch(which, desired) { }
+        }
+        if (changed == 0) AppLog.i(TAG, "avoidance already matches Pre-Flight — no writes")
     }
 
     /**
@@ -293,9 +262,9 @@ object AutelAvoidance {
      *   [onProductConnected], which updates the cached values within about half a second.
      *
      * ⚠ Deliberately does NOT kick off its own read on completion. It used to, and that was half
-     * of the runaway described on [readOnce]: each write left behind another 2 Hz reader that
-     * never stopped, so writes bred readers until the fly-controller channel gave out. One
-     * standing listener is all this needs.
+     * of the 2026-08-02 runaway: each write left behind another 2 Hz `getVisualSettingInfo`
+     * reader that never stopped, so writes bred readers until the fly-controller channel gave
+     * out. One standing listener is all this needs.
      */
     fun setSwitch(
         which: com.autel.common.flycontroller.visual.VisualSettingSwitchblade,

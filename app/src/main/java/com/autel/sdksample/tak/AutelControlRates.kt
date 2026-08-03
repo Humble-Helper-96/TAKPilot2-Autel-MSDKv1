@@ -83,6 +83,11 @@ object AutelControlRates {
      */
     fun refresh(context: Context, then: (() -> Unit)? = null) {
         val rc = AutelProductHolder.evo2?.remoteController ?: run { then?.invoke(); return }
+        // getCommandStickMode / getGimbalDialAdjustSpeed / getYawCoefficient are ONE-SHOT — the
+        // RC getters are measured one-shot (verified 2026-08-02/-03), and the `outstanding`
+        // counter below is itself the proof at runtime: if any callback repeated, it would
+        // decrement past zero and re-fire `then`, which has never been observed across connects.
+        // Unlike the fly-controller's getVisualSettingInfo, these do not subscribe.
         var outstanding = 3
         fun done() { if (--outstanding <= 0) { evaluate(context); then?.invoke() } }
 

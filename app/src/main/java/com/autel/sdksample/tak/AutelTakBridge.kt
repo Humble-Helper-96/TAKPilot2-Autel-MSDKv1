@@ -68,7 +68,12 @@ class AutelTakBridge(
     @Volatile private var voltage = 0.0
     @Volatile private var batteryCapMah = 0.0
     @Volatile private var satCount = 0
-    @Volatile private var horizAccM = -1.0          // meters, -1 = unknown
+    // GNSS accuracy, in metres (-1 = unknown). ⚠ COMPUTED BUT NOT YET CONSUMED — nothing reads
+    // these today, so no unverified number reaches a pilot. Before wiring them to any readout or
+    // the PLI, BENCH-VERIFY [ACC_DIVISOR]: the raw units are only *believed* to be millimetres,
+    // and if that guess is wrong the displayed accuracy is off by 1000x. Kept as scaffolding, not
+    // shipped data.
+    @Volatile private var horizAccM = -1.0
     @Volatile private var vertAccM = -1.0
     @Volatile private var liveGimbalPitch: Double? = null
     @Volatile private var liveGimbalYaw: Double? = null
@@ -147,7 +152,26 @@ class AutelTakBridge(
     fun onProductConnected() { if (running) subscribe() }
 
     // ---- SDK subscriptions ----
-
+    //
+    // RE-ARM SAFETY, verified in the aar (javap -p -c), 2026-08-03. Every `set*Listener` below is
+    // a SUBSCRIPTION (fires continuously), and `subscribe()` is called again on every reconnect —
+    // so whether re-arming accumulates or replaces is load-bearing.
+    //
+    //   ⚠ DO NOT trust the "set…Listener" NAME. It is not a reliable signal in this SDK: the
+    //   XStar impl of `setFlyControllerInfoListener` calls `addIStarLinkLongTimeCallback` and
+    //   ACCUMULATES. The check has to be per-impl, in bytecode.
+    //
+    //   The EVO2 impls this app actually uses are SELF-CLEANING (remove-then-add / single-slot),
+    //   so re-arming REPLACES and is safe:
+    //     - Evo2FlyController.setFlyControllerInfoListener  → removeXInfoListener…; addXInfoListener…
+    //     - VisualModelManager.setVisualHeartListener       → removeVisualHeartListener; set…
+    //       (used by AutelAvoidance, not here)
+    //     - the DSP/RC/battery/gimbal setters follow the same paired remove/set pattern.
+    //
+    // Belt and suspenders: since CODE #1 (2026-08-03) `productConnected` arms once per product, so
+    // even an accumulating setter would be armed once — but the single-slot property above is the
+    // primary guarantee. The dangerous shape is a `get*(callback)` that is secretly a 2Hz
+    // subscription (see getVisualSettingInfo, eliminated); this file uses none.
     fun subscribe() {
         val evo = AutelProductHolder.evo2 ?: run {
             AppLog.i(TAG, "subscribe: no aircraft yet (will re-arm on productConnected)")
@@ -294,23 +318,36 @@ class AutelTakBridge(
 
     private fun pushOnce() {
         if (!tak.isConnected) return
+        // SNAPSHOT every field this push consumes, in one go. The SDK listeners write these on
+        // their own thread; reading them live through the body would let one PLI mix position
+        // from one telemetry frame with heading/altitude/battery from the next. @Volatile gives
+        // per-field atomicity, not a consistent SET — this does. The gimbal snapshot is passed
+        // into pushCameraPoint too, so the published SPI and the PLI describe the same instant.
         val lat = this.lat
         val lon = this.lon
         if (!isValidLat(lat) || !isValidLon(lon)) return   // no GPS fix — skip, don't send 0,0
         val hae = if (this.hae.isFinite()) this.hae else 0.0
-
-        val gimbalPitch = liveGimbalPitch ?: 0.0
-        val gimbalYaw = liveGimbalYaw ?: 0.0
+        val relAlt = this.relAlt
+        val speedMs = this.speedMs
+        val heading = this.headingDeg
+        val batteryPct = this.batteryPct
+        val batteryCapMah = this.batteryCapMah
+        val voltage = this.voltage
+        val gimbalPitchN = liveGimbalPitch          // nullable — SPI needs the "not yet" case
+        val gimbalYawN = liveGimbalYaw
+        val agl = if (relAlt.isFinite() && relAlt > 0) relAlt else 0.0
 
         // Compute the camera look-point + sensor FOV BEFORE the PLI, so the PLI can carry
         // the <sensor> element (ATAK/taklite draw the FOV cone from it).
         if (cameraPointEnabled) {
-            pushCameraPoint(lat, lon, aglMeters(), headingDeg)
+            pushCameraPoint(lat, lon, agl, heading, gimbalPitchN, gimbalYawN)
         } else {
             sensorFov = -1.0; sensorVfov = -1.0; sensorAzimuth = -1.0
             sensorElevation = 0.0; sensorRange = -1.0
         }
 
+        val gimbalPitch = gimbalPitchN ?: 0.0
+        val gimbalYaw = gimbalYawN ?: 0.0
         val isFlying = relAlt.isFinite() && (relAlt > 0.5 || speedMs > 0.5)
         // Published so other subsystems can refuse to write aircraft settings while airborne.
         // See AutelAvoidance.applyAtConnect: a safety switch must not be rewritten mid-flight.
@@ -318,14 +355,14 @@ class AutelTakBridge(
 
         // north reference stays 0.0 — <sensor azimuth> is an ABSOLUTE true-north bearing
         // (the DJI original calibrated this the hard way; see its 2026-07 comment).
-        tak.sendDronePLI(droneUid, droneCallsign, lat, lon, hae, headingDeg, speedMs, batteryPct,
+        tak.sendDronePLI(droneUid, droneCallsign, lat, lon, hae, heading, speedMs, batteryPct,
             videoUrl, spiUid,
             sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, 0.0,
             0.0, gimbalPitch, gimbalYaw,
             isFlying, 0,
             batteryCapMah.toInt(), (batteryCapMah * batteryPct / 100.0).toInt(), voltage)
 
-        AppLog.v(TAG, "PLI push: lat=$lat lon=$lon hae=${"%.1f".format(hae)} hdg=${"%.0f".format(headingDeg)} " +
+        AppLog.v(TAG, "PLI push: lat=$lat lon=$lon hae=${"%.1f".format(hae)} hdg=${"%.0f".format(heading)} " +
                 "spd=${"%.1f".format(speedMs)} bat=$batteryPct% flying=$isFlying")
 
         // Link diagnostics, one line per tick. The percentages are what the toolbar draws; the
@@ -377,9 +414,12 @@ class AutelTakBridge(
         if (BEARING_MODE_RELATIVE) CameraSlantPoint.norm360(aircraftHeading + rawYaw + TakBridgeHolder.currentBearingOffset)
         else CameraSlantPoint.norm360(rawYaw + TakBridgeHolder.currentBearingOffset)
 
-    private fun pushCameraPoint(lat: Double, lon: Double, aglMeters: Double, aircraftHeading: Double) {
-        val pitch = liveGimbalPitch
-        val yaw = liveGimbalYaw
+    // pitch/yaw are the SNAPSHOT taken in pushOnce, not re-read here, so the SPI this publishes
+    // and the PLI's <sensor> element describe the same telemetry frame.
+    private fun pushCameraPoint(
+        lat: Double, lon: Double, aglMeters: Double, aircraftHeading: Double,
+        pitch: Double?, yaw: Double?,
+    ) {
         if (pitch == null || yaw == null) {
             AppLog.d(TAG, "SPI skip: gimbal attitude not yet received")
             return
