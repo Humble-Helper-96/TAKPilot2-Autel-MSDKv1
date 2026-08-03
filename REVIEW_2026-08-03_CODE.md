@@ -226,7 +226,11 @@ classification). Found one real bug in the aircraft-camera path — which nothin
 than patched, which also retired the Phase-4 codec/`AutelCodecView` concurrency question. Verified
 the live path end-to-end on-device after deletion.
 
-**`taklite/` TLS/CoT/cert enrollment (the security surface) is STILL unopened.**
+**Update 2026-08-03 — `taklite/` TLS/CoT/cert enrollment reviewed.** See
+`REVIEW_2026-08-03_SECURITY.md`. CoT parsing is not XXE-vulnerable (XmlPullParser, DOCTYPE off);
+runtime refuses plaintext. Two hardening fixes applied (buffer cap, enrolled-cert key match); the
+enrollment-TOFU / hostname / key-at-rest findings were accepted as standard TAK behaviour. The full
+review surface is now opened.
 
 ---
 

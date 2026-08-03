@@ -114,3 +114,16 @@ far from its cause.
 Safe to fix now without connectivity risk: **#4** and **#5** (pure hardening). **#1–#3** change
 trust/storage behaviour and must be decided against the target TAK servers before touching — #1 is
 the one that actually protects the operator's credentials and deserves a decision.
+
+## Disposition — 2026-08-03
+
+- **#4 (unbounded buffer) — ✅ FIXED** (commit 481aae0). `TakClient` caps the pending buffer at
+  4 MB and drops the connection past it. Verified on-device: TAK still connects and receives CoT
+  normally.
+- **#5 (cert/key match) — ✅ FIXED** (commit 481aae0). `TakCertEnroller` verifies the signed cert's
+  public key matches the generated key pair before building the `.p12`.
+- **#1, #2, #3 — ACCEPTED as standard TAK behaviour** (operator's call, 2026-08-03). Enrollment
+  TOFU, the absence of hostname pinning, and the conventional `atakatak` p12 password are how the
+  TAK ecosystem operates; kept as notes rather than changed. Revisit #1 (cert-fingerprint
+  confirmation) if enrollment ever needs to run on untrusted networks; revisit #3 (Android Keystore)
+  before a wider fleet rollout. The mitigations above still stand if the risk posture changes.
