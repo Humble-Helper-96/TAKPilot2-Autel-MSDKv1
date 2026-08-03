@@ -166,10 +166,10 @@ object TakDropMarkers {
         val pin = Pin(
             key = "${aff.id}-${System.nanoTime()}",
             lat = lat, lon = lon, alt = alt,
-            affiliation = aff, name = "${aff.label} Marker", transmitted = false,
+            affiliation = aff, name = nextMarkerName(), transmitted = false,
         )
         pins[pin.key] = pin
-        AppLog.v(TAG, "pin placed: ${pin.key} (${aff.label}) @ $lat,$lon alt=$alt")
+        AppLog.i(TAG, "pin placed: ${pin.key} \"${pin.name}\" (${aff.label}) @ $lat,$lon alt=$alt")
         draw(pin)
         save()
         if (TakMissionManager.joinedFeed != null && TakManager.getInstance().isConnected) {
@@ -177,6 +177,43 @@ object TakDropMarkers {
         } else {
             ui?.askSend(aff.label) { send -> if (send) sendPin(pin) }
         }
+    }
+
+    /**
+     * Next marker name: the AIRCRAFT's callsign plus a two-digit sequence, e.g. `EVO2-07`.
+     *
+     * WHY NOT "Friendly Marker". That was the DJI blueprint's scheme and it does not survive
+     * contact with a real shared picture: with two aircraft up, a "Friendly Marker" from one is
+     * indistinguishable from a "Friendly Marker" from the other, on everyone else's screen. The
+     * name now answers "who dropped this, and in what order" without anyone having to ask.
+     *
+     * The counter runs 00..99 and wraps (operator, 2026-08-02). It deliberately does NOT reset
+     * per flight — a number that restarts every takeoff would produce two different `-03`s in
+     * one afternoon, which is the collision this scheme exists to prevent. Wrapping at 99 can
+     * still collide eventually, but only after a hundred markers, by which point the old ones
+     * have passed their 72-hour stale time and left everyone's screen.
+     *
+     * Falls back to a bare sequence if the bridge has never started (no callsign yet) rather
+     * than inventing an aircraft name — a marker labelled with a guessed callsign is worse than
+     * one labelled with none.
+     */
+    private fun nextMarkerName(): String {
+        val prefs = appContext?.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        if (prefs == null) {
+            // Not fatal, but it must not pass silently: with no prefs the counter cannot
+            // persist, so EVERY marker would be named -00 and they would collide with each
+            // other on the shared picture. That is exactly the failure this scheme exists to
+            // prevent, so say so loudly rather than shipping quiet duplicates.
+            AppLog.w(TAG, "marker sequence unavailable (init() not called?) — naming may collide")
+        }
+        val n = synchronized(this) {
+            val next = ((prefs?.getInt(KEY_MARKER_SEQ, -1) ?: -1) + 1) % 100
+            prefs?.edit()?.putInt(KEY_MARKER_SEQ, next)?.apply()
+            next
+        }
+        val seq = "%02d".format(n)
+        val cs = TakBridgeHolder.droneCallsign?.trim()?.takeIf { it.isNotEmpty() }
+        return if (cs != null) "$cs-$seq" else seq
     }
 
     private fun onPinTap(pin: Pin): Boolean {
@@ -224,7 +261,55 @@ object TakDropMarkers {
             AppLog.i(TAG, "pin sent to TAK: ${pin.key} uid=$sent")
             ui?.toast("Sent ${pin.name} to TAK")
         }
+        if (isFirstSend) scheduleRebroadcast(pin)
     }
+
+    /**
+     * Re-sends a pin once, [REBROADCAST_DELAY_MS] after its first successful send.
+     *
+     * WHY (operator, 2026-08-02). CoT markers are fire-and-forget: a teammate whose ATAK
+     * connects thirty seconds after the drop never receives it, and nobody in the air knows
+     * that happened. The old remedy was for the pilot to notice and hit Re-send by hand, which
+     * means the fix depended on the one person least able to spare the attention.
+     *
+     * Re-sending under the SAME uid is what makes this safe. Clients that already have the
+     * marker move it in place — to the identical position, so nothing visibly happens — and
+     * clients that missed it draw it for the first time. Nobody sees a duplicate.
+     *
+     * Deliberately ONCE, not a repeating heartbeat. One extra packet closes the join window
+     * that actually occurs in practice; a permanent re-broadcast of every marker ever dropped
+     * would grow without bound for the rest of the flight.
+     *
+     * Skipped if the pin is deleted before the timer fires, and skipped for the quick marker,
+     * which is re-sent on every re-aim anyway.
+     */
+    private fun scheduleRebroadcast(pin: Pin) {
+        if (pin.quick) return
+        val key = pin.key
+        rebroadcast.postDelayed({
+            val live = pins[key] ?: run {
+                AppLog.v(TAG, "rebroadcast skipped — pin $key no longer exists")
+                return@postDelayed
+            }
+            val tak = TakManager.getInstance()
+            val uid = live.cotUid
+            if (uid == null || !tak.isConnected) {
+                AppLog.w(TAG, "rebroadcast skipped for $key — uid=$uid connected=${tak.isConnected}")
+                return@postDelayed
+            }
+            // Same uid, current values: this is an UPDATE, not a second marker. Reads whatever
+            // the pin holds NOW, so a rename or move inside the delay window is carried too.
+            tak.sendMarkerWithUid(uid, live.lat, live.lon, live.alt, live.affiliation.id,
+                live.name, "", TakMissionManager.joinedFeed)
+            AppLog.i(TAG, "rebroadcast \"${live.name}\" uid=$uid (catches late-joining clients)")
+        }, REBROADCAST_DELAY_MS)
+    }
+
+    private val rebroadcast = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** Long enough for a late client to finish connecting, short enough to still be the same
+     *  tactical moment. */
+    private const val REBROADCAST_DELAY_MS = 60_000L
 
     private fun deletePin(pin: Pin) {
         pin.marker?.let { map?.overlays?.remove(it) }
@@ -267,6 +352,8 @@ object TakDropMarkers {
     )
 
     private const val KEY_QUICK_CALLSIGN = "quick_marker_callsign"
+    /** Two-digit marker sequence, 00..99, wrapping. Survives restarts on purpose. */
+    private const val KEY_MARKER_SEQ = "marker_seq"
 
     /**
      * This install's quick-marker callsign. Chosen once, then persisted — the same reasoning as

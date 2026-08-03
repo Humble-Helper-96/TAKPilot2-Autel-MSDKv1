@@ -651,7 +651,13 @@ object TakBridgeHolder {
     val currentVFovBase: Double get() = vFovBase
     val currentZoomFactor: Double get() = zoomFactor
 
+    /** The aircraft's TAK callsign, or null before the bridge has ever been started. Read by
+     *  [TakDropMarkers] so a dropped marker's name says WHICH aircraft dropped it. */
+    @Volatile var droneCallsign: String? = null
+        private set
+
     fun start(droneUid: String, droneCallsign: String) {
+        this.droneCallsign = droneCallsign
         bridge?.stop()
         bridge = AutelTakBridge(droneUid, droneCallsign).also {
             it.videoUrl = videoUrl

@@ -337,22 +337,34 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             onMarkersListTapped()
             true
         }
+        // SHORT TAP IS ALWAYS "CREATE AND DROP A MARKER" (operator, 2026-08-02). Same split as
+        // the DJI sibling: tap makes a new marker, long-press manages the existing ones.
+        //
+        // An earlier pass sent a GATED short tap to the markers list instead. That came from a
+        // real complaint — the button used to be a dead end when the aim was poor — but it
+        // over-corrected: on the ground, or at a shallow gimbal angle, the gate is the NORMAL
+        // state, so in practice both gestures landed on the same list and the create flow became
+        // unreachable. Two gestures that do the same thing are one gesture and a bug.
+        //
+        // So the picker opens unconditionally and the gate is evaluated at PLACEMENT. The pilot
+        // always reaches the menu, and still cannot place a marker whose position would be wrong
+        // — which was the point of the gate all along. The reason is shown in the picker's title
+        // too, so it is known BEFORE choosing rather than after.
         findViewById<ImageButton>(R.id.flightDropPinButton).setOnClickListener {
             AppLog.v(TAG, "Drop Pin tapped")
-            val gp = TakBridgeHolder.lookPoint()
-            if (aimTooPoorToDrop()) {
-                // The gate blocks PLACING a marker, not MANAGING them. A tap that only refused
-                // made the button a dead end: the pilot could not rename, re-send, delete or
-                // clear existing markers just because they happened to be low or shallow, which
-                // are exactly the moments (on the ground, or just after landing) when tidying up
-                // is most likely. So say why dropping is unavailable, then open the list anyway.
-                refuseDropForAim()
-                onMarkersListTapped()
-            } else if (gp == null) {
-                AppLog.w(TAG, "drop refused — no look-point (GPS/gimbal not ready)")
-                toast("Can't drop: camera look-point not available (GPS/gimbal not ready)")
-            } else {
-                pickAffiliationThen { aff -> TakDropMarkers.placeAt(aff, gp.first, gp.second, gp.third) }
+            pickAffiliationThen { aff ->
+                // Re-read the look-point HERE, not before the dialog: the aircraft keeps flying
+                // while the picker is open, so the position captured when the button was tapped
+                // may be seconds stale by the time an affiliation is chosen.
+                val gp = TakBridgeHolder.lookPoint()
+                when {
+                    aimTooPoorToDrop() -> refuseDropForAim()
+                    gp == null -> {
+                        AppLog.w(TAG, "drop refused — no look-point (GPS/gimbal not ready)")
+                        toast("Can't drop: camera look-point not available (GPS/gimbal not ready)")
+                    }
+                    else -> TakDropMarkers.placeAt(aff, gp.first, gp.second, gp.third)
+                }
             }
         }
     }
@@ -2012,10 +2024,19 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun affiliationRows(affs: Array<TakDropMarkers.Affiliation>) =
         affs.map { it.res to it.label }
 
+    /**
+     * The create-a-marker menu: pick an affiliation, then [then] places it.
+     *
+     * Opens even when the drop gate is closed, and says so in the title. Hiding the menu
+     * whenever a marker could not be placed made the whole create flow vanish during the states
+     * it is most often in — on the ground, or at a shallow gimbal angle — and left the pilot
+     * with no way to see what the choices even were.
+     */
     private fun pickAffiliationThen(then: (TakDropMarkers.Affiliation) -> Unit) {
         val affs = TakDropMarkers.Affiliation.values()
+        val blocked = dropRefusalReason()
         AlertDialog.Builder(this, R.style.TakDialogTheme)
-            .setTitle("Marker affiliation")
+            .setTitle(if (blocked == null) "Marker affiliation" else "Can't place yet: $blocked")
             .setAdapter(iconRowAdapter(affiliationRows(affs))) { _, which ->
                 AppLog.v(TAG, "affiliation chosen: ${affs[which].label}")
                 then(affs[which])

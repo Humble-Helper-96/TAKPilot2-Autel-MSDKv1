@@ -21,7 +21,15 @@ public class CotBuilder {
     private static final long DRONE_STALE_DURATION_MS = 120000; // 2 minutes
 
     // Pilot-dropped 2525 markers — see the note in buildMarker().
-    private static final long MARKER_STALE_DURATION_MS = 14 * 60 * 60 * 1000L; // 14 hours
+    //
+    // 72 HOURS (operator, 2026-08-02). This is how long a dropped marker survives on OTHER
+    // people's screens before their client drops it, so it is an operational choice rather than
+    // a technical one: it has to outlast a multi-day callout without leaving last week's markers
+    // cluttering the picture. Raised from 14 hours, which did not survive an overnight.
+    //
+    // Re-sending a marker refreshes its stale time on every client that receives it, so a pin
+    // that is still wanted can be kept alive indefinitely from the markers list.
+    private static final long MARKER_STALE_DURATION_MS = 72 * 60 * 60 * 1000L; // 72 hours
 
     // Sensor point of interest — the ground point the drone camera is looking at.
     private static final String SENSOR_POINT_TYPE = "b-m-p-s-p-i";
