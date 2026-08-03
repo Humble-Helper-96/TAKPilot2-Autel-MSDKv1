@@ -19,15 +19,10 @@ import com.taklite.util.AppLog
  * and killed the process, task removal tore down one and killed nothing. Both now call
  * [releaseAll], so they cannot drift apart again.
  *
- * Order matters, and there are now two rules:
- *
- *  1. Consumers of the aircraft link go first (video capture, then the telemetry bridge, then
- *     TAK), and the aircraft link itself after them, so nothing is mid-write when the transport
- *     disappears. Autel Explorer is un-hidden only once that link is released.
- *  2. **The foreground service is stopped LAST — after the Explorer restore it guarantees.** It
- *     is the delivery mechanism for `onTaskRemoved`; killing it before the restore leaves a
- *     window in which the process can die with Explorer still hidden and nothing left to put it
- *     back. See [TakSessionAnchor] for the mirror-image rule on the way in.
+ * Order matters: consumers of the aircraft link go first (video capture, then the telemetry
+ * bridge, then TAK), and the aircraft link itself after them, so nothing is mid-write when the
+ * transport disappears. The foreground service is stopped last — it is the delivery mechanism for
+ * `onTaskRemoved` and holds no state, so stopping it after everything else costs nothing.
  */
 object AppTeardown {
     private const val TAG = "AppTeardown"
@@ -46,15 +41,8 @@ object AppTeardown {
         runCatching { TakBridgeHolder.stop() }
         runCatching { TakManager.getInstance().disconnect() }
         runCatching { AutelProductHolder.release() }
-        // Explorer only after the aircraft link is released. Un-hiding it while we still hold the
-        // camera and video channels would invite it straight into the contention this suppression
-        // exists to prevent — Explorer comes back to a grey screen and both apps fight over a
-        // single-client link.
-        runCatching { ExplorerSuppressor.restore(ctx, "app teardown") }
-        // The foreground service goes LAST, after the restore it exists to guarantee. Stopping it
-        // earlier — which is what this did until 2026-08-02 — opens a window where the process
-        // could die with Explorer still hidden and no running service whose onTaskRemoved could
-        // have saved it. The service holds no state, so stopping it last costs nothing.
+        // The foreground service goes last — it holds no state, and it is the delivery mechanism
+        // for onTaskRemoved, so it should outlive the things it was keeping alive.
         runCatching { TakForegroundService.stopForTeardown(ctx) }
         AppLog.i(TAG, "releaseAll: done")
     }

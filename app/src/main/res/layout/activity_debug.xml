@@ -84,20 +84,14 @@
                 android:text="The radar reports continuously and fills the log. Leave this off unless you are examining obstacle avoidance. Avoidance switch changes and warnings are always kept."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
-            <!-- Autel Explorer suppression. Lives on the Debug screen, not Pre-Flight: it is a
-                 provisioning-level control, and the restore button here is the pilot-reachable
-                 escape hatch if Explorer is ever left hidden. -->
+            <!-- Autel Explorer watchdog — a single on/off toggle. Kills Explorer's background
+                 process when it tries to take the aircraft link. No permanent change to the
+                 controller; Explorer opens normally when the pilot opens it. -->
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingTop="16dp"
                 android:text="Autel Explorer" android:textColor="@color/tp_text_primary"
                 android:textSize="16sp" android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/debugExplorerStatus"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingTop="2dp"
-                android:textColor="@color/tp_text_tertiary" android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -106,29 +100,21 @@
                 <CheckBox android:id="@+id/debugExplorerToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Keep Explorer closed while this app runs" android:textColor="@color/tp_text_light"
+                    android:text="Close Explorer if it takes the aircraft link" android:textColor="@color/tp_text_light"
                     android:textSize="15sp" />
             </LinearLayout>
 
             <TextView
+                android:id="@+id/debugExplorerStatus"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="Autel Explorer can start on its own and take the aircraft link, which stops the video with no warning. This keeps it closed. Explorer comes back when you close this app. You need Explorer for firmware updates, compass calibration and registration."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
-            <Button
-            style="@style/TakButton.Neutral"
-                android:id="@+id/debugExplorerRestoreButton"
+            <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Restore Explorer now" />
-
-            <Button
-            style="@style/TakButton.DangerSoft"
-                android:id="@+id/debugExplorerDeprovisionButton"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Remove device-owner rights" />
+                android:paddingStart="8dp" android:paddingTop="4dp"
+                android:text="Autel Explorer can start on its own and take the aircraft link, which stops the video with no warning. This closes it when that happens. It does not change Explorer permanently — you can still open Explorer yourself for firmware updates, compass calibration and registration."
+                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <Button
             style="@style/TakButton.Primary"

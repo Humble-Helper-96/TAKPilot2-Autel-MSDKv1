@@ -33,18 +33,16 @@ class TakForegroundService : Service() {
         startForeground(NOTIF_ID, buildNotification(callsign))
 
         // A null intent means START_STICKY resurrected us, not that somebody started us. If there
-        // is also no task, this process has no activity, no recents entry, and therefore no
-        // onTaskRemoved will EVER be delivered — so an Explorer restore owed at this point would
-        // never be paid, and the notification would sit there permanently with no way to clear
-        // it. This is reachable: the app was OOM-killed in flight on 2026-08-02, and a pilot
-        // swiping the dead task away afterwards produces exactly this state.
+        // is also no task, this process has no activity and no recents entry, so onTaskRemoved
+        // will never be delivered and this notification would sit there permanently with no way to
+        // clear it. Reachable: the app was OOM-killed in flight on 2026-08-02, and a pilot swiping
+        // the dead task away afterwards produces exactly this state. Stand down cleanly.
         if (intent == null) {
             val tasks = runCatching {
                 (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).appTasks
             }.getOrDefault(emptyList())
             if (tasks.isEmpty()) {
-                AppLog.w("TP2Explorer", "sticky restart with no task — restoring Explorer, stopping")
-                runCatching { ExplorerSuppressor.restore(applicationContext, "sticky restart, no task") }
+                AppLog.w(TAG, "sticky restart with no task — stopping")
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -126,18 +124,10 @@ class TakForegroundService : Service() {
             tak -> "Streaming $callsign to TAK"
             else -> "TAKPilot is running."
         }
-        // Tell the pilot how to get Explorer back. Hiding Explorer removes its launcher icon, so
-        // someone who needs a firmware update, compass calibration or aircraft registration finds
-        // it simply GONE with no explanation. Without this line the only answers are the Debug
-        // screen or adb — neither of which is discoverable in a field. The shade is where they
-        // are already looking when they wonder what this app is doing.
-        val text = if (ExplorerSuppressor.isRestoreOwed(this)) {
-            "$base\nExplorer paused · swipe TAKPilot away to restore it"
-        } else base
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(base))
             .setContentTitle("TAKPilot2 running")
-            .setContentText(text)
+            .setContentText(base)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -204,18 +194,15 @@ class TakForegroundService : Service() {
          * were already wrong before Explorer suppression existed: [AutelProductHolder] starts
          * this service on aircraft connect precisely so a swipe tears the aircraft down, and
          * tapping the TAK badge to disconnect destroyed that anchor while the aircraft was still
-         * held. With suppression on it is worse — it would strand Explorer hidden.
+         * held.
          *
-         * Keeps the service alive while the aircraft is connected, TAK is connected, or an
-         * Explorer restore is owed. Otherwise stops it, which is byte-for-byte the old behaviour
-         * on a controller with suppression off and nothing connected.
+         * Keeps the service alive while the aircraft or TAK is connected; otherwise stops it.
          */
         fun releaseIfIdle(context: Context) {
             val ctx = context.applicationContext
             val aircraft = AutelProductHolder.isConnected
             val tak = runCatching { TakManager.getInstance().isConnected }.getOrDefault(false)
-            val owed = ExplorerSuppressor.isRestoreOwed(ctx)
-            if (aircraft || tak || owed) {
+            if (aircraft || tak) {
                 // Refresh rather than stop — this also corrects the notification wording for
                 // whatever just disconnected.
                 start(ctx, callsignFor(ctx))

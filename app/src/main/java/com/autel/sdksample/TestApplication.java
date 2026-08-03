@@ -62,24 +62,13 @@ public class TestApplication extends Application {
         // suppression, then the heavier SDK log setup — NOT the other way round.
         AppLog.init(this);
 
-        // Arm Autel Explorer suppression. Explorer is a system app that starts ITSELF and seizes
-        // the aircraft USB link; it killed a live flight on 2026-08-02 with the pilot never
-        // having opened it.
-        //
-        // This only REGISTERS a hook — the actual suppression fires on the first activity, not
-        // here. onCreate also runs when the process is started by a BROADCAST (BootRestoreReceiver
-        // for BOOT_COMPLETED, UsbBroadCastReceiver), where no pilot launched anything and there is
-        // no task, so no onTaskRemoved would ever fire to put Explorer back. Suppressing from
-        // here stranded Explorer hidden until the next reboot, and made BOOT_COMPLETED hide it
-        // and immediately un-hide it.
-        //
-        // The few hundred ms this costs on a cold launch is affordable because
-        // setApplicationHidden(true) FORCE-STOPS the package — an Explorer that woke moments
-        // earlier is killed, not merely hidden, so a slightly later call still recovers it.
-        //
-        // NO-OP unless the controller is provisioned as device owner AND the operator has
-        // switched suppression on. See TakSessionAnchor and ExplorerSuppressor.
-        com.autel.sdksample.tak.TakSessionAnchor.INSTANCE.install(this);
+        // Start the Autel Explorer watchdog. Explorer is a system app that starts ITSELF and
+        // seizes the aircraft USB link; it killed a live flight on 2026-08-02 with the pilot never
+        // having opened it. The watchdog kills its background process on launch, on its USB
+        // broadcasts, and on a low-frequency poll — a no-permanent-change mitigation, proven on
+        // hardware 2026-08-03. (This replaced the earlier device-owner design, which required a
+        // forbidden permanent change to the controller.) See ExplorerWatchdog.
+        com.autel.sdksample.tak.ExplorerWatchdog.INSTANCE.onAppStart(this);
 
         initXlog();
         initAutelSdkLog();
@@ -162,20 +151,6 @@ public class TestApplication extends Application {
         public void uncaughtException(Thread thread, Throwable ex) {
             if (AppLog.getEnabled()) {
                 AppLog.writeCrash(thread, ex);
-            }
-            // Best-effort Explorer restore before the process dies. A crash never runs
-            // AppTeardown, so without this a hidden Explorer stays hidden until the next boot —
-            // and Explorer is where firmware updates, compass calibration and registration live.
-            // A binder call from a crashing thread is not guaranteed to complete, hence the
-            // swallow; a partial chance is worth one line when the alternative is a pilot
-            // finding Explorer simply gone.
-            try {
-                android.app.Application app = TestApplication.getInstance();
-                if (app != null) {
-                    com.autel.sdksample.tak.ExplorerSuppressor.INSTANCE
-                            .restore(app, "uncaught exception");
-                }
-            } catch (Throwable ignored) {
             }
             if (previous != null) {
                 previous.uncaughtException(thread, ex);
