@@ -125,6 +125,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppLog.v(TAG, "onCreate")
+
+        // OOM-restart guard. If the app is killed for memory in flight, Android restores the task
+        // and recreates THIS activity directly — into a cold process where the Autel SDK was never
+        // armed (install() only runs from Home). Coming up here would show a dead aircraft link and
+        // a frozen HUD that looks live. The tell: we were restored (savedInstanceState != null) yet
+        // this process never passed through Home. Bounce to Home, which re-arms the product listener
+        // and lets the pilot re-enter the flight screen deliberately.
+        if (savedInstanceState != null && !TakPilotHomeActivity.visitedThisProcess) {
+            AppLog.w(TAG, "restored into a cold process (OOM restart) — routing to Home")
+            startActivity(
+                Intent(this, TakPilotHomeActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+            finish()
+            return
+        }
+
         // osmdroid must be configured before the MapView inflates. Shared with Pre-Flight
         // Setup so the cache budget and paths cannot drift between the two screens.
         MapTileCache.configure(this)

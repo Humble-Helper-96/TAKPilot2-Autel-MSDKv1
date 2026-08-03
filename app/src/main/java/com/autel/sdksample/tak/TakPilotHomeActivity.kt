@@ -57,6 +57,10 @@ class TakPilotHomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_takpilot2_home)
         AppLog.v(TAG, "onCreate")
+        // Mark that this process has passed through Home. Read by FlightActivity to tell a normal
+        // Home→Flight entry from Android resurrecting the flight screen into a cold process after
+        // an OOM kill (see FlightActivity.onCreate's cold-restart guard).
+        visitedThisProcess = true
 
         // Wire the aircraft-connection singleton once, then silently reconnect TAK with
         // saved enrollment so the operator lands here already connected.
@@ -256,5 +260,18 @@ class TakPilotHomeActivity : AppCompatActivity() {
             ?: takDot.background?.setTint(color)
     }
 
-    companion object { private const val TAG = "TakPilotHomeActivity" }
+    companion object {
+        private const val TAG = "TakPilotHomeActivity"
+
+        /**
+         * True once Home has run in the current process. Survives config changes (same process);
+         * reset to false whenever the OS recreates the process. FlightActivity reads it to
+         * distinguish a deliberate Home→Flight entry from Android resurrecting the flight screen
+         * directly into a cold process after an OOM kill — in the cold-process case the Autel SDK
+         * was never armed ([AutelProductHolder.install] runs from Home), so the flight screen would
+         * otherwise come up with a dead aircraft link and a frozen HUD.
+         */
+        @Volatile var visitedThisProcess = false
+            private set
+    }
 }
