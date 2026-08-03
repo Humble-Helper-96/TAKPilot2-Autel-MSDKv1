@@ -114,8 +114,8 @@ class FieldGuideActivity : AppCompatActivity() {
         note("Do not use this app for firmware updates, compass calibration, gimbal " +
             "calibration or aircraft registration. Do these tasks first with the Autel app.")
 
-        note("You fly the aircraft with the sticks on the controller, as usual. This app does " +
-            "not change the sticks. It does not change the RTH button on the controller.")
+        note("You fly the aircraft with the sticks on the controller, as usual. It does not " +
+            "change the RTH button on the controller.")
 
         note("If the TAK icon on the flight screen is red, the app does not send data to your " +
             "team. The aircraft flies correctly, but your team cannot see the aircraft or " +
