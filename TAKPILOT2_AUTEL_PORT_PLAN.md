@@ -2074,9 +2074,17 @@ unaffected (verified on-device: `savedInstanceState` is null on a fresh launch).
 can't be reproduced without root, but the two conditions the guard reads are framework/JVM
 guarantees.
 
-**Defect #2 (foreground-service restart scheduled ~56 s out) is still open** — that is Android's
-`START_STICKY` restart backoff, not something the guard touches. Revisit alongside the memory-load
-reduction (below); a lighter process is less likely to be killed in the first place.
+**Defect #2 (foreground-service restart scheduled ~56 s out) — mostly moot in practice, downgraded
+from blocker.** That 56 s is Android's independent `START_STICKY` backoff for the *service*. But the
+same log shows the *activity* was restarted in **0.3 s** (death `19:52:34.423` → `Start proc …
+TakPilotHomeActivity 19:52:34.733`), because a TOP activity is restarted immediately. Home's connect
+path (`AutelProductHolder` → `TakForegroundService.start`) then re-arms the service on aircraft
+reconnect — well before the 56 s backoff would have fired — so the backoff is preempted, not waited
+on. The real exposure is only the telemetry/TAK blackout while the process is genuinely dead, which
+is bounded by how fast the aircraft re-links, not by the service schedule. The durable mitigation is
+still **less memory pressure** so the LMK does not pick the flight app at all — but note the
+airdata removal lever is off the table (`com.airdata.uav.app` cannot be removed from this
+controller, [memory] `airdata-cannot-be-removed`).
 
 Numbers for whoever picks this up: device has **3.76 GB**; TAKPilot sits at **~232 MB PSS**, of
 which **~86 MB is graphics** (video decode + map + AR overlay). `com.airdata.uav.app` should come
