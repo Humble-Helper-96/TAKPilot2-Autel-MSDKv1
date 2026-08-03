@@ -65,7 +65,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="Uncheck to hide the TAK bridge/CoT chatter (2s telemetry push, TakManager, CotParser) and leave only app logs — video, camera, DTED, UI."
+                android:text="Clear this box to hide the TAK messages. The log then shows only the app: video, camera, terrain and screen."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <LinearLayout
@@ -81,7 +81,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="The radar reports continuously and fills the log. Leave this off unless you are examining obstacle avoidance. Avoidance switch changes and warnings are always kept."
+                android:text="The radar sends data all the time and fills the log. Keep this box clear. Select it only to examine obstacle avoidance. The app always keeps the avoidance changes and the warnings."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <!-- Autel Explorer watchdog — a single on/off toggle. Kills Explorer's background
@@ -113,7 +113,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="4dp"
-                android:text="Autel Explorer can start on its own and take the aircraft link, which stops the video with no warning. This closes it when that happens. It does not change Explorer permanently — you can still open Explorer yourself for firmware updates, compass calibration and registration."
+                android:text="Autel Explorer can start on its own and take the aircraft link. Then the video stops with no warning. This option closes Explorer when that happens. It does not change Explorer. You can still open Explorer for firmware updates, compass calibration and registration."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <Button

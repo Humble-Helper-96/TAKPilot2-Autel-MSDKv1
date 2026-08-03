@@ -150,7 +150,7 @@ class DebugActivity : AppCompatActivity() {
         val file = AppLog.activeLogFile()
         if (!file.exists()) {
             if (lastRenderedLength != 0L) {
-                logText.text = "(no log yet — enable logging to start capturing)"
+                logText.text = "(No log yet. Turn on Logging enabled to start.)"
                 lastRenderedLength = 0
             }
             meta.text = ""
