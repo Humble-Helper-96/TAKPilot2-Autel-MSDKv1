@@ -215,8 +215,18 @@ per-frame allocation, now removed:
   field.
 Verified on-device with live obstacle radar: the red edge arc (2.2 ft), the REAR chevron
 (1.6 ft) and the crosshair all render pixel-identically. `ArOverlayView`'s `.format()` diag calls
-are throttled to 1 Hz and gated (`logThisPass`), not per-frame — left as-is. `taklite/` TLS/CoT/cert
-and the video pipeline are STILL unopened.
+are throttled to 1 Hz and gated (`logThisPass`), not per-frame — left as-is.
+
+**Update 2026-08-03 — video pipeline reviewed (commit 7ba980c).** `AutelVideoStreamer`,
+`ScreenCaptureEncoder`, `ScreenCaptureService` and `VideoStreamerHolder` audited. The shipping
+screen-capture path is sound (FGS-before-projection ordering, drain-thread shutdown gated then
+joined before codec release, projection callback + `onTaskRemoved` teardown, correct H.265 NAL
+classification). Found one real bug in the aircraft-camera path — which nothing calls in production
+— an H.264/H.265 mis-detection in `sniffParameterSets`; that whole dead path was deleted rather
+than patched, which also retired the Phase-4 codec/`AutelCodecView` concurrency question. Verified
+the live path end-to-end on-device after deletion.
+
+**`taklite/` TLS/CoT/cert enrollment (the security surface) is STILL unopened.**
 
 ---
 
