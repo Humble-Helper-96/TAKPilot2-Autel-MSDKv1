@@ -193,7 +193,11 @@ the work: it is the largest untouched surface and the screen a pilot reads while
 - **#12 Field Guide staleness** — RESOLVED. The guide listed the failsafe as "Return Home, Hover
   or Land" — Hover/Land were removed 2026-08-02. Now "the aircraft returns to home". Also swept
   the guide's own "drone" strays (it mandates "aircraft, never drone").
-- **#13 Field Guide length** — NOT done (polish). The guide is ~4,000 words but sound; tightening
-  deferred.
+- **#13 Field Guide length** — ✅ tightened 2026-08-03. Removed the genuine redundancy and stale
+  content (the duplicated marker-delete rule, a repeated zoom warning, an aim-correction procedure
+  restated instead of pointing to §4, and a stale §5 warning that still listed the removed video
+  re-sync button and pre-flight-test "not yet flown" controls). The remaining length is distinct
+  per-control safety coverage — the guide's entries are deliberately self-contained, so no further
+  cuts were made without removing real content. Kept in ASD-STE100.
 
-**Count:** 12 resolved, 1 moot (#8), 1 deferred (#13). Verified on-device.
+**Count:** 13 resolved, 1 moot (#8). Verified on-device.

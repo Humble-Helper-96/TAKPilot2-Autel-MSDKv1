@@ -494,9 +494,8 @@ class FieldGuideActivity : AppCompatActivity() {
                 "When the camera is near horizontal, a small error in the angle moves the " +
                 "marker a long distance on the ground. A steep angle is more accurate than a " +
                 "view from a long distance. If the position of a marker is important, fly " +
-                "nearer and point the camera down. Do not use the zoom from a long distance. " +
-                "Without terrain data, the app must calculate with flat ground, and this " +
-                "adds more error.",
+                "nearer and point the camera down. Without terrain data, the app must " +
+                "calculate with flat ground, and this adds more error.",
             listOf(
                 "These values are correct only with a good GPS position. A weak GPS position " +
                     "or large metal structures near the aircraft cause more error at all " +
@@ -507,9 +506,7 @@ class FieldGuideActivity : AppCompatActivity() {
                 "A person measured these angles on a Mini 2 aircraft. No person measured them " +
                     "on the EVO II. Use them as a guide until a person measures them again.",
                 "If markers go to a position that is not correct at all angles, the aim of " +
-                    "the camera can have an error. Touch and hold the AR button, then " +
-                    "select Aim Offsets to correct it. Do this at a small angle (15° to " +
-                    "25° down). At a steep angle you cannot see the error.",
+                    "the camera can have an error. See section 4 to correct it.",
             ),
         )
 
@@ -529,10 +526,8 @@ class FieldGuideActivity : AppCompatActivity() {
                 "name and a type.",
             listOf(
                 "To remove the quick marker, delete it from the marker list. Touch and hold " +
-                    "the marker button to open the list. Then you can put a new quick marker.",
-                "The quick marker has the same rules as other markers. If you delete it, the " +
-                    "app removes it from your screen only. It stays on the screens of your " +
-                    "team.",
+                    "the marker button to open the list.",
+                "The quick marker follows the same rules as other markers.",
             ),
         )
 
@@ -707,8 +702,8 @@ class FieldGuideActivity : AppCompatActivity() {
         warn("Do not use a value of more than 2°. A large value shows a mechanical problem. " +
             "Examine the gimbal and the camera before you fly again.")
 
-        note("The app does not put a marker if the ring of the crosshair is red. If the app " +
-            "refuses, point the camera down more. See \"The crosshair\" in section 3.")
+        note("If the crosshair ring is red, the app does not put a marker. Point the camera " +
+            "down more.")
     }
 
     private fun sectionFive() {
@@ -719,10 +714,8 @@ class FieldGuideActivity : AppCompatActivity() {
         bullet("Satellite and hybrid map images (Pre-Flight Setup, Map Display). You can use " +
             "the street map or one custom map source.")
 
-        warn("Examine each control carefully on the first flight. A person flew the photo, " +
-            "the record function, the thermal camera, the exposure and the marker functions " +
-            "with an aircraft on 1 August 2026. No person flew these controls: the zoom, " +
-            "the signal bars, the video re-sync and the quick marker.")
+        warn("Examine each control on your first flight with a new aircraft. The controls " +
+            "were flown and passed a full flight test on 3 August 2026.")
     }
 
     // ------------------------------------------------------- content builders
