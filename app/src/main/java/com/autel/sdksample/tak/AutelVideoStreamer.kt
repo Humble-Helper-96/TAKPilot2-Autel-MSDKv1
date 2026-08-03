@@ -1,56 +1,43 @@
 package com.autel.sdksample.tak
 
 import android.content.Context
-import android.media.MediaCodec
-import android.os.SystemClock
 import com.taklite.util.AppLog
-import com.autel.common.error.AutelError
-import com.autel.sdk.video.AutelCodec
-import com.autel.sdk.video.AutelCodecListener
 import com.pedro.rtsp.rtsp.Protocol
 import com.pedro.rtsp.rtsp.RtspClient
 import com.pedro.rtsp.utils.ConnectCheckerRtsp
-import java.nio.ByteBuffer
 
 /**
- * AutelVideoStreamer — RTSP push of the EVO II camera. Port of TAKPilot2's
- * DroneVideoStreamer, but architecturally better on Autel:
+ * AutelVideoStreamer — RTSP push of the flight screen. Port of TAKPilot2's DroneVideoStreamer.
  *
- * **Current path: aircraft frames → decode → scale → H.265 re-encode → RTSP.** Autel MSDK
- * v1.5's [AutelCodecListener] hands us the aircraft's encoded Annex-B frames directly
- * ([AutelCodecListener.onFrameStream]) rather than only a decode surface, but every quality
- * profile still transcodes them down to a link-friendly size via [LowBandwidthTranscoder].
- *
- * (An earlier revision of this class was a true passthrough and this doc still claimed "zero
- * transcode, zero quality loss, near-zero CPU" long after profiles made that false. Corrected
- * 2026-07-31. Do not trust that claim if it reappears.)
- *
- * **STALE COMMENT REMOVED (2026-08-01).** This used to say screen capture was a "known gap"
- * still to be ported. It is NOT a gap — it is DONE and it is the live path: `ScreenCaptureService`
- * obtains the MediaProjection and calls [VideoStreamerHolder.startScreenCapture], so the team
- * sees the FPV *plus* HUD, AR markers and map, same as the DJI blueprint. The camera-feed path
- * below (`mediaProjection == null`) is the fallback, not the norm.
+ * **The path: MediaProjection screen capture → H.265 encode → RTSP.** `ScreenCaptureService`
+ * obtains the projection and calls [VideoStreamerHolder.startScreenCapture]; [ScreenCaptureEncoder]
+ * mirrors the whole flight screen (FPV *plus* HUD, AR markers and map, same as the DJI blueprint)
+ * into an encoder input surface. This means the stream does NOT depend on the aircraft: a lost
+ * link, a battery swap, or an aircraft that was never connected all leave the push running, and
+ * viewers keep seeing the controller instead of the feed going dead.
  *
  * This matters when reasoning about what the team sees: anything on this screen is in their
- * feed. Black bars, aspect changes and overlays are not local cosmetics. The comment cost real
- * debugging time on 2026-08-01 because the constructor's `mediaProjection = null` DEFAULT reads
- * like the camera path is the only one — check the CALL SITE, not the default.
+ * feed. Black bars, aspect changes and overlays are not local cosmetics.
  *
- * SPS/PPS (and VPS if the feed turns out to be H.265) are sniffed out of the byte stream;
- * [RtspClient.connect] blocks its worker up to 5 s waiting for them, so we register the
- * codec listener first and connect immediately after.
+ * (History: an aircraft-camera path once tapped the SDK's [com.autel.sdk.video.AutelCodecListener]
+ * for encoded frames and transcoded them. It was superseded by screen capture and, being unreached
+ * in production, removed 2026-08-03 — along with a latent H.264/H.265 mis-detection in its
+ * parameter-set sniffer. Screen capture reads the already-composited screen, so it needs no second
+ * codec tap and cannot contend with the on-screen `AutelCodecView`.)
  *
- * Push URL is the operator's EXACT path (rtsp://host:port/<path>); creds via
- * setAuthorization, transport via setProtocol. The full UAS-tool-style URL (creds + ?tcp)
- * is advertised in the drone CoT — identical behavior to the DJI original.
+ * The encoder produces SPS/PPS/VPS before [RtspClient.connect] — connect()'s worker waits up to
+ * 5 s for setVideoInfo — so the encoder is started first and connect follows immediately.
+ *
+ * Push URL is the operator's EXACT path (rtsp://host:port/<path>); creds via setAuthorization,
+ * transport via setProtocol. The full UAS-tool-style URL (creds + ?tcp) is advertised in the
+ * drone CoT — identical behavior to the DJI original.
  */
 class AutelVideoStreamer(
     private val context: Context,
     private val config: VideoConfig,
     private val onStatus: (Boolean, String) -> Unit,
-    /** When present, the stream is a capture of the flight screen rather than the aircraft's
-     *  camera feed. See [screenMode]. */
-    private val mediaProjection: android.media.projection.MediaProjection? = null,
+    /** The screen-capture projection. The stream is always a capture of the flight screen. */
+    private val mediaProjection: android.media.projection.MediaProjection,
 ) : ConnectCheckerRtsp {
 
     data class VideoConfig(
@@ -61,11 +48,11 @@ class AutelVideoStreamer(
         val streamId: String,
         val tcp: Boolean,
         /** Pilot-selected video quality: "low" | "standard" | "high", matching the DJI
-         *  blueprint's video_profile pref. Every profile is an on-device transcode. */
+         *  blueprint's video_profile pref. Every profile is an on-device encode. */
         val profile: String = "standard",
     ) {
-        val transcodeProfile: LowBandwidthTranscoder.TranscodeProfile
-            get() = LowBandwidthTranscoder.TranscodeProfile.fromPref(profile)
+        val transcodeProfile: TranscodeProfile
+            get() = TranscodeProfile.fromPref(profile)
 
         // -Low suffix flows through push/advertise/display URLs alike, so the CoT always
         // points at whichever stream is actually live — full-res and -Low are never both up.
@@ -89,38 +76,21 @@ class AutelVideoStreamer(
     }
 
     private val client = RtspClient(this)
-    private var codec: AutelCodec? = null
     @Volatile private var streaming = false
-    @Volatile private var paramsSet = false
     @Volatile private var stopped = false
     private var frameCount = 0
-    private var frameBytesSinceLog = 0L
-    private var startNs = 0L
 
-    // Only present in low-bandwidth mode — decodes the source stream and re-encodes it
-    // as a small H.264 stream instead of passing the source bytes straight through.
-    private var transcoder: LowBandwidthTranscoder? = null
     private var screenEncoder: ScreenCaptureEncoder? = null
-
-    // Sniffed parameter sets (kept WITH their Annex-B start codes; RootEncoder strips them).
-    private var sps: ByteArray? = null
-    private var pps: ByteArray? = null
-    private var vps: ByteArray? = null   // non-null only if the feed is H.265
-    private var sawHevcNal = false
 
     /**
      * True only when the RTSP session is up **and** we have actually pushed video.
      *
      * Both halves are needed. [streaming] alone means the server accepted our session, which
-     * says nothing about whether the aircraft is producing frames — the transcoder does not
-     * even start until SPS/PPS have been sniffed out of the aircraft's stream. A pilot reads
-     * the LIVE pill to decide whether the team can see what they see, so it must mean bytes
-     * are leaving the controller, not that a socket opened.
+     * says nothing about whether frames are flowing. A pilot reads the LIVE pill to decide
+     * whether the team can see what they see, so it must mean bytes are leaving the controller,
+     * not that a socket opened.
      */
     val isLive: Boolean get() = streaming && frameCount > 0
-
-    /** Screen capture whenever a projection was granted; aircraft-camera passthrough otherwise. */
-    private val screenMode: Boolean get() = mediaProjection != null
 
     /**
      * Returns false if the stream could not even be attempted, so the caller can drop this
@@ -129,18 +99,11 @@ class AutelVideoStreamer(
      * sent — the toolbar claiming the team had video when it did not.
      */
     fun start(): Boolean {
-        // Screen mode deliberately does NOT require the aircraft. Mirroring the screen is what
+        // Screen capture deliberately does NOT require the aircraft. Mirroring the screen is what
         // makes the push survive a link drop or a battery change: the viewer keeps seeing the
         // controller instead of the feed going dead, and a stream can be brought up before the
-        // aircraft is even powered. Requiring a codec here would throw that away.
-        val c = AutelProductHolder.codec
-        if (!screenMode && c == null) {
-            onStatus(false, "Aircraft not connected (no video source)")
-            return false
-        }
-        codec = c
+        // aircraft is even powered.
         stopped = false
-        startNs = System.nanoTime()
 
         client.setLogs(false)
         client.setProtocol(if (config.tcp) Protocol.TCP else Protocol.UDP)
@@ -148,160 +111,37 @@ class AutelVideoStreamer(
         client.setOnlyVideo(true)
         client.setReTries(10)
 
-        // Whichever source is in play, it must be producing parameter sets BEFORE connect —
-        // connect()'s worker waits up to 5s for setVideoInfo.
-        if (screenMode) {
-            val enc = ScreenCaptureEncoder(
-                context, mediaProjection!!, config.transcodeProfile,
-                onEncoded = { buf, bufInfo ->
-                    client.sendVideo(buf, bufInfo)
-                    // Count here too, not just on the aircraft path: isLive gates the LIVE
-                    // pill on frameCount, so without this the pill would sit on amber forever
-                    // while a screen capture streamed perfectly well.
-                    frameCount++
-                },
-                onParamsReady = { spsB, ppsB, vpsB -> client.setVideoInfo(spsB, ppsB, vpsB) },
-            )
-            if (!enc.start()) {
-                onStatus(false, "Screen capture failed to start")
-                return false
-            }
-            screenEncoder = enc
-        } else {
-            c!!.setCodecListener(codecListener, null)
+        // The encoder must be producing parameter sets BEFORE connect — connect()'s worker waits
+        // up to 5s for setVideoInfo.
+        val enc = ScreenCaptureEncoder(
+            context, mediaProjection, config.transcodeProfile,
+            onEncoded = { buf, bufInfo ->
+                client.sendVideo(buf, bufInfo)
+                // isLive gates the LIVE pill on frameCount, so without this the pill would sit
+                // on amber forever while a screen capture streamed perfectly well.
+                frameCount++
+            },
+            onParamsReady = { spsB, ppsB, vpsB -> client.setVideoInfo(spsB, ppsB, vpsB) },
+        )
+        if (!enc.start()) {
+            onStatus(false, "Screen capture failed to start")
+            return false
         }
+        screenEncoder = enc
+
         client.connect(config.pushUrl())
         AppLog.i(TAG, "push=${config.pushUrl()}  advertise=${config.urlSafe()}" +
-                "  [${config.transcodeProfile.name}: ${if (screenMode) "screen capture" else "transcoding"}]")
+                "  [${config.transcodeProfile.name}: screen capture]")
         onStatus(true, "Starting RTSP push → ${config.urlSafe()}")
         return true
     }
 
     fun stop() {
         stopped = true
-        try { codec?.cancel() } catch (t: Throwable) { AppLog.w(TAG, "codec cancel: ${t.message}") }
-        codec = null
         try { client.disconnect() } catch (t: Throwable) { AppLog.w(TAG, "disconnect: ${t.message}") }
-        transcoder?.release()
-        transcoder = null
         screenEncoder?.release()
         screenEncoder = null
         streaming = false
-        paramsSet = false
-        sps = null; pps = null; vps = null; sawHevcNal = false
-    }
-
-    // ---- Frame path ----
-
-    private val codecListener = object : AutelCodecListener {
-        override fun onFrameStream(videoBuffer: ByteArray?, isIFrame: Boolean, size: Int, pts: Long) {
-            if (stopped || videoBuffer == null || size <= 4) return
-            try {
-                if (!paramsSet) {
-                    sniffParameterSets(videoBuffer, size)
-                    val s = sps; val p = pps
-                    if (s != null && p != null && (!sawHevcNal || vps != null)) {
-                        run {
-                            // The -Low stream's SPS/PPS come from OUR encoder, not the
-                            // source's — client.setVideoInfo() is called from onParamsReady
-                            // once the transcoder's encoder actually produces them.
-                            transcoder = LowBandwidthTranscoder(
-                                isHevc = sawHevcNal,
-                                profile = config.transcodeProfile,
-                                onEncoded = { buf, bufInfo -> client.sendVideo(buf, bufInfo) },
-                                // The VPS is what tells RtspClient this is H.265 — it picks
-                                // H265Packet + the matching SDP only when this is non-null.
-                                onParamsReady = { spsB, ppsB, vpsB ->
-                                    client.setVideoInfo(spsB, ppsB, vpsB)
-                                },
-                            )
-                            AppLog.i(TAG, "transcoder started [${config.transcodeProfile.name}] (source " +
-                                    "${if (sawHevcNal) "H.265" else "H.264"})")
-                        }
-                        paramsSet = true
-                        AppLog.i(TAG, "parameter sets found (${if (vps != null) "H.265" else "H.264"}); " +
-                            "sps=${s.size}B pps=${p.size}B" + (vps?.let { " vps=${it.size}B" } ?: ""))
-                    } else return   // keep waiting for a keyframe carrying the params
-                }
-
-                // Every profile is a transcode now (Low/Standard/High), matching the DJI
-                // blueprint's video-quality choice — so frames always go through the
-                // transcoder rather than being pushed straight out. The raw-passthrough branch
-                // that used to live here is gone with the old lowBandwidth boolean; if a
-                // full-resolution passthrough tier is ever wanted back, it belongs as a fourth
-                // profile rather than a parallel code path.
-                transcoder?.submit(videoBuffer, size, isIFrame)
-
-                // Periodic throughput summary (not per-frame — this callback can run at 30fps).
-                // Counts SOURCE frames received; the transcoder logs its own (lower-rate)
-                // output throughput separately.
-                frameCount++
-                frameBytesSinceLog += size
-                if (frameCount % 150 == 0) {
-                    AppLog.v(TAG, "video: $frameCount frames pushed, ${frameBytesSinceLog / 1024}KB in last 150")
-                    frameBytesSinceLog = 0
-                }
-            } catch (t: Throwable) {
-                AppLog.w(TAG, "frame push failed: ${t.message}")
-            }
-        }
-
-        override fun onCanceled() { AppLog.i(TAG, "codec listener canceled") }
-
-        override fun onFailure(error: AutelError?) {
-            AppLog.w(TAG, "codec failure: ${error?.description}")
-            onStatus(false, "Video source error: ${error?.description}")
-        }
-    }
-
-    /**
-     * Walk Annex-B NAL units in [buf] and stash SPS/PPS (H.264 types 7/8) or VPS/SPS/PPS
-     * (H.265 types 32/33/34). Each stored WITH a 4-byte start code. Parameter sets ride
-     * along with every I-frame on drone downlinks, so this resolves within ~1 GOP.
-     */
-    private fun sniffParameterSets(buf: ByteArray, size: Int) {
-        var i = 0
-        while (i < size - 4) {
-            // find next start code (00 00 01 or 00 00 00 01)
-            val sc = when {
-                buf[i] == Z && buf[i + 1] == Z && buf[i + 2] == O -> 3
-                buf[i] == Z && buf[i + 1] == Z && buf[i + 2] == Z && i + 3 < size && buf[i + 3] == O -> 4
-                else -> { i++; continue }
-            }
-            val nalStart = i + sc
-            if (nalStart >= size) break
-            // find the END of this NAL (next start code or end of buffer)
-            var j = nalStart + 1
-            var nalEnd = size
-            while (j < size - 3) {
-                if (buf[j] == Z && buf[j + 1] == Z &&
-                    (buf[j + 2] == O || (buf[j + 2] == Z && j + 3 < size && buf[j + 3] == O))) {
-                    nalEnd = j; break
-                }
-                j++
-            }
-            val h264Type = (buf[nalStart].toInt() and 0x1F)
-            val h265Type = (buf[nalStart].toInt() shr 1) and 0x3F
-            when (h264Type) {
-                7 -> sps = withStartCode(buf, nalStart, nalEnd)
-                8 -> pps = withStartCode(buf, nalStart, nalEnd)
-            }
-            // H.265 signature: VPS(32)/SPS(33)/PPS(34). Only trust once we've seen a VPS —
-            // h265Type aliases h264 values otherwise.
-            if (h265Type == 32) { sawHevcNal = true; vps = withStartCode(buf, nalStart, nalEnd) }
-            if (sawHevcNal) when (h265Type) {
-                33 -> sps = withStartCode(buf, nalStart, nalEnd)
-                34 -> pps = withStartCode(buf, nalStart, nalEnd)
-            }
-            i = nalEnd
-        }
-    }
-
-    private fun withStartCode(buf: ByteArray, from: Int, to: Int): ByteArray {
-        val out = ByteArray(4 + (to - from))
-        out[0] = 0; out[1] = 0; out[2] = 0; out[3] = 1
-        System.arraycopy(buf, from, out, 4, to - from)
-        return out
     }
 
     // ---- ConnectCheckerRtsp ----
@@ -332,8 +172,6 @@ class AutelVideoStreamer(
 
     companion object {
         private const val TAG = "AutelVideoStreamer"
-        private const val Z: Byte = 0
-        private const val O: Byte = 1
     }
 }
 
@@ -363,7 +201,7 @@ object VideoStreamerHolder {
         context: Context,
         config: AutelVideoStreamer.VideoConfig,
         onStatus: (Boolean, String) -> Unit,
-        projection: android.media.projection.MediaProjection? = null,
+        projection: android.media.projection.MediaProjection,
     ): Boolean {
         streamer?.stop()
         val s = AutelVideoStreamer(context.applicationContext, config, onStatus, projection)
@@ -398,18 +236,19 @@ object VideoStreamerHolder {
     /**
      * Why a start attempt did not result in a stream. Three outcomes, not a boolean: the
      * caller must not tell a pilot to "set up the stream in Pre-Flight Setup" when the stream
-     * IS set up and the aircraft simply isn't connected.
+     * IS set up and it simply failed to start.
      */
     enum class StartResult { STARTED, NOT_CONFIGURED, FAILED }
 
     /**
-     * Start streaming using the video settings saved by TakConnectActivity. Used by the
-     * flight-screen LIVE button.
+     * Start streaming using the video settings saved by TakConnectActivity, capturing the flight
+     * screen via [projection]. Reached from [ScreenCaptureService] once it holds a granted
+     * projection (the flight-screen LIVE button requests the projection, which routes here).
      */
     fun startFromPrefs(
         context: Context,
         onStatus: (Boolean, String) -> Unit,
-        projection: android.media.projection.MediaProjection? = null,
+        projection: android.media.projection.MediaProjection,
     ): StartResult {
         val p = context.getSharedPreferences("takpilot2_tak", Context.MODE_PRIVATE)
         val host = p.getString("video_host", "") ?: ""

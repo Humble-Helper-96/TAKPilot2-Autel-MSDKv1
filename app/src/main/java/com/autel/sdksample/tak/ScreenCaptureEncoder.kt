@@ -17,7 +17,7 @@ import java.nio.ByteBuffer
 
 /**
  * Screen-capture H.265 encoder for the outbound RTSP push. Ported from the DJI blueprint's
- * `ScreenCaptureEncoder`, re-targeted to H.265 to match [LowBandwidthTranscoder.TranscodeProfile].
+ * `ScreenCaptureEncoder`, re-targeted to H.265 to match [TranscodeProfile].
  *
  * MediaProjection mirrors the whole flight screen — FPV, HUD, map, AR markers, toolbar — into a
  * [VirtualDisplay] sized to the profile, straight into the encoder's input Surface. Two
@@ -38,7 +38,7 @@ import java.nio.ByteBuffer
 class ScreenCaptureEncoder(
     context: Context,
     private val mediaProjection: MediaProjection,
-    private val profile: LowBandwidthTranscoder.TranscodeProfile,
+    private val profile: TranscodeProfile,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
     private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) -> Unit,
 ) {
@@ -247,8 +247,7 @@ class ScreenCaptureEncoder(
      * Pulls VPS/SPS/PPS out of the encoder's codec-config buffer.
      *
      * H.265 emits THREE parameter-set NALs where H.264 emits two, so this splits every NAL and
-     * classifies by header type rather than assuming a count — the same reasoning (and the same
-     * trap) as [LowBandwidthTranscoder.handleCodecConfig]. NALs keep their start codes; the
+     * classifies by header type rather than assuming a count. NALs keep their start codes; the
      * RTSP library strips them itself.
      */
     private fun handleCodecConfig(buf: ByteBuffer, info: MediaCodec.BufferInfo) {
@@ -324,7 +323,6 @@ class ScreenCaptureEncoder(
         /** Google's software HEVC encoder. Present on this controller; verified against its own
          *  /vendor/etc/media_codecs_google_c2_video.xml. */
         private const val SW_HEVC_ENCODER = "c2.android.hevc.encoder"
-        /** Kept in step with [LowBandwidthTranscoder]'s OUT_MIME. */
         /**
          * H.265 at the RAISED bitrates — the combination that has never actually been flown.
          *
