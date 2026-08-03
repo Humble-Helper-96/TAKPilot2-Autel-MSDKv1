@@ -46,7 +46,6 @@ import org.osmdroid.views.overlay.Polyline
  */
 class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
-    private lateinit var exposureReadout: TextView
     private lateinit var fpvClock: TextView
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
@@ -100,11 +99,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *  long-press, so "zoomed in or not" can no longer describe the state. */
     private var zoomLevel = 1
 
-    // ISO/shutter readout cache, refreshed by pollExposureReadout() every ~2s (no push
-    // listener exists for these on this SDK).
-    @Volatile private var lastIsoLabel: String? = null
-    @Volatile private var lastShutterLabel: String? = null
-
     // FAA cell lookup cache — see updateFaaCeiling.
     private var lastFaaGridRow = Int.MIN_VALUE
     private var lastFaaGridCol = Int.MIN_VALUE
@@ -113,6 +107,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     private val handler = Handler(Looper.getMainLooper())
     private var hudTickCount = 0
+
+    /** Live one-shot location request for the Home-point reset; removed as soon as a fix arrives
+     *  or the request times out, and on screen destroy. Null when nothing is pending. */
+    private var homeLocListener: android.location.LocationListener? = null
     private val refresh = object : Runnable {
         override fun run() {
             updateHud()
@@ -149,7 +147,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         goFullScreen()
 
-        exposureReadout = findViewById(R.id.exposureReadout)
         fpvClock = findViewById(R.id.fpvClock)
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
@@ -568,6 +565,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // fire against a destroyed activity if it is torn down inside their delay window. None
         // needs to survive the screen — they touch this screen's views.
         handler.removeCallbacksAndMessages(null)
+        // Stop a Home-reset location request if one is still waiting for a fix.
+        runCatching {
+            stopHomeLocationUpdates(
+                getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+            )
+        }
         arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         TakMapMarkers.onMapDestroyed()
@@ -632,9 +635,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // video", so it does not claim more than it knows.
         findViewById<View>(R.id.flightNoVideoCover).visibility =
             if (acOk) View.GONE else View.VISIBLE
-        // Slow-cadence camera reads piggyback on the HUD tick (500ms * 4 = ~2s).
-        if (hudTickCount % 4 == 0) pollExposureReadout()
-        exposureReadout.text = "ISO ${lastIsoLabel ?: "—"}   ${lastShutterLabel ?: "—"}"
 
         // REC shows the CAMERA's own reported state (MediaStatus events), not the last button
         // press — so a record that failed to start, or stopped itself (card full/removed),
@@ -952,46 +952,52 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             )
             return
         }
-        val loc = controllerLocation()
-        if (loc == null) {
-            AppLog.w(TAG, "reset home point aborted — no controller GPS fix")
-            toast("The controller has no GPS position. It cannot set the home point to you.")
-            return
-        }
-        AppLog.i(TAG, "reset home point: controller fix %.6f, %.6f (age=%ds, acc=%.0fm)"
-            .format(loc.latitude, loc.longitude,
-                (System.currentTimeMillis() - loc.time) / 1000, loc.accuracy))
+        // The controller's GPS receiver stays OFF until an app asks for updates, so
+        // getLastKnownLocation returns null forever on this hardware. Power it on and wait for a
+        // fix (see acquireControllerLocation) rather than reading an empty cache.
+        showNotice("Getting your location…")
+        acquireControllerLocation { loc ->
+            if (loc == null) {
+                AppLog.w(TAG, "reset home point aborted — no controller GPS fix")
+                toast("The controller has no GPS position. Make sure location is on, go " +
+                    "outside with a clear view of the sky, and try again.")
+                return@acquireControllerLocation
+            }
+            AppLog.i(TAG, "reset home point: controller fix %.6f, %.6f (age=%ds, acc=%.0fm)"
+                .format(loc.latitude, loc.longitude,
+                    (System.currentTimeMillis() - loc.time) / 1000, loc.accuracy))
 
-        // Destructive styling and the literal coordinates in the message, both matching the
-        // blueprint: this changes where RTH will fly the aircraft, and a stale controller fix
-        // is exactly the failure the pilot needs a chance to spot before confirming.
-        AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
-            .setTitle("Reset Home Point")
-            .setMessage("Set the aircraft's home point to your current location " +
-                "(%.6f, %.6f)? This changes where Return to Home will send it."
-                    .format(loc.latitude, loc.longitude))
-            .setPositiveButton("Set Home Here") { _, _ ->
-                AppLog.i(TAG, "reset home point confirmed — sending setLocationAsHomePoint")
-                fc.setLocationAsHomePoint(
-                    loc.latitude, loc.longitude,
-                    object : com.autel.common.CallbackWithNoParam {
-                        override fun onSuccess() {
-                            AppLog.i(TAG, "setLocationAsHomePoint: OK")
-                            runOnUiThread { showNotice("Home Point Updated") }
-                        }
-                        override fun onFailure(error: com.autel.common.error.AutelError?) {
-                            AppLog.w(TAG, "setLocationAsHomePoint failed: ${error?.description}")
-                            runOnUiThread {
-                                toast("Set home failed: ${error?.description ?: "unknown error"}")
+            // Destructive styling and the literal coordinates in the message, both matching the
+            // blueprint: this changes where RTH will fly the aircraft, and a stale controller fix
+            // is exactly the failure the pilot needs a chance to spot before confirming.
+            AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+                .setTitle("Reset Home Point")
+                .setMessage("Set the aircraft's home point to your current location " +
+                    "(%.6f, %.6f)? This changes where Return to Home will send it."
+                        .format(loc.latitude, loc.longitude))
+                .setPositiveButton("Set Home Here") { _, _ ->
+                    AppLog.i(TAG, "reset home point confirmed — sending setLocationAsHomePoint")
+                    fc.setLocationAsHomePoint(
+                        loc.latitude, loc.longitude,
+                        object : com.autel.common.CallbackWithNoParam {
+                            override fun onSuccess() {
+                                AppLog.i(TAG, "setLocationAsHomePoint: OK")
+                                runOnUiThread { showNotice("Home Point Updated") }
                             }
-                        }
-                    },
-                )
-            }
-            .setNegativeButton("Cancel") { _, _ ->
-                AppLog.i(TAG, "reset home point cancelled at confirm dialog")
-            }
-            .show()
+                            override fun onFailure(error: com.autel.common.error.AutelError?) {
+                                AppLog.w(TAG, "setLocationAsHomePoint failed: ${error?.description}")
+                                runOnUiThread {
+                                    toast("Set home failed: ${error?.description ?: "unknown error"}")
+                                }
+                            }
+                        },
+                    )
+                }
+                .setNegativeButton("Cancel") { _, _ ->
+                    AppLog.i(TAG, "reset home point cancelled at confirm dialog")
+                }
+                .show()
+        }
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -1018,18 +1024,73 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
     }
 
-    /** Most recent fix from the CONTROLLER (the Smart Controller V3 has its own GPS). Returns
-     *  the raw Location so the caller can log/judge its age and accuracy. */
-    private fun controllerLocation(): android.location.Location? {
+    /**
+     * Delivers a fix from the CONTROLLER (the Smart Controller V3 has its own GPS), or null.
+     *
+     * `getLastKnownLocation()` alone is a trap on this hardware: it reads a cache that nothing
+     * fills unless an app has called `requestLocationUpdates()`, so the receiver sits at
+     * `mStarted=false` and the cache stays null — permanently, outdoors included (see
+     * TakConnectActivity's note). So use a recent cached fix if we have one, otherwise POWER THE
+     * RECEIVER ON for a single live update with a timeout. Asynchronous: the result comes back on
+     * the main thread via [onResult].
+     */
+    @android.annotation.SuppressLint("MissingPermission")   // callers gate on hasLocationPermission()
+    private fun acquireControllerLocation(onResult: (android.location.Location?) -> Unit) {
         val lm = getSystemService(android.content.Context.LOCATION_SERVICE)
             as android.location.LocationManager
-        return runCatching {
+        val cached = latestCachedLocation(lm)
+        if (cached != null && System.currentTimeMillis() - cached.time < FRESH_FIX_MS) {
+            onResult(cached); return
+        }
+        val provider = when {
+            lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) ->
+                android.location.LocationManager.GPS_PROVIDER
+            lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) ->
+                android.location.LocationManager.NETWORK_PROVIDER
+            else -> { onResult(cached); return }   // location services off — nothing to power on
+        }
+        stopHomeLocationUpdates(lm)   // clear any request still pending from a previous tap
+        var done = false
+        val timeout = Runnable {
+            if (done) return@Runnable
+            done = true
+            stopHomeLocationUpdates(lm)
+            onResult(cached)          // best we have when the receiver did not answer in time
+        }
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
+                if (done) return
+                done = true
+                handler.removeCallbacks(timeout)
+                stopHomeLocationUpdates(lm)
+                onResult(location)
+            }
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+            @Deprecated("required by LocationListener on older APIs")
+            override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+        }
+        homeLocListener = listener
+        val ok = runCatching {
+            lm.requestLocationUpdates(provider, 0L, 0f, listener, android.os.Looper.getMainLooper())
+        }.isSuccess
+        if (!ok) { stopHomeLocationUpdates(lm); onResult(cached); return }
+        handler.postDelayed(timeout, LOCATION_TIMEOUT_MS)
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")   // callers gate on hasLocationPermission()
+    private fun latestCachedLocation(lm: android.location.LocationManager): android.location.Location? =
+        runCatching {
             listOf(
                 android.location.LocationManager.GPS_PROVIDER,
                 android.location.LocationManager.NETWORK_PROVIDER,
             ).mapNotNull { p -> if (lm.isProviderEnabled(p)) lm.getLastKnownLocation(p) else null }
                 .maxByOrNull { it.time }
         }.getOrNull()
+
+    private fun stopHomeLocationUpdates(lm: android.location.LocationManager) {
+        homeLocListener?.let { runCatching { lm.removeUpdates(it) } }
+        homeLocListener = null
     }
 
     // ---- AR overlay ----
@@ -1526,61 +1587,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             TakBridgeHolder.setLiveZoom(level.toDouble())
             AppLog.i(TAG, "zoom now ${level}X (raw=$target)")
         })
-    }
-
-    /**
-     * ISO/shutter readout (read-only; the EV slider itself stays unwired — postponed by the
-     * operator until the camera's exposure behaviour is characterised on hardware). Polled,
-     * because this SDK pushes no exposure events; every ~2s is fresh enough for a readout
-     * whose job is "is the camera picking sane values".
-     */
-    private fun pollExposureReadout() {
-        val cam = AutelProductHolder.xt706 ?: return
-        cam.getISO(object : com.autel.common.CallbackWithOneParam<com.autel.common.camera.media.CameraISO> {
-            override fun onSuccess(iso: com.autel.common.camera.media.CameraISO?) {
-                // Prefer the RAW value; the enum cannot represent what this camera actually does.
-                lastIsoLabel = rawIso()?.toString()
-                    ?: iso?.name?.removePrefix("ISO_")?.takeIf { it != "UNKNOWN" }
-            }
-            override fun onFailure(error: AutelError?) { /* readout stays "—" */ }
-        })
-        cam.getShutter(object : com.autel.common.CallbackWithOneParam<com.autel.common.camera.media.ShutterSpeed> {
-            override fun onSuccess(sp: com.autel.common.camera.media.ShutterSpeed?) {
-                lastShutterLabel = sp?.let { shutterLabel(it.name) }
-            }
-            override fun onFailure(error: AutelError?) { /* readout stays "—" */ }
-        })
-    }
-
-    /**
-     * The camera's ACTUAL ISO as an integer, or null if the parsed settings are not populated.
-     *
-     * WHY NOT JUST USE getISO(). That returns [com.autel.common.camera.media.CameraISO], an enum
-     * holding only whole stops — 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600 (plus a few
-     * odd high values). It has NO entry for the 1/3-stop values a camera in auto exposure
-     * routinely picks: 125, 160, 250, 320, 500, 640, 1000... The SDK maps every one of those to
-     * UNKNOWN, so the HUD read "ISO UNKNOWN" the moment auto-exposure stepped off a whole stop —
-     * observed on hardware 2026-08-01, ISO 100 displayed fine and everything above did not.
-     *
-     * The raw integer is right there in the parsed settings the SDK already maintains
-     * (CameraAllSettings.ImageISO.getISO()), it just is not surfaced on the public camera
-     * interface. Reading it loses nothing and survives whatever values future firmware picks,
-     * where extending an enum mapping would not.
-     *
-     * Reaches into com.autel.camera.protocol.protocol20 (SDK internals). Read-only, wrapped, and
-     * it degrades to the enum if the shape ever changes — but do not build control paths on it.
-     */
-    private fun rawIso(): Int? = runCatching {
-        com.autel.camera.protocol.protocol20.entity.CameraAllSettingsWithParser.instance()
-            ?.cameraAllSettings?.imageISO?.iso?.takeIf { it > 0 }
-    }.getOrNull()
-
-    /** "ShutterSpeed_1_60" -> "1/60", "ShutterSpeed_3dot2" -> "3.2\"", "ShutterSpeed_15" -> "15\"". */
-    private fun shutterLabel(enumName: String): String? {
-        val s = enumName.removePrefix("ShutterSpeed_")
-        if (s == "UNKNOWN" || s == enumName) return null
-        return if (s.startsWith("1_")) "1/" + s.removePrefix("1_").replace("dot", ".")
-        else s.replace("dot", ".") + "\""
     }
 
     /** Log + toast-on-failure adapter for the camera's completion callbacks. */
@@ -2259,5 +2265,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         private const val FOV_STEP_DEG = 0.5
 
         private const val REQUEST_CODE_LOCATION = 4302
+
+        /** A cached controller fix younger than this is used as-is; older forces a fresh read. */
+        private const val FRESH_FIX_MS = 30_000L
+        /** How long to wait for the controller's receiver to answer before giving up. */
+        private const val LOCATION_TIMEOUT_MS = 12_000L
     }
 }

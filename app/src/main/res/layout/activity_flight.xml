@@ -336,13 +336,6 @@
                 android:layout_weight="1" android:gravity="end" android:text="+2" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/exposureReadout"
-            style="@style/hudText"
-            android:layout_width="@dimen/flight_map_size"
-            android:gravity="center"
-            android:text="ISO —   —" />
-
         <!-- Thermal palette, under the exposure block (operator's placement, 2026-07-31).
              It belongs with the image-quality controls rather than in the toolbar: it changes
              how the picture looks, like EV does, and the toolbar is for actions.
