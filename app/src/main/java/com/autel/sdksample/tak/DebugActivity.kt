@@ -29,7 +29,7 @@ class DebugActivity : AppCompatActivity() {
     private lateinit var meta: TextView
 
     // Only re-render when the file actually changed, and tail it so a near-cap 1MB
-    // file doesn't get re-laid-out into the TextView every tick.
+    // file does not get re-laid-out into the TextView every tick.
     private var lastRenderedLength = -1L
     private val maxTailBytes = 500 * 1024L
 
@@ -66,7 +66,7 @@ class DebugActivity : AppCompatActivity() {
                 // Let the fling/settle finish, then check if they landed back at the bottom.
                 logScroll.postDelayed({ pinnedToBottom = isScrolledToBottom() }, 300)
             }
-            false   // don't consume — ScrollView still needs this to handle the drag/fling
+            false   // do not consume — ScrollView still needs this to handle the drag/fling
         }
 
         val toggle = findViewById<CheckBox>(R.id.debugLoggingToggle)

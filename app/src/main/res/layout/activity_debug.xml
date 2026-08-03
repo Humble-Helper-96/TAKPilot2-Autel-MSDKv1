@@ -113,7 +113,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="Autel Explorer can start on its own and take the drone link, which stops the video with no warning. This keeps it closed. Explorer comes back when you close this app. You need Explorer for firmware updates, compass calibration and registration."
+                android:text="Autel Explorer can start on its own and take the aircraft link, which stops the video with no warning. This keeps it closed. Explorer comes back when you close this app. You need Explorer for firmware updates, compass calibration and registration."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <Button

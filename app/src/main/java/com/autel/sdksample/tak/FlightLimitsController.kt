@@ -7,11 +7,11 @@ import com.autel.sdk.flycontroller.Evo2FlyController
 import com.taklite.util.AppLog
 
 /**
- * Pushes the pilot-configured flight-safety limits (Pre-Flight Setup screen, "Drone Settings"
+ * Pushes the pilot-configured flight-safety limits (Pre-Flight Setup screen, "Aircraft Settings"
  * section — not yet built on this side, Phase 2) to the aircraft on connect: max altitude, max
  * distance (radius), RTH altitude. Ported from the DJI sibling's `FlightLimitsController`.
  *
- * Each is optional — an empty field means "don't override, leave the aircraft's current/default
+ * Each is optional — an empty field means "do not override, leave the aircraft's current/default
  * setting alone." Fields are entered/persisted in feet (matching the AGL readout on the flight
  * screen); converted to meters only here, at the point of calling the SDK (confirmed via `javap`
  * against the bundled `autel-sdk-release.aar`, `AutelFlyController` interface — all three take a
@@ -307,13 +307,13 @@ object FlightLimitsController {
             cmp("Max distance", "rad", wantRad)
             cmp("RTH altitude", "rth", wantRth)
 
-            // Pilot-facing text. Says what the drone reports, and nothing about how we asked it.
+            // Pilot-facing text. Says what the aircraft reports, and nothing about how we asked it.
             val text = when {
                 failed.isNotEmpty() ->
-                    "⚠ The drone did not answer for: ${failed.joinToString(", ")}. " +
+                    "⚠ The aircraft did not answer for: ${failed.joinToString(", ")}. " +
                         "Press the button again."
-                matched -> "The drone confirms: ${parts.joinToString(", ")}."
-                else -> "⚠ The drone did not take all the settings. " +
+                matched -> "The aircraft confirms: ${parts.joinToString(", ")}."
+                else -> "⚠ The aircraft did not take all the settings. " +
                     "${parts.joinToString(", ")}. Correct the values, then press the button again."
             }
             done(ReadBackReport(text, matched && failed.isEmpty()))
@@ -416,7 +416,7 @@ object FlightLimitsController {
     }
 
     /**
-     * Signal-loss failsafe. Logged loudly either way: this is the one limit a pilot can't
+     * Signal-loss failsafe. Logged loudly either way: this is the one limit a pilot cannot
      * casually verify in the air (confirming it for real means deliberately dropping the RC
      * link mid-flight), and unlike the DJI side there's no getter to read it back — so this
      * log line is the only evidence the aircraft accepted it.

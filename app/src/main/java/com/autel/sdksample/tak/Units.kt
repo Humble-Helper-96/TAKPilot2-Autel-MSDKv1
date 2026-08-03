@@ -29,5 +29,5 @@ object Units {
         return if (ft < FEET_PER_MILE) "%.0f ft".format(ft) else "%.1f mi".format(ft / FEET_PER_MILE)
     }
 
-    fun mph(metersPerSecond: Double): String = "%.0f MPH".format(metersPerSecond * MPH_PER_MS)
+    fun mph(metersPerSecond: Double): String = "%.0f mph".format(metersPerSecond * MPH_PER_MS)
 }

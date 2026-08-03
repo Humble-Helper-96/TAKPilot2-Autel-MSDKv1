@@ -121,7 +121,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         // inconsistent with itself rather than a decision worth copying.
         AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Stop & Quit")
-            .setMessage("Force-stop TAKPilot2-Autel and all its background processes (video stream, TAK connection, telemetry)? You'll need to relaunch the app.")
+            .setMessage("Stop TAKPilot and close the video, the TAK connection, and telemetry? You must start the app again to fly.")
             .setPositiveButton("Stop & Quit") { _, _ -> doQuit() }
             .setNegativeButton("Cancel", null)
             .show()

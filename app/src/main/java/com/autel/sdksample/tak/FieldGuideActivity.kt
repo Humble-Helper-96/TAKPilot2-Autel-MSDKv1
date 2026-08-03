@@ -125,7 +125,7 @@ class FieldGuideActivity : AppCompatActivity() {
             "Usually you set them one time. Change them only for a new area, a new server or " +
             "a new task.")
 
-        sub("1. Drone Settings")
+        sub("1. Aircraft Settings")
         body("The app sends these safety limits to the aircraft at each connection. All " +
             "values are in feet.")
         bullet("Max altitude - the maximum height the aircraft lets you fly.")
@@ -134,10 +134,9 @@ class FieldGuideActivity : AppCompatActivity() {
             "command.")
         bullet("RTH altitude - the height the aircraft climbs to before it flies home. Set " +
             "this height more than the highest obstacle between you and the aircraft.")
-        bullet("If the signal is lost - the action of the aircraft if it loses the " +
-            "controller: Return Home, Hover or Land. The aircraft does this action without " +
-            "the app. It works if your controller stops during the flight. Usually, select " +
-            "Return Home.")
+        bullet("If the signal is lost - the aircraft returns to home if it loses the " +
+            "controller. It does this without the app. It works if your controller stops " +
+            "during the flight.")
         bullet("Obstacle avoidance - the switches show the state in the aircraft. Connect " +
             "the aircraft first. If you touch a switch, the app changes the aircraft " +
             "immediately.")
@@ -426,12 +425,12 @@ class FieldGuideActivity : AppCompatActivity() {
                 image(R.drawable.ic_led_off) to "Lights off",
             ),
             "Exterior lights",
-            "This button turns the navigation lights of the drone on and off. Press it to " +
-                "change them. The icon shows the state of the drone: a plain bulb when the " +
+            "This button turns the navigation lights of the aircraft on and off. Press it to " +
+                "change them. The icon shows the state of the aircraft: a plain bulb when the " +
                 "lights are on, a bulb with a line when they are off. A dim icon means the " +
-                "drone did not report the state yet.\n\n" +
-                "Turn the lights off to make the drone difficult to see at night.\n\n" +
-                "⚠ The lights make the drone visible to other aircraft. FAA rules require " +
+                "aircraft did not report the state yet.\n\n" +
+                "Turn the lights off to make the aircraft difficult to see at night.\n\n" +
+                "⚠ The lights make the aircraft visible to other aircraft. FAA rules require " +
                 "anti-collision lights at night. Turn them off only when your authority permits " +
                 "it.",
         )

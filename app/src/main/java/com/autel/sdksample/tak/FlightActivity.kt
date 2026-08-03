@@ -67,7 +67,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var irPaletteButton: TextView
 
     /** Thermal state. Both are re-read from the camera on connect rather than assumed — see
-     *  syncIrStateFromCamera(). The buttons must never claim a mode the camera isn't in. */
+     *  syncIrStateFromCamera(). The buttons must never claim a mode the camera is not in. */
     private var irOn = false
     private var irBlackHot = false
     private lateinit var map: LockedMapView
@@ -126,7 +126,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         super.onCreate(savedInstanceState)
         AppLog.v(TAG, "onCreate")
         // osmdroid must be configured before the MapView inflates. Shared with Pre-Flight
-        // Setup so the cache budget and paths can't drift between the two screens.
+        // Setup so the cache budget and paths cannot drift between the two screens.
         MapTileCache.configure(this)
         setContentView(R.layout.activity_flight)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -145,10 +145,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Load the calibrated FOV before the overlay draws anything with it.
         ArSettings.loadFov(this)
         ArSettings.loadAimOffsets(this)
-        // Chrome insets so edge arrows can't be parked under the toolbar or the HUD column
+        // Chrome insets so edge arrows cannot be parked under the toolbar or the HUD column
         // where they're invisible — the exact case (aircraft directly overhead) the indicator
         // matters most. Measured from the real views after layout, re-read every pass, so a
-        // toolbar/HUD/map-size change can't silently break it.
+        // toolbar/HUD/map-size change cannot silently break it.
         val toolbarView = findViewById<View>(R.id.flightToolbar)
         val hudColumn = findViewById<View>(R.id.flightHudColumn)
         toolbarView.viewTreeObserver.addOnGlobalLayoutListener {
@@ -242,7 +242,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
 
         // ---- Controls present for UI parity with the DJI blueprint but not yet functional on
-        // this airframe. Each needs an Autel-side subsystem that doesn't exist yet (camera
+        // this airframe. Each needs an Autel-side subsystem that does not exist yet (camera
         // control, an AR overlay, a decoder-restart hook, or an RF-quality calibration). They
         // are deliberately VISIBLE rather than omitted, so the toolbar a pilot learns on the
         // Mini 2 is the same toolbar they see here — and each says plainly what it is when
@@ -283,7 +283,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 runOnUiThread {
                     lightsButton.isEnabled = true
                     renderLightsButton()
-                    if (!confirmed) toast("The drone did not change the lights.")
+                    if (!confirmed) toast("The aircraft did not change the lights.")
                     else if (AutelLights.isDark == true) toast("Exterior lights OFF")
                     else toast("Exterior lights ON")
                 }
@@ -383,7 +383,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                     aimTooPoorToDrop() -> refuseDropForAim()
                     gp == null -> {
                         AppLog.w(TAG, "drop refused — no look-point (GPS/gimbal not ready)")
-                        toast("Can't drop: camera look-point not available (GPS/gimbal not ready)")
+                        toast("Cannot drop the marker. Wait for GPS and the gimbal.")
                     }
                     else -> TakDropMarkers.placeAt(aff, gp.first, gp.second, gp.third)
                 }
@@ -612,7 +612,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // AutelVideoStreamer only fires while the RTSP push is running, which is a separate
         // thing a pilot may never turn on). So this can briefly clear a moment before the first
         // frame actually paints — deliberately worded "waiting for aircraft", not "waiting for
-        // video", so it doesn't claim more than it knows.
+        // video", so it does not claim more than it knows.
         findViewById<View>(R.id.flightNoVideoCover).visibility =
             if (acOk) View.GONE else View.VISIBLE
         // Slow-cadence camera reads piggyback on the HUD tick (500ms * 4 = ~2s).
@@ -636,7 +636,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
 
         // Home point is independent of the CURRENT fix — once set it stays valid even if the
-        // live fix drops momentarily, so this isn't gated behind hasFix like the map work below.
+        // live fix drops momentarily, so this is not gated behind hasFix like the map work below.
         val homeSet = hud?.homeSet == true && hud.homeLat.isFinite() && hud.homeLon.isFinite()
         rthButton.setImageResource(if (homeSet) R.drawable.ic_rth_home_set else R.drawable.ic_rth)
         if (homeSet) {
@@ -731,7 +731,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             infoWindow = null
             // Heading arrow, not the app logo: this marker is ROTATED to the aircraft's
-            // heading each tick (see mk.rotation below), and a logo can't show a direction —
+            // heading each tick (see mk.rotation below), and a logo cannot show a direction —
             // it just spins. 28dp matches the blueprint's AIRCRAFT_ICON_DP. (v1.2 used
             // takpilot2_logo here, which was a placeholder vector at the time and only became
             // obviously wrong once the real TAK-shield artwork was dropped in.)
@@ -759,7 +759,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         map.controller.setCenter(pos)
 
         // Home→aircraft line: the pilot's "which way back" reference on a map that by design
-        // can't be panned around to look. Only meaningful once a home point exists.
+        // cannot be panned around to look. Only meaningful once a home point exists.
         val hl = homeLine
         if (hl != null) {
             if (homeSet) {
@@ -779,7 +779,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             .setPositiveButton("Return to Home") { _, _ ->
                 val fc = AutelProductHolder.evo2?.flyController
                 if (fc == null) {
-                    toast("No aircraft connected")
+                    toast("The aircraft is not connected.")
                 } else {
                     fc.goHome(object : com.autel.common.CallbackWithNoParam {
                         override fun onSuccess() {
@@ -804,7 +804,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * for is going to happen, and a vague message invites a second and third press.
      */
     private fun notImplemented(name: String, what: String) {
-        toast("$name isn't available on the EVO II build yet — $what isn't wired up.")
+        toast("$name is not available in this build yet.")
     }
 
     /**
@@ -826,7 +826,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         AppLog.i(TAG, "tap: LIVE — requesting screen-capture permission")
         val mpm = getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE)
             as android.media.projection.MediaProjectionManager
-        toast("Starting screen stream…")
+        toast("The video stream is starting.")
         startActivityForResult(mpm.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
     }
 
@@ -838,7 +838,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             ScreenCaptureService.start(this, resultCode, data)
         } else {
             AppLog.w(TAG, "screen-capture permission DENIED (resultCode=$resultCode)")
-            toast("Screen capture permission denied — no stream started")
+            toast("You did not allow screen capture. The stream did not start.")
         }
         refreshStreamToggle()
     }
@@ -911,7 +911,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * the takeoff point, come back to ME." Using the aircraft's position would instead pin home
      * to wherever it happens to be hovering, so a subsequent RTH would land it out there rather
      * than return it to the pilot. (This was wired the wrong way round on 2026-07-30 and caught
-     * in review — worth the explicit note so it doesn't get "simplified" back.)
+     * in review — worth the explicit note so it does not get "simplified" back.)
      *
      * Refuses rather than guesses when there's no controller fix: a stale or absent position
      * here is a genuine safety problem, not a cosmetic one.
@@ -920,7 +920,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val fc = AutelProductHolder.evo2?.flyController
         if (fc == null) {
             AppLog.w(TAG, "reset home point ignored — aircraft not connected")
-            toast("Aircraft not connected")
+            toast("The aircraft is not connected.")
             return
         }
         if (!hasLocationPermission()) {
@@ -938,7 +938,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val loc = controllerLocation()
         if (loc == null) {
             AppLog.w(TAG, "reset home point aborted — no controller GPS fix")
-            toast("No controller GPS fix — can't set the home point to your position")
+            toast("The controller has no GPS position. It cannot set the home point to you.")
             return
         }
         AppLog.i(TAG, "reset home point: controller fix %.6f, %.6f (age=%ds, acc=%.0fm)"
@@ -996,7 +996,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.i(TAG, "location permission granted — re-running reset home point")
             confirmResetHome()
         } else {
-            AppLog.i(TAG, "location permission denied — can't set home to controller position")
+            AppLog.i(TAG, "location permission denied — cannot set home to controller position")
             toast("Location permission is needed to set the home point to your position.")
         }
     }
@@ -1036,7 +1036,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         AppLog.v(TAG, "long-press: AR options")
         val view = layoutInflater.inflate(R.layout.dialog_ar_options, null)
 
-        // Rows built from the enum, not written out in XML — a category added later can't be
+        // Rows built from the enum, not written out in XML — a category added later cannot be
         // silently missing from the menu that controls it.
         val container = view.findViewById<android.widget.LinearLayout>(R.id.arCategoryContainer)
         for (category in ArSettings.Category.values()) {
@@ -1246,7 +1246,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     /**
      * Tap the reticle — drop the one quick marker at the look point, no dialog. If it already
      * exists, say so rather than moving it: a tap that sometimes places and sometimes moves is
-     * a gesture the pilot can't predict the result of.
+     * a gesture the pilot cannot predict the result of.
      */
     /**
      * The quick marker — place it, or move it if it already exists. ONE action.
@@ -1269,7 +1269,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val look = TakBridgeHolder.lookPoint()
         if (look == null) {
             AppLog.w(TAG, "quick marker refused — no look point (GPS/gimbal not ready)")
-            toast("Can't place the marker yet — waiting on GPS + gimbal")
+            toast("Cannot place the marker yet. Wait for GPS and the gimbal.")
             return
         }
         val (lat, lon, elev) = look
@@ -1415,7 +1415,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val cam = AutelProductHolder.xt706
         if (cam == null) {
             AppLog.w(TAG, "IR ignored — camera not connected (or not an XT70x)")
-            toast("Aircraft camera not connected")
+            toast("The camera is not connected.")
             return
         }
         val target = if (irOn) DisplayMode.VISIBLE else DisplayMode.IR
@@ -1487,13 +1487,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val cam = AutelProductHolder.xt706
         if (cam == null) {
             AppLog.w(TAG, "zoom ${level}X ignored — camera not connected (or not an XT70x)")
-            toast("Aircraft camera not connected")
+            toast("The camera is not connected.")
             return
         }
         val base = AutelProductHolder.zoomBaseRaw
         if (base == null || base <= 0) {
             AppLog.w(TAG, "zoom ignored — baseline not learned yet (raw=$base)")
-            toast("Camera still initialising — try again in a moment")
+            toast("The camera is not ready. Try again in a moment.")
             return
         }
         // Everything is RELATIVE to the baseline read at connect, so the SDK's raw units
@@ -1534,7 +1534,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
-     * The camera's ACTUAL ISO as an integer, or null if the parsed settings aren't populated.
+     * The camera's ACTUAL ISO as an integer, or null if the parsed settings are not populated.
      *
      * WHY NOT JUST USE getISO(). That returns [com.autel.common.camera.media.CameraISO], an enum
      * holding only whole stops — 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600 (plus a few
@@ -1544,7 +1544,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * observed on hardware 2026-08-01, ISO 100 displayed fine and everything above did not.
      *
      * The raw integer is right there in the parsed settings the SDK already maintains
-     * (CameraAllSettings.ImageISO.getISO()), it just isn't surfaced on the public camera
+     * (CameraAllSettings.ImageISO.getISO()), it just is not surfaced on the public camera
      * interface. Reading it loses nothing and survives whatever values future firmware picks,
      * where extending an enum mapping would not.
      *
@@ -1589,7 +1589,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val cam = AutelProductHolder.camera
         if (cam == null) {
             AppLog.w(TAG, "REC ignored — camera not connected")
-            toast("Aircraft camera not connected")
+            toast("The camera is not connected.")
             return
         }
         if (AutelProductHolder.isRecording) {
@@ -1617,7 +1617,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 }
             }
             override fun onFailure(error: AutelError?) {
-                // Can't read the mode — try the record anyway rather than refusing; the
+                // Cannot read the mode — try the record anyway rather than refusing; the
                 // camera's own rejection (surfaced by camCb) beats a guess about why.
                 AppLog.w(TAG, "getMediaMode failed (${error?.description}) — trying record directly")
                 cam.startRecordVideo(camCb("startRecordVideo"))
@@ -1653,7 +1653,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             } else {
                 AppLog.e(TAG, "recording did not start: camera accepted StartRecording twice " +
                     "but never reported RECORD_START")
-                toast("Recording did not start — camera did not confirm")
+                toast("Recording did not start. The camera did not confirm.")
             }
         }, RECORD_CONFIRM_MS)
     }
@@ -1679,7 +1679,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val cam = AutelProductHolder.camera
         if (cam == null) {
             AppLog.w(TAG, "photo ignored — camera not connected")
-            toast("Aircraft camera not connected")
+            toast("The camera is not connected.")
             return
         }
         cam.startTakePhoto(object : CallbackWithNoParam {
@@ -1789,7 +1789,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun refuseDropForAim() {
         val why = dropRefusalReason() ?: return
         AppLog.w(TAG, "marker drop refused — $why")
-        toast("Can't place a marker: $why")
+        toast("Cannot place the marker. $why")
     }
 
     /**
@@ -1914,7 +1914,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                     if (aglFt > part107) Color.parseColor("#EF5350") else Color.parseColor("#B0B0B0")
                 )
             }
-            // Outside the downloaded box entirely — we genuinely don't know. Shown identically
+            // Outside the downloaded box entirely — we genuinely do not know. Shown identically
             // to "nothing downloaded" (operator, 2026-07-31): an earlier version made this
             // amber and worded it differently on the grounds that flying OUT of coverage is
             // more surprising than never having had it. But the pilot can do exactly the same
@@ -1936,7 +1936,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /**
      * The dropped-markers panel. Rebuilt from [TakDropMarkers.listPins] each time it opens and
-     * after every action, so it can't show a stale list.
+     * after every action, so it cannot show a stale list.
      *
      * Deliberately reachable with zero pins: Clear All is still meaningful right after a
      * delete, and a panel that refuses to open when empty just makes the pilot wonder whether
@@ -1993,7 +1993,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val look = TakBridgeHolder.lookPoint()
         if (look == null) {
             AppLog.w(TAG, "marker move refused — no look-point")
-            toast("Can't move — waiting on GPS + gimbal")
+            toast("Cannot move the marker yet. Wait for GPS and the gimbal.")
             return
         }
         val (lat, lon, elev) = look
@@ -2106,7 +2106,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val affs = TakDropMarkers.Affiliation.values()
         val blocked = dropRefusalReason()
         AlertDialog.Builder(this, R.style.TakDialogTheme)
-            .setTitle(if (blocked == null) "Marker affiliation" else "Can't place yet: $blocked")
+            .setTitle(if (blocked == null) "Marker affiliation" else "Cannot place the marker: $blocked")
             .setAdapter(iconRowAdapter(affiliationRows(affs))) { _, which ->
                 AppLog.v(TAG, "affiliation chosen: ${affs[which].label}")
                 then(affs[which])
@@ -2120,11 +2120,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     override fun askSend(affiliationLabel: String, onChoice: (Boolean) -> Unit) {
         runOnUiThread {
             AlertDialog.Builder(this, R.style.TakDialogTheme)
-                .setTitle("$affiliationLabel pin placed")
-                .setMessage("Send this pin to the TAK server?")
+                .setTitle("$affiliationLabel marker placed")
+                .setMessage("Send this marker to the TAK server?")
                 .setCancelable(false)
                 .setPositiveButton("Send to TAK") { _, _ -> AppLog.i(TAG, "pin send: yes ($affiliationLabel)"); onChoice(true) }
-                .setNegativeButton("Don't Send") { _, _ -> AppLog.v(TAG, "pin send: no ($affiliationLabel)"); onChoice(false) }
+                .setNegativeButton("Do not Send") { _, _ -> AppLog.v(TAG, "pin send: no ($affiliationLabel)"); onChoice(false) }
                 .show()
         }
     }

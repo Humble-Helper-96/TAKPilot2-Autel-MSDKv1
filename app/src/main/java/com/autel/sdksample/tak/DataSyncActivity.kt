@@ -130,7 +130,7 @@ class DataSyncActivity : AppCompatActivity() {
     private fun confirmDelete(name: String) {
         AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Delete feed?")
-            .setMessage("Delete \"$name\" from the TAK Server for everyone? This can't be undone.")
+            .setMessage("Delete \"$name\" from the TAK Server for everyone? This cannot be undone.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Delete") { _, _ ->
                 status.text = "Deleting $name…"

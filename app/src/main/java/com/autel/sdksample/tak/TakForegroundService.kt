@@ -14,7 +14,7 @@ import androidx.core.app.NotificationCompat
 import com.autel.sdksample.R
 
 /**
- * Keeps the TAK connection + drone PLI bridge alive while TAKPilot2 is backgrounded
+ * Keeps the TAK connection + aircraft PLI bridge alive while TAKPilot2 is backgrounded
  * or the screen is off. TakClient already auto-reconnects on socket drop; this service
  * just prevents Android from throttling/killing the process so the 2s PLI loop and the
  * RTSP push keep running during flight.
@@ -111,7 +111,7 @@ class TakForegroundService : Service() {
                     NotificationChannel(
                         CHANNEL_ID, "TAKPilot2 Link",
                         NotificationManager.IMPORTANCE_LOW,
-                    ).apply { description = "Keeps the TAK connection and drone feed alive" }
+                    ).apply { description = "Keeps TAKPilot running while the screen is off." }
                 )
             }
         }
@@ -124,7 +124,7 @@ class TakForegroundService : Service() {
             aircraft && tak -> "Aircraft connected · streaming $callsign to TAK"
             aircraft -> "Aircraft connected · not connected to TAK"
             tak -> "Streaming $callsign to TAK"
-            else -> "Holding the link"
+            else -> "TAKPilot is running."
         }
         // Tell the pilot how to get Explorer back. Hiding Explorer removes its launcher icon, so
         // someone who needs a firmware update, compass calibration or aircraft registration finds

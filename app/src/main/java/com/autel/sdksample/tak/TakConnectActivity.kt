@@ -25,7 +25,7 @@ import java.util.UUID
  * Reuses taklite's TakCertEnroller (cert enrollment over HTTPS) and TakManager
  * (TLS CoT client). On success it starts a DroneTakBridge that streams the M30's
  * position to the server as an air track. This is the fast path to verify
- * drone -> CoT -> TAK end-to-end; the full QR enrollment wizard comes later.
+ * aircraft -> CoT -> TAK end-to-end; the full QR enrollment wizard comes later.
  */
 class TakConnectActivity : AppCompatActivity() {
 
@@ -84,10 +84,10 @@ class TakConnectActivity : AppCompatActivity() {
         findViewById<Button>(R.id.takPullChannels).setOnClickListener { pullChannels(prefs) }
 
         // Reflect live state on open, and silently reconnect with saved certs if the
-        // socket isn't up — so the user never has to re-enter credentials / re-enroll.
+        // socket is not up — so the user never has to re-enter credentials / re-enroll.
         when {
             TakManager.getInstance().isConnected ->
-                setStatus("Connected. Drone PLI streaming.", Color.parseColor("#4CAF50"))
+                setStatus("Connected. Sending the aircraft position to TAK.", Color.parseColor("#4CAF50"))
             prefs.getBoolean(KEY_LOGGED_OUT, false) ->
                 setStatus("Logged out. Enter host, username and password to sign in.", Color.parseColor("#B0B0B0"))
             hasSavedCerts(prefs) -> {
@@ -133,7 +133,7 @@ class TakConnectActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.takDisconnectButton).setOnClickListener {
             AppLog.v(TAG, "Logout tapped")
-            // Full LOG OUT: stop everything AND clear the saved enrollment so the app won't silently
+            // Full LOG OUT: stop everything AND clear the saved enrollment so the app will not silently
             // reconnect the old user, and a different user can enroll cleanly. Each teardown step is
             // guarded — a throw from the closing socket must NOT abort the logout (that crash was
             // why logout never stuck). clearEnrollment + the logged-out flag always run.
@@ -252,7 +252,7 @@ class TakConnectActivity : AppCompatActivity() {
             uid = "TAKPilot2-" + UUID.randomUUID().toString().substring(0, 8)
             prefs.edit().putString(KEY_UID, uid).apply()
         }
-        // The drone gets its own distinct uid so it shows as a separate air track.
+        // The aircraft gets its own distinct uid so it shows as a separate air track.
         val droneUid = "$uid-DRONE"
 
         Thread {
@@ -294,7 +294,7 @@ class TakConnectActivity : AppCompatActivity() {
             host, cotPort, trustStorePath, certPw, clientCertPath, certPw,
         )
         runOnUiThread {
-            setStatus("Connected. Streaming drone PLI as \"$droneCallsign\".",
+            setStatus("Connected. Sending the aircraft position to TAK as \"$droneCallsign\".",
                 Color.parseColor("#4CAF50"))
             TakBridgeHolder.start(droneUid, droneCallsign)
             TakForegroundService.start(applicationContext, droneCallsign)
@@ -408,7 +408,7 @@ class TakConnectActivity : AppCompatActivity() {
         }
     }
 
-    // ---- 1. Drone Settings ----
+    // ---- 1. Aircraft Settings ----
 
     /**
      * Flight-safety limits, persisted here and pushed to the aircraft by
@@ -428,7 +428,7 @@ class TakConnectActivity : AppCompatActivity() {
     // TWO PATHS, BOTH DELIBERATE, NEITHER TIED TO TYPING:
     //   1. On AIRCRAFT CONNECT, automatically (FlightLimitsController.applyAtConnect, driven from
     //      AutelProductHolder).
-    //   2. On demand, via "Apply to Drone" — resends everything and then READS BACK what the
+    //   2. On demand, via "Apply to Aircraft" — resends everything and then READS BACK what the
     //      aircraft actually holds.
     //
     // Editing a field only saves it locally. An earlier revision pushed on a 2s debounce after
@@ -452,12 +452,12 @@ class TakConnectActivity : AppCompatActivity() {
     /** Resends every aircraft-bound Pre-Flight setting, then reports what the aircraft holds. */
     private fun applyAllToAircraft(status: TextView) {
         if (AutelProductHolder.evo2 == null) {
-            status.text = "The drone is not connected. The settings are saved. " +
-                "Connect the drone, then press the button again."
+            status.text = "The aircraft is not connected. The settings are saved. " +
+                "Connect the aircraft, then press the button again."
             status.setTextColor(0xFFFFC107.toInt())
             return
         }
-        status.text = "Sending the settings to the drone…"
+        status.text = "Sending the settings to the aircraft…"
         status.setTextColor(0xFF909090.toInt())
 
         FlightLimitsController.pushLimitsNow(this)
@@ -509,7 +509,7 @@ class TakConnectActivity : AppCompatActivity() {
             val alt = FlightLimitsController.maxHeightRange()
             val rad = FlightLimitsController.maxRangeRange()
             if (rth == null && alt == null && rad == null) {
-                rangeStatus.setText("Connect the drone to see the limits it accepts.")
+                rangeStatus.setText("Connect the aircraft to see the limits it accepts.")
                 rangeStatus.setTextColor(0xFF909090.toInt())
             } else {
                 val problems = mutableListOf<String>()
@@ -525,14 +525,14 @@ class TakConnectActivity : AppCompatActivity() {
                 check("Max distance", maxRadius.text.toString(), rad)
                 check("RTH altitude", rthAlt.text.toString(), rth)
                 if (problems.isEmpty()) {
-                    rangeStatus.setText("The drone accepts: " +
+                    rangeStatus.setText("The aircraft accepts: " +
                         (alt?.let { "max altitude ${it.fromFt} to ${it.toFt} ft, " } ?: "") +
                         (rad?.let { "max distance ${it.fromFt} to ${it.toFt} ft, " } ?: "") +
                         (rth?.let { "RTH altitude ${it.fromFt} to ${it.toFt} ft" } ?: ""))
                     rangeStatus.setTextColor(0xFF909090.toInt())
                 } else {
-                    rangeStatus.setText("⚠ The drone will refuse " + problems.joinToString("; ") +
-                        ". Correct the value. If you do not, the drone keeps the setting it has now.")
+                    rangeStatus.setText("⚠ The aircraft will refuse " + problems.joinToString("; ") +
+                        ". Correct the value. If you do not, the aircraft keeps the setting it has now.")
                     rangeStatus.setTextColor(0xFFFF6B6B.toInt())
                 }
             }
@@ -541,7 +541,7 @@ class TakConnectActivity : AppCompatActivity() {
 
         val watcher = object : android.text.TextWatcher {
             // Saves locally and re-checks the range. Does NOT push — typing is not intent.
-            // "Apply to Drone" is what sends it. See applyAllToAircraft.
+            // "Apply to Aircraft" is what sends it. See applyAllToAircraft.
             override fun afterTextChanged(s: android.text.Editable?) {
                 save()
                 refreshRanges()
@@ -565,7 +565,7 @@ class TakConnectActivity : AppCompatActivity() {
      * [FlightLimitsController.applyDefaults] → `doEmergencyAction` (the policy setter behind a
      * misleading name — see that class's doc).
      *
-     * The status line spells out that it applies on next connect AND that this SDK can't read
+     * The status line spells out that it applies on next connect AND that this SDK cannot read
      * the value back, because "I picked Return to Home" and "the aircraft is set to Return to
      * Home" are different claims — and this is the setting where assuming the first means the
      * second is exactly the wrong habit.
@@ -625,7 +625,7 @@ class TakConnectActivity : AppCompatActivity() {
             R.id.takLockConfig, KEY_TAK_LOCKED, takLockedFields,
             "Unlock TAK server settings?",
             "The lock prevents an accidental change to a server that works. " +
-                "A wrong value stops the drone sending data to your team.",
+                "A wrong value stops the aircraft sending data to your team.",
         )
         setupOneLock(
             R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
@@ -684,7 +684,7 @@ class TakConnectActivity : AppCompatActivity() {
 
     /**
      * Greys out and disables a set of views. `isEnabled = false` also makes them unfocusable, so
-     * the keyboard can't be raised on a locked field — read-only in the way a pilot means it —
+     * the keyboard cannot be raised on a locked field — read-only in the way a pilot means it —
      * and a disabled Button stops responding to taps.
      *
      * Typed as View, not EditText: the TAK lock covers the Log Out button as well as fields.
@@ -716,7 +716,7 @@ class TakConnectActivity : AppCompatActivity() {
             val url = customUrl.text.toString().trim()
             // Validate BEFORE saving rather than discovering it in flight: a bad template
             // silently falls back to street tiles at map-load time, which the pilot would only
-            // notice as "my imagery didn't work" with no explanation.
+            // notice as "my imagery did not work" with no explanation.
             if (choice == MapStyle.CUSTOM && !MapStyle.isUsableTemplate(url)) {
                 Toast.makeText(
                     this,
@@ -759,7 +759,7 @@ class TakConnectActivity : AppCompatActivity() {
         radiusField.setText("10")
         renderMapCacheStatus()
 
-        /** Reads the three fields, or null (with a toast) if they don't make sense. */
+        /** Reads the three fields, or null (with a toast) if they do not make sense. */
         fun readArea(): org.osmdroid.util.BoundingBox? {
             val lat = latField.text.toString().trim().toDoubleOrNull()
             val lon = lonField.text.toString().trim().toDoubleOrNull()
@@ -903,7 +903,7 @@ class TakConnectActivity : AppCompatActivity() {
     // ---- 5. Elevation Data (DTED) ----
 
     /** DTED region management — import a region .zip via the system document picker (any file;
-     *  DTED extensions aren't a registered MIME type so we don't filter), list imported regions
+     *  DTED extensions are not a registered MIME type so we do not filter), list imported regions
      *  (one row each — never individual tiles, see [DtedStore]), allow deleting a whole region.
      *
      *  ACTION_OPEN_DOCUMENT deliberately: it's the Storage Access Framework, which needs no
@@ -1026,7 +1026,7 @@ class TakConnectActivity : AppCompatActivity() {
         radiusField.setText("50")
         renderUasfmStatus()
 
-        /** Reads the three fields, or null (with a toast) if they don't make sense. */
+        /** Reads the three fields, or null (with a toast) if they do not make sense. */
         fun readBbox(): UasfmStore.Bbox? {
             val lat = latField.text.toString().trim().toDoubleOrNull()
             val lon = lonField.text.toString().trim().toDoubleOrNull()
@@ -1131,7 +1131,7 @@ class TakConnectActivity : AppCompatActivity() {
                 this, android.Manifest.permission.ACCESS_COARSE_LOCATION
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    /** Fills the UASFM centre fields from the controller's own fix, or explains why it can't —
+    /** Fills the UASFM centre fields from the controller's own fix, or explains why it cannot —
      *  distinguishing "no fix yet" from "permission denied", which are different problems with
      *  different fixes and used to look identical to the pilot. */
     /** Which section's "Use My Location" is waiting on the permission prompt. Needed because
@@ -1172,7 +1172,7 @@ class TakConnectActivity : AppCompatActivity() {
         if (loc == null) {
             Toast.makeText(
                 this,
-                "No position is available. Connect the drone, or type the centre.",
+                "No position is available. Connect the aircraft, or type the centre.",
                 Toast.LENGTH_LONG,
             ).show()
             return
@@ -1295,8 +1295,8 @@ class TakConnectActivity : AppCompatActivity() {
             // Simplified Technical English, as with the field guide: short sentences, active
             // voice, one idea each. A pilot reads this on the ground in a hurry.
             status.text = when {
-                !connected -> "The drone is not connected."
-                !known -> "Wait. The drone did not send the state yet."
+                !connected -> "The aircraft is not connected."
+                !known -> "Wait. The aircraft did not send the state yet."
                 AutelAvoidance.systemEnabled == true -> "Obstacle avoidance is ON."
                 else -> "Obstacle avoidance is OFF."
             }
@@ -1329,7 +1329,7 @@ class TakConnectActivity : AppCompatActivity() {
             AutelAvoidance.setSwitch(which, enabled) { ok ->
                 runOnUiThread {
                     if (!ok) android.widget.Toast.makeText(this@TakConnectActivity,
-                        "The drone did not accept the change.", android.widget.Toast.LENGTH_SHORT).show()
+                        "The aircraft did not accept the change.", android.widget.Toast.LENGTH_SHORT).show()
                     render()
                 }
             }
@@ -1415,7 +1415,7 @@ class TakConnectActivity : AppCompatActivity() {
             normal.isEnabled = connected && known
             precision.isEnabled = connected && known
             status.text = when {
-                !connected -> "The drone is not connected."
+                !connected -> "The aircraft is not connected."
                 !known -> "Wait. The controller did not send the values yet."
                 else -> "Gimbal wheel ${AutelControlRates.dialSpeed}, yaw ${"%.2f".format(AutelControlRates.yawCoefficient)}."
             }

@@ -11,12 +11,12 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <!-- 1. Drone Settings — flight-safety limits, all optional (blank = leave the
+        <!-- 1. Aircraft Settings — flight-safety limits, all optional (blank = leave the
              aircraft's own default alone). Feet in the UI, converted to meters for the SDK. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="1. Drone Settings"
+            android:text="1. Aircraft Settings"
             android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"
@@ -25,7 +25,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Press Apply to Drone to send these settings. A change does not go to the drone until you press the button. Leave a box empty to keep the present setting."
+            android:text="Press Apply to Aircraft to send these settings. A change does not go to the aircraft until you press the button. Leave a box empty to keep the present setting."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="12dp" />
@@ -83,7 +83,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="If the drone loses the signal, it returns to home."
+            android:text="If the aircraft loses the signal, it returns to home."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -120,7 +120,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="Apply to Drone" />
+            android:text="Apply to Aircraft" />
 
         <TextView
             android:id="@+id/limitApplyStatus"
@@ -129,9 +129,9 @@
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="6dp"
-            android:text="Press the button to send the settings to the drone." />
+            android:text="Press the button to send the settings to the aircraft." />
 
-        <!-- Obstacle avoidance. A SUBSECTION of Drone Settings, placed under the signal-loss
+        <!-- Obstacle avoidance. A SUBSECTION of Aircraft Settings, placed under the signal-loss
              failsafe because both describe what the aircraft does on its own.
 
              DIFFERENT FROM EVERYTHING ELSE ON THIS SCREEN, deliberately. Every other control
@@ -149,7 +149,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="These switches show the settings in the drone. Connect the drone to see them. A change goes to the drone immediately."
+            android:text="These switches show the settings in the aircraft. Connect the aircraft to see them. A change goes to the aircraft immediately."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -162,7 +162,7 @@
             android:textColor="@color/tp_state_caution"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:text="The drone is not connected." />
+            android:text="The aircraft is not connected." />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -235,7 +235,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Precision mode moves the gimbal wheel and the drone yaw more slowly. Use it to aim the camera accurately and to make smooth video. It does not change the speed of the drone."
+            android:text="Precision mode moves the gimbal wheel and the aircraft yaw more slowly. Use it to aim the camera accurately and to make smooth video. It does not change the speed of the aircraft."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="6dp" />
@@ -547,7 +547,7 @@
             </LinearLayout>
 
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Drone callsign" />
+                <TextView style="@style/takLabelStyle" android:text="Aircraft callsign" />
                 <EditText
                     android:id="@+id/takCallsign"
                     style="@style/takFieldStyle"
@@ -625,7 +625,7 @@
             android:background="@color/tp_border" />
 
         <!-- My Channels: pull the groups the logged-in user belongs to and pick which ones this
-             drone's markers/PLI are directed to. Requires an active connection. -->
+             aircraft's markers/PLI are directed to. Requires an active connection. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -638,7 +638,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="These are the channels for your TAK login. The channels you select receive the drone position and the markers. If you select none, the server default applies."
+            android:text="These are the channels for your TAK login. The channels you select receive the aircraft position and the markers. If you select none, the server default applies."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
@@ -911,7 +911,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="These are the FAA altitude ceilings. The flight screen shows them. Download the data on wifi before you go to the flight area.\n\n⚠ This is advice only. It is NOT an FAA authorisation. It does not change the altitude limit of the drone."
+            android:text="These are the FAA altitude ceilings. The flight screen shows them. Download the data on wifi before you go to the flight area.\n\n⚠ This is advice only. It is NOT an FAA authorisation. It does not change the altitude limit of the aircraft."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="10dp" />
