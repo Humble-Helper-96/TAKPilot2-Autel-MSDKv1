@@ -1136,7 +1136,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             hint.text = "Pitch +  sends the marker FARTHER from the aircraft, −  brings it " +
                 "closer.\nBearing +  swings it clockwise, −  swings it counter-clockwise.\n\n" +
                 "Aim at a known object with the gimbal 25° DOWN — a bias is nearly " +
-                "invisible looking straight down.\n\nDefault is 0.00° / 0.00° (uncalibrated)."
+                "invisible looking straight down.\n\nFastest with a second TAK device: watch the " +
+                "camera point (name ends \"-SPI\") slide onto the target as you adjust.\n\n" +
+                "Default is 0.00° / 0.00° (uncalibrated)."
         }
         refreshHint()
 

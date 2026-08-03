@@ -23,6 +23,29 @@ SPI bearing candidates, gimbal angles and GPS accuracy all land in this log for 
 
 ---
 
+## Results — Flight 1 (2026-08-03)
+
+- **G1–G6: all pass.**
+- **G6 (GPS units) validated:** raw `GPSInfo` showed 31 sats, 3D fix, HorizontalAccuracy ≈ 0.7 m
+  → `ACC_DIVISOR=1000` (mm) is correct. Settled.
+- **A4: PASS — absolute model confirmed.** A fixed aim offset stayed correct through a 180° then a
+  further 90° yaw, so the bearing is heading-independent → `BEARING_MODE_RELATIVE=false` is right,
+  **no rebuild**. Calibrated **aim offsets for this airframe: Pitch −1.0°, Bearing −3.75°** (held on
+  the device in prefs; code defaults stay 0.0 because offsets are per-airframe — re-run per aircraft).
+- **A3 (pitch sign) looks correct** in passing (down = negative, SPI in front/below).
+- **Best-found calibration method** (now documented in-app, Field Guide §4): aim the reticle at a
+  known landmark, then adjust Aim Offsets while watching the live **`-SPI`** point converge on the
+  target on a **second TAK client** — faster than drop-marker-and-compare.
+- **Noted, aircraft-side (not the app):** a slow hover yaw/wander of a few degrees. Raw GPS showed
+  good position (sub-metre, 31 sats) but a **noisy velocity solution** (GPSSpeed spiking ~1 m/s while
+  the aircraft barely moved) — classic **multipath** near structures, which unsettles the
+  position-hold loop. The app faithfully reported the stable position throughout (SPI stayed put
+  while the airframe drifted). Retest position hold in the open, clear of buildings.
+
+Still open from this flight: A5 (FOV), A7 (IR), and the R-series recovery tests.
+
+---
+
 ## Before you fly — ground checks (aircraft powered, on the ground)
 
 - [ ] **G1 · Launch the right way.** Open TAKPilot from the controller **home screen / launcher**, not

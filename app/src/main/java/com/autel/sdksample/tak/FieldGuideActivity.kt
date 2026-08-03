@@ -680,6 +680,22 @@ class FieldGuideActivity : AppCompatActivity() {
         warn("Change one control at a time. If you change both controls together, you cannot " +
             "see which control corrects the error.")
 
+        sub("A faster way, if you have a second TAK device")
+        body("The aircraft sends its camera point to TAK about two times each second. On a " +
+            "second TAK device you can watch this point while you change the offset, and see it " +
+            "move onto the target. You do not drop a marker and compare each time — you tune the " +
+            "offset and watch.")
+        bullet("1. Point the camera at the target. Make the gimbal 25° down.")
+        bullet("2. On the second TAK device, find the aircraft camera point. Its name ends with " +
+            "\"-SPI\".")
+        bullet("3. Touch and hold the AR button. Select \"Aim Offsets\".")
+        bullet("4. Change Bearing until the point is on the correct line from the aircraft to " +
+            "the target. Change Pitch until the point is at the correct distance. The point " +
+            "moves a few seconds after each change.")
+        bullet("5. Change one control at a time. Stop when the point is on the target.")
+        note("This is often the fastest method. A small, clear target makes it easy to see the " +
+            "point line up.")
+
         note("The app keeps these values. You do not do this procedure again for each flight. " +
             "To remove the correction, open \"Aim Offsets\" and touch \"Reset to 0\".")
 
