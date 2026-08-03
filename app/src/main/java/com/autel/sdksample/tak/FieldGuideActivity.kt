@@ -67,7 +67,12 @@ class FieldGuideActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_field_guide)
         AppLog.v(TAG, "field guide opened")
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        // Menu button on the left of the action bar, matching the flight screen and Pre-Flight
+        // (was a back arrow) — returns to the home screen.
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setHomeAsUpIndicator(R.drawable.ic_menu)
+        }
         content = findViewById(R.id.fieldGuideContent)
 
         title("TAKPilot2 Field Guide")

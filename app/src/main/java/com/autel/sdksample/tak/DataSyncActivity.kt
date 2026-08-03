@@ -27,10 +27,23 @@ class DataSyncActivity : AppCompatActivity() {
     private lateinit var joined: TextView
     private lateinit var list: LinearLayout
 
+    /** The action-bar menu button returns to the home screen. */
+    override fun onSupportNavigateUp(): Boolean {
+        AppLog.v(TAG, "menu tapped — back to home")
+        finish()
+        return true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_data_sync)
         AppLog.v(TAG, "onCreate")
+        // Menu button on the left of the action bar, matching the flight screen and Pre-Flight —
+        // returns to the home screen.
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setHomeAsUpIndicator(R.drawable.ic_menu)
+        }
         status = findViewById(R.id.dsStatus)
         joined = findViewById(R.id.dsJoined)
         list = findViewById(R.id.dsFeedList)

@@ -48,12 +48,25 @@ class DebugActivity : AppCompatActivity() {
 
     companion object { private const val TAG = "DebugActivity" }
 
+    /** The action-bar menu button returns to the home screen. */
+    override fun onSupportNavigateUp(): Boolean {
+        AppLog.v(TAG, "menu tapped — back to home")
+        finish()
+        return true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_debug)
 
         AppLog.sweepExpiredLogs()
         AppLog.v(TAG, "onCreate")
+        // Menu button on the left of the action bar, matching the flight screen and Pre-Flight —
+        // returns to the home screen.
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setHomeAsUpIndicator(R.drawable.ic_menu)
+        }
 
         logText = findViewById(R.id.debugLogText)
         logScroll = findViewById(R.id.debugLogScroll)
