@@ -78,7 +78,7 @@ rework.
 | Gimbal pitch sign | `PITCH_SIGN` | Tracker item #6; flip if SPI lands wrong side |
 | Gimbal yaw frame + offset | `BEARING_MODE_RELATIVE`, `BEARING_OFFSET_DEG` | Tracker item #7; DJI needed +105°, Autel starts at 0. Both candidate bearings logged per SPI push — one flight resolves it |
 | 640T FOV constants | `EO_HFOV/VFOV`, `IR_HFOV/VFOV` | Spec-sheet starting values; tune against the live cone in ATAK |
-| **Video: codec listener vs `AutelCodecView` concurrency** | `AutelVideoStreamer` / `FlightActivity` | Unknown whether the raw-frame tap and the display view can run simultaneously in MSDK v1.5. If starting the stream blanks the local video: mitigation is decoding our own tap into a SurfaceView via MediaCodec (we already have the frames) — small, contained change |
+| ~~**Video: codec listener vs `AutelCodecView` concurrency**~~ | ~~`AutelVideoStreamer`~~ | **N/A (2026-08-03).** Only applied to the aircraft-camera raw-frame tap, now deleted. The shipping stream is a MediaProjection screen capture of the composited screen — no second codec tap, no contention with the display view. Verified on-device. |
 | H.264 vs H.265 downlink | `AutelVideoStreamer.sniffParameterSets` | Handles both; logcat prints which was detected |
 | `codec.cancel()` on stream stop | `AutelVideoStreamer.stop()` | If it also kills the display view's feed, remove the cancel and rely on the `stopped` guard |
 

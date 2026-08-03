@@ -1013,11 +1013,13 @@ of one-flight calibration items the DJI app already resolved once, using the sam
       tune against the rendered AR cone
 - [ ] GPS accuracy units (`ACC_DIVISOR`) — believed mm, sanity-clamped, bench-verify
 - [ ] HAE altitude spot-check against a known surveyed point
-- [ ] Video: confirm the raw-frame codec listener and on-screen `AutelCodecView` can run
-      **simultaneously** — undocumented in the Autel SDK and never tested on hardware.
-      If they conflict, the contained mitigation is already identified: decode our own
-      frame tap into a `SurfaceView` via MediaCodec, since the raw frames are already in
-      hand.
+- [x] ~~Video: confirm the raw-frame codec listener and on-screen `AutelCodecView` can run
+      **simultaneously**~~ — **N/A, retired 2026-08-03.** The question only existed for the
+      aircraft-camera path, which tapped the SDK codec listener *alongside* the display view.
+      That path is gone (commit 7ba980c): the shipping stream is a MediaProjection screen
+      capture that mirrors the already-composited screen, so there is no second codec tap to
+      contend with `AutelCodecView` at all. Verified on-device — local FPV keeps rendering while
+      the screen-capture push streams. Nothing to test in flight here.
 - [ ] Physical button mapping on the Smart Controller V3 — key codes unknown; log
       `onKeyDown` on real hardware before wiring anything (DJI's RC button mapping was
       not portable and this needs its own investigation from scratch).
