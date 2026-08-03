@@ -11,7 +11,7 @@
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_weight="1"
+        android:layout_weight="1.3"
         android:paddingEnd="20dp"
         android:scrollbars="none"
         android:fillViewport="true">
@@ -65,7 +65,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="Clear this box to hide the TAK messages. The log then shows only the app: video, camera, terrain and screen."
+                android:text="Clear this box to hide the TAK messages and show only the app."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <LinearLayout
@@ -81,7 +81,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:text="The radar sends data all the time and fills the log. Keep this box clear. Select it only to examine obstacle avoidance. The app always keeps the avoidance changes and the warnings."
+                android:text="The radar fills the log. Select this box only to examine obstacle avoidance. Avoidance changes and warnings stay in the log."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <!-- Autel Explorer watchdog — a single on/off toggle. Kills Explorer's background
@@ -113,7 +113,7 @@
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="4dp"
-                android:text="Autel Explorer can start on its own and take the aircraft link. Then the video stops with no warning. This option closes Explorer when that happens. It does not change Explorer. You can still open Explorer for firmware updates, compass calibration and registration."
+                android:text="Autel Explorer can start on its own and stop the video with no warning. This option prevents that. It does not change Explorer."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
             <Button

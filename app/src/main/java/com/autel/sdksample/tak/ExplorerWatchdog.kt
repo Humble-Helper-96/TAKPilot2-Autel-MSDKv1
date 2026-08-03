@@ -119,8 +119,8 @@ object ExplorerWatchdog {
     /** One line for the Debug screen. */
     fun statusLine(context: Context): String =
         if (isEnabled(context))
-            "On. The app closes Autel Explorer when it tries to take the aircraft link. The " +
-                "app does not change Explorer. You open Explorer as usual."
+            "On. The app closes Autel Explorer when it takes the aircraft link. You open " +
+                "Explorer as usual."
         else
-            "Off. Autel Explorer can take the aircraft link on its own. Then the video stops."
+            "Off. Autel Explorer can take the aircraft link and stop the video."
 }
