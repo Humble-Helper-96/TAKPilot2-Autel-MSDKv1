@@ -646,10 +646,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Debug-only memory/CPU/GPU/contact overlay — see AppLog.resourceMonitor. Piggybacks on
         // the same slow cadence the old exposure poll used (500ms * 4 = ~2s): frequent enough to
         // actually watch a leak grow, cheap enough that the monitor itself is not a load source.
+        //
+        // Also written to the debug log (not just the on-screen row) — the whole point of this
+        // overlay was chasing leaks that only became clear from a TREND over a flight, and the
+        // screen shows only the current instant. Both media.swcodec (2026-08-04) and the
+        // CotParser contact-retention bug (2026-08-03) were found by pulling numbers OUT of the
+        // log after the fact; a resource monitor that never reaches the log can't be replayed
+        // post-flight, only watched live. Same tag as the rest of this class (not TAK/radar), so
+        // it is unaffected by AppLog.takLogging/radarLogging.
         if (AppLog.resourceMonitor && hudTickCount % 4 == 0) {
-            ResourceMonitor.formattedSegments(this).forEachIndexed { i, text ->
-                resourceMonitorCells[i].text = text
-            }
+            val segments = ResourceMonitor.formattedSegments(this)
+            segments.forEachIndexed { i, text -> resourceMonitorCells[i].text = text }
+            AppLog.d(TAG, "RES  " + segments.joinToString("  "))
         }
 
         // REC shows the CAMERA's own reported state (MediaStatus events), not the last button
