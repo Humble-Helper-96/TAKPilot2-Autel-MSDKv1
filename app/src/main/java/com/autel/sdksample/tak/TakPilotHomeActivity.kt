@@ -78,8 +78,11 @@ class TakPilotHomeActivity : AppCompatActivity() {
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
         // Fixed at build time, not runtime state — set once, no need to touch it in updateStatus().
+        // VERSION_NAME is real semver (see build.gradle); VERSION_CODE is Android's own internal
+        // update-ordering integer and has no semver meaning, so it is deliberately not shown here
+        // — BUILD_TIME already identifies an exact build more precisely than that number could.
         findViewById<TextView>(R.id.homeVersion).text =
-            "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})  ·  built ${BuildConfig.BUILD_TIME}"
+            "v${BuildConfig.VERSION_NAME}  ·  built ${BuildConfig.BUILD_TIME}"
 
         // One tap target: the whole card. The separate "Enter Flight" button that used to sit
         // below it was removed — it duplicated the card's own click and cost ~56dp of a

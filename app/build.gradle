@@ -26,15 +26,25 @@ android {
         targetSdkVersion 29
         // TAKPilot2-Autel's own version, replacing the stock Autel sample's "V1.0.1.40" this
         // project was forked from. v1.3 is the first build carrying DJI-MSDKv4 UI/feature
-        // parity; v1.2 (tag autel-baseline-v1.2) was the older port that predated it. v1.4
-        // fixes the unbounded ADS-B contact-retention bug (see CotParser) that was causing
-        // app-process OOM kills in busy airspace, and adds the debug resource-monitor overlay.
+        // parity; v1.2 (tag autel-baseline-v1.2) was the older port that predated it.
         //
-        // versionName is NOT cosmetic: TestApplication reads it via PackageManager and reports
-        // it as <takv version> on every PLI, so this is what a TAK server's Connected Users
-        // panel shows for this client. Bump it when what's on the wire changes.
-        versionCode 3
-        versionName "1.4"
+        // versionName is real semver (MAJOR.MINOR.PATCH), not cosmetic: TestApplication reads
+        // it via PackageManager and reports it as <takv version> on every PLI, so this is what a
+        // TAK server's Connected Users panel shows for this client. versionCode is a SEPARATE,
+        // purely internal Android integer with no semver meaning -- it exists only so
+        // `install -r` can tell a build is newer, and it is deliberately NOT shown anywhere in
+        // the UI (BuildConfig.BUILD_TIME identifies an exact build far more precisely). Bump
+        // versionName when what's on the wire changes; bump versionCode on every build regardless.
+        //
+        // 1.4.0: fixes the unbounded ADS-B contact-retention bug (see CotParser) that was
+        //        causing app-process OOM kills in busy airspace; adds the debug resource-monitor
+        //        overlay; moves TAK status to the ENTER FLIGHT card.
+        // 1.4.1: reverts ScreenCaptureEncoder to the hardware HEVC encoder -- the software one
+        //        (PREFER_SOFTWARE_ENCODER, set 2026-08-02) leaks system memory via the
+        //        out-of-process media.swcodec service while streaming, and was a likely
+        //        contributor to the same night's OOM kills.
+        versionCode 4
+        versionName "1.4.1"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
