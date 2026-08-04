@@ -1,5 +1,25 @@
 # Video Stream Fix — VBR + 4s I-Frame Interval
 
+> ## ✅ IMPLEMENTED AND RESOLVED 2026-08-04 — this document is now HISTORY
+>
+> Kept for the diagnosis and the frame-extraction evidence, which were correct. **The outcome is
+> recorded in `TAKPILOT2_AUTEL_PORT_PLAN.md` §"Video streaming — 2-second pixelated pulse"** —
+> read that, not this plan, for what the code actually does.
+>
+> Two of this plan's predictions were WRONG, and the pattern is worth keeping:
+>
+> - **"VBR support on the SDM660 is unknown and may not exist" / "expected outcome: VBR doesn't
+>   work"** (Constraints 1-2, Step 4). VBR is supported and works, decisively: I/P frame-size
+>   ratio went 2.53× → 14×, pulse gone. The probe also found the hardware encoder declares
+>   **VBR=true, CBR=false** — the old code was requesting a mode the encoder never advertised,
+>   which is the actual root cause and something this plan did not anticipate.
+> - **The 4s I-frame interval was not kept.** It was insurance against VBR failing; once VBR
+>   worked it was paying doubled join latency and loss-recovery time for nothing. Reverted to 2s.
+>
+> Step 4's on-demand-IDR path was never needed. Step 0's probe was the step that mattered — three
+> of the five "hardware constraints" here were written as expected blockers, and the first one
+> actually tested was simply false. **Probe the hardware before designing around its limits.**
+
 **Project:** TAKPilot2-Autel
 **Component:** `AutelVideoStreamer.kt` (screen-capture → MediaCodec H.265 → RTSP push)
 **Date:** 2026-08-04

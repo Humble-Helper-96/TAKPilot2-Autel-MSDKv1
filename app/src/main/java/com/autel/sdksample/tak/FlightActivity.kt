@@ -366,6 +366,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 onStartStreamTapped()
             }
         }
+        // Long-press picks the quality tier, same tap/long-press split the AR and drop-pin
+        // buttons use: short tap does the obvious thing, long-press configures it.
+        streamToggle.setOnLongClickListener { onVideoQualityTapped(); true }
 
         // Single drop-pin action, placed at the camera look-point. The mini-map is locked, so
         // there is no tap-the-map placement — TakBridgeHolder.lookPoint() is the cursor, giving
@@ -857,6 +860,57 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * grant screen capture and only then telling them the video server is not set up would be
      * two wasted taps and a confusing order.
      */
+    /**
+     * Video quality tier picker — long-press on the LIVE badge.
+     *
+     * Writes the same `video_profile` pref Pre-Flight Setup writes, so the two stay in sync with
+     * no second source of truth. Reachable in flight because the right tier depends on the link,
+     * which is a thing a pilot learns AFTER taking off, not during setup.
+     *
+     * **A change while streaming applies immediately** — the pilot is choosing a tier because the
+     * link is misbehaving now, so "it'll take effect next time" would be the wrong answer. The
+     * encoder is configured once at stream start, so this restarts the push; it does NOT re-prompt
+     * for screen capture, because the MediaProjection outlives the stream and
+     * [ScreenCaptureService.restart] reuses it. Viewers see a brief reconnect.
+     */
+    private fun onVideoQualityTapped() {
+        AppLog.v(TAG, "long-press: video quality")
+        val prefs = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        val current = TranscodeProfile.fromPref(prefs.getString("video_profile", null))
+
+        val view = layoutInflater.inflate(R.layout.dialog_video_quality, null)
+        val group = view.findViewById<android.widget.RadioGroup>(R.id.videoQualityGroup)
+
+        // Built from the enum, not from XML — same reason as the AR category rows.
+        val ids = TranscodeProfile.values().associateWith { profile ->
+            val button = layoutInflater.inflate(R.layout.row_video_quality, group, false)
+                as android.widget.RadioButton
+            button.id = View.generateViewId()
+            button.text = profile.label
+            group.addView(button)
+            button.id
+        }
+        group.check(ids.getValue(current))
+        group.setOnCheckedChangeListener { _, checkedId ->
+            val chosen = ids.entries.firstOrNull { it.value == checkedId }?.key ?: return@setOnCheckedChangeListener
+            if (chosen == current) return@setOnCheckedChangeListener
+            prefs.edit().putString("video_profile", chosen.prefValue).apply()
+            AppLog.i(TAG, "video quality -> ${chosen.label}")
+            if (VideoStreamerHolder.isActive) {
+                ScreenCaptureService.restart(applicationContext)
+                toast("Video quality: ${chosen.label} — restarting stream")
+            } else {
+                toast("Video quality: ${chosen.label}")
+            }
+        }
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("Video Quality")
+            .setView(view)
+            .setPositiveButton("Done", null)
+            .show()
+    }
+
     private fun onStartStreamTapped() {
         val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
         if ((p.getString("video_host", "") ?: "").isEmpty() ||

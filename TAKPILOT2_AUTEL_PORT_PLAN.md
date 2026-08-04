@@ -1502,25 +1502,58 @@ closes the DJI gap — otherwise Stage 2 would be built on an unproven premise.
   values. `ShutterSpeed` has the same lossy shape (56 members) but degrades to "—" rather than a
   wrong value.
 
-### Video streaming — 2-second pixelated pulse
+### Video streaming — 2-second pixelated pulse — ✅ SOLVED 2026-08-04 (VBR)
 
 Visible only to STREAM VIEWERS, never on the controller, because the artifact is created by our
 re-encode and exists only in the outgoing stream.
 
-Cause: a full IDR every `I_FRAME_INTERVAL_S` (2s) under FORCED CBR with no bit headroom, so the
-rate controller spikes the quantiser on each keyframe. The old profiles were tuned for constant
-quality-per-pixel and left **STANDARD and HIGH identical** in bits/pixel — which is why "just use
-HIGH" would not have helped. Bitrates roughly doubled (LOW 275k→475k, STANDARD 800k→1.6M, HIGH
-1.8M→3.6M), all three now at the same bits/pixel.
+**Cause: we were asking this encoder for a bitrate mode it does not support.** A capability probe
+on the Smart Controller V3 settled it:
+
+```
+OMX.qcom.video.encoder.hevc   VBR=true  CBR=false  CQ=false   <- the hardware encoder
+c2.android.hevc.encoder       VBR=true  CBR=true   CQ=true    <- Google's software one
+```
+
+The hardware HEVC encoder's `/vendor/etc/media_codecs*.xml` entry declares no `bitrate-modes` at
+all, so Android defaults it to VBR-only — and `ScreenCaptureEncoder` was explicitly requesting
+`BITRATE_MODE_CBR`. IDRs were being quantised down to fit a per-frame budget, which is the pulse.
+
+**Fix: request VBR (`PREFER_VBR`).** Measured on the outgoing stream at the same 1600k target:
+
+| | I-frame avg | P-frame avg | I/P ratio | bitrate |
+|---|---|---|---|---|
+| CBR (before) | 28.7 KB | 11.3 KB | **2.53×** | 1466 kbps |
+| VBR (after) | 152.4 KB | 10.8 KB | **14.14×** | 1607 kbps |
+
+Pulse confirmed gone by the operator on the live stream. Average bitrate stayed inside the
+configured budget — VBR redistributed rather than inflated. (CBR had been *undershooting* its own
+target by 8%.)
+
+**Consequences, all landed in the same session:**
+- `I_FRAME_INTERVAL_S` stays at **2s**. It was widened to 4s as insurance while VBR was still
+  unproven; once VBR worked, 4s was paying doubled join latency and doubled loss-recovery time
+  for nothing.
+- **Bitrates rolled back** now that the headroom they bought is unnecessary: STANDARD 1.6M→800k,
+  HIGH 3.6M→1.8M. LOW went 475k→**375k**.
+- The doubling had been justified as "all three at equal bits/pixel". That is no longer true and
+  deliberately so: LOW sits at ~0.12 bpp vs STANDARD/HIGH at ~0.077. LOW is the marginal/cellular
+  tier because of its **total** bitrate, not its per-pixel quality — small frames at 10fps are
+  cheap enough to afford good pixels. ⚠ LOW can therefore look BETTER per pixel than STANDARD.
+  Do not "fix" that by flattening the curve, and do not push LOW back toward 275k — the operator
+  rejected that picture, and VBR redistributes bits rather than creating them.
 
 Rejected by the operator, recorded so they are not re-proposed: **intra-refresh** (complexity plus
 unknown mid-stream-join behaviour) and a **longer GOP** (join latency, slower loss recovery).
-**VBR at the same average bitrate** remains untried and is the option to reach for if the pulse
-persists — screen capture is mostly static, so it would give keyframes headroom for no extra
-average bandwidth, at the cost of burstiness.
 
-⚠ LOW is no longer the minimum-bandwidth floor it was designed as. If a genuinely marginal link
-needs one, add a new profile BELOW LOW rather than pushing LOW back down.
+**Do not reach for the software encoder.** `PREFER_SOFTWARE_ENCODER` stays `false` — it leaks
+badly (see `ScreenCaptureEncoder`). Verified across this change: `media.swcodec` PSS was 20,188K
+before and 20,188K after several minutes of sustained streaming, i.e. untouched.
+
+If the pulse ever returns, the knob is NOT the I-frame interval — check the `frame mix:` I/P line
+in the log first. A return to ~2.5× means the encoder stopped honouring VBR. Note that
+`getOutputFormat()` on this legacy OMX component never echoes `KEY_BITRATE_MODE` back (it logs
+`mode=not-reported`), so the frame-size ratio is the only ground truth available.
 
 ## 🚩 WALL STRIKE — runaway write loop saturated the fly-controller channel (2026-08-02)
 

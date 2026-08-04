@@ -43,6 +43,35 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
+        // Re-encode the SAME projection at whatever profile the prefs now say. This is why the
+        // quality picker can apply instantly: the expensive, permission-gated part is the
+        // MediaProjection, and it survives a stream stop — VideoStreamerHolder.stop() releases
+        // the encoder and its VirtualDisplay but deliberately never calls projection.stop(), so
+        // the pilot is not shown a system consent dialog again mid-flight.
+        //
+        // ⚠ This holds because the app targets SDK 29. From Android 14 a MediaProjection token is
+        // SINGLE-USE — a second createVirtualDisplay on it throws — so a targetSdk bump past 33
+        // must re-request permission here instead of reusing `projection`.
+        if (intent?.action == ACTION_RESTART) {
+            val proj = projection
+            if (proj == null) {
+                AppLog.w(TAG, "restart requested with no live projection — ignoring")
+                return START_NOT_STICKY
+            }
+            AppLog.i(TAG, "restart requested — re-starting stream at the current profile")
+            val result = VideoStreamerHolder.startScreenCapture(applicationContext, proj) { ok, msg ->
+                AppLog.i(TAG, "stream status: ok=$ok $msg")
+                if (!ok) toast(msg)
+            }
+            if (result != VideoStreamerHolder.StartResult.STARTED) {
+                AppLog.w(TAG, "restart refused ($result) — stopping")
+                toast("Video stream could not restart")
+                teardown()
+                stopSelf()
+            }
+            return START_NOT_STICKY
+        }
+
         AppLog.i(TAG, "starting foreground service (type=mediaProjection, sdk=${Build.VERSION.SDK_INT})")
         startInForeground()
 
@@ -142,6 +171,7 @@ class ScreenCaptureService : Service() {
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_DATA = "data"
         private const val ACTION_STOP = "com.autel.sdksample.tak.STOP_SCREEN_CAPTURE"
+        private const val ACTION_RESTART = "com.autel.sdksample.tak.RESTART_SCREEN_CAPTURE"
 
         /** Start capture: call from onActivityResult of the screen-capture permission request. */
         fun start(context: Context, resultCode: Int, data: Intent) {
@@ -149,6 +179,18 @@ class ScreenCaptureService : Service() {
                 .putExtra(EXTRA_RESULT_CODE, resultCode)
                 .putExtra(EXTRA_DATA, data)
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i) else context.startService(i)
+        }
+
+        /**
+         * Re-start the push at whatever `video_profile` the prefs now hold, reusing the live
+         * projection so no permission dialog appears. No-op if capture isn't running.
+         */
+        fun restart(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, ScreenCaptureService::class.java).setAction(ACTION_RESTART)
+                )
+            }
         }
 
         /** Stop capture (also stops the projection). Safe to call when not running. */

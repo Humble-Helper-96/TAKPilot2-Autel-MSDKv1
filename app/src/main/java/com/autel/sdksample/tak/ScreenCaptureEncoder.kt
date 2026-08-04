@@ -5,6 +5,7 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.os.Build
@@ -50,6 +51,16 @@ class ScreenCaptureEncoder(
     private var encFrameCount = 0
     private var encBytesSinceLog = 0L
 
+    // I-frame vs P-frame accounting. This ratio — not the mode the encoder reports back — is the
+    // ground truth for whether VBR is doing anything: a legacy OMX component will accept
+    // BITRATE_MODE_VBR without complaint and still rate-control like CBR. A full intra frame
+    // needs roughly 5-10x an average P-frame; CBR here was delivering ~2.5x, which is the
+    // starved keyframe that stream viewers saw as a pulse.
+    private var iFrameCount = 0
+    private var iFrameBytes = 0L
+    private var pFrameCount = 0
+    private var pFrameBytes = 0L
+
     private val screenW: Int
     private val screenH: Int
     private val densityDpi: Int
@@ -86,7 +97,6 @@ class ScreenCaptureEncoder(
             enc.start()
             encoder = enc
             inputSurface = surface
-            AppLog.i(TAG, "encoder configured with variant: $variant")
 
             mediaProjection.registerCallback(projectionCallback, null)
             virtualDisplay = mediaProjection.createVirtualDisplay(
@@ -99,8 +109,8 @@ class ScreenCaptureEncoder(
             running = true
             drainThread = Thread({ drainLoop() }, "ScreenCaptureEncoder").apply { start() }
             AppLog.i(TAG, "screen capture [${profile.name}] H.265: ${screenW}x$screenH -> " +
-                "${targetW}x$targetH @ ${profile.fps}fps ${profile.bitrateBps / 1000}kbps CBR, " +
-                "${I_FRAME_INTERVAL_S}s IDR")
+                "${targetW}x$targetH @ ${profile.fps}fps ${profile.bitrateBps / 1000}kbps, " +
+                "${I_FRAME_INTERVAL_S}s IDR — variant: $variant")
             true
         }.onFailure {
             AppLog.e(TAG, "screen capture start failed: ${it.message}", it)
@@ -123,25 +133,33 @@ class ScreenCaptureEncoder(
      */
     private fun configureEncoder(w: Int, h: Int): Pair<MediaCodec, String>? {
         data class Variant(val name: String, val apply: (MediaFormat) -> Unit)
-        val variants = listOf(
-            Variant("full (profile+level, CBR, max-fps)") { f ->
-                f.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-                f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
-                f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel4)
-                if (Build.VERSION.SDK_INT >= 30) {
-                    f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, profile.fps.toFloat())
-                }
-            },
-            Variant("no max-fps") { f ->
-                f.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-                f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
-                f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel4)
-            },
-            Variant("CBR only (no profile/level)") { f ->
-                f.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-            },
-            Variant("minimal (encoder defaults)") { },
-        )
+
+        // Bitrate modes to try, best first. VBR lets a keyframe borrow bits from the cheap
+        // P-frames around it instead of being quantised down to fit a per-frame CBR budget;
+        // the average is unchanged, so this costs no bandwidth. It is asked for FIRST but is
+        // not assumed — bitrateModesFor() only offers it where the encoder declares it, and
+        // CBR remains in the ladder underneath so a device that rejects VBR still configures.
+        val variants = bitrateModesFor(OUT_MIME).flatMap { mode ->
+            val label = modeLabel(mode)
+            listOf(
+                Variant("full (profile+level, $label, max-fps)") { f ->
+                    f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
+                    f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
+                    f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel4)
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, profile.fps.toFloat())
+                    }
+                },
+                Variant("no max-fps ($label)") { f ->
+                    f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
+                    f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
+                    f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel4)
+                },
+                Variant("$label only (no profile/level)") { f ->
+                    f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
+                },
+            )
+        } + Variant("minimal (encoder defaults)") { }
 
         // WHICH ENCODER, not just which format keys.
         //
@@ -189,6 +207,51 @@ class ScreenCaptureEncoder(
     private val encoderPreference: List<String?> get() =
         if (PREFER_SOFTWARE_ENCODER) listOf(SW_HEVC_ENCODER, null) else listOf(null)
 
+    /**
+     * Which bitrate modes to offer the encoder, best first.
+     *
+     * Also logs what every HEVC encoder on the device declares — this controller is a locked
+     * vendor build with no public record of its codec declarations, so the answer had to be
+     * asked of the hardware rather than looked up. Declaring a mode is necessary but NOT
+     * sufficient: watch the I/P size ratio in the drain loop to see whether it changed anything.
+     */
+    private fun bitrateModesFor(mime: String): List<Int> {
+        val vbrOk = runCatching {
+            var supported = false
+            for (info in MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos) {
+                if (!info.isEncoder || mime !in info.supportedTypes.map { it.lowercase() }) continue
+                val caps = info.getCapabilitiesForType(mime).encoderCapabilities
+                val vbr = caps.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                val cbr = caps.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                val cq = caps.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ)
+                AppLog.i(TAG, "PROBE: ${info.name} VBR=$vbr CBR=$cbr CQ=$cq " +
+                    "complexity=${caps.complexityRange}")
+                // Only the encoder we will actually get decides the ladder. With
+                // PREFER_SOFTWARE_ENCODER false that is the platform's default pick, which is
+                // the hardware one; the loop still logs the others for the record.
+                if (isHardware(info) && vbr) supported = true
+            }
+            supported
+        }.onFailure { AppLog.w(TAG, "PROBE failed: ${it.message}") }.getOrDefault(false)
+
+        val cbr = MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+        val vbr = MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
+        return if (PREFER_VBR && vbrOk) listOf(vbr, cbr) else listOf(cbr)
+    }
+
+    /** `isSoftwareOnly()` is API 29; minSdk here is 21, so fall back to the naming convention
+     *  (`c2.android.*` / `OMX.google.*` are Google's software components). */
+    private fun isHardware(info: MediaCodecInfo): Boolean =
+        if (Build.VERSION.SDK_INT >= 29) !info.isSoftwareOnly()
+        else !info.name.startsWith("c2.android.") && !info.name.startsWith("OMX.google.")
+
+    private fun modeLabel(mode: Int): String = when (mode) {
+        MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR -> "VBR"
+        MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR -> "CBR"
+        MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ -> "CQ"
+        else -> "mode$mode"
+    }
+
     /** Ask the encoder for an IDR now — arms the RTSP packetiser on connect, heals viewers. */
     fun requestSyncFrame() {
         runCatching {
@@ -215,7 +278,14 @@ class ScreenCaptureEncoder(
                 val idx = enc.dequeueOutputBuffer(info, 100_000)
                 when {
                     idx == MediaCodec.INFO_TRY_AGAIN_LATER -> continue
-                    idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> continue
+                    idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        // The only point at which the encoder's ACTUAL format is legal to read.
+                        // Many OMX components do not echo KEY_BITRATE_MODE back at all, so a
+                        // missing mode here is not evidence the request was ignored — the I/P
+                        // ratio logged below is what settles that.
+                        logActualFormat(enc)
+                        continue
+                    }
                     idx >= 0 -> {
                         val outBuf = enc.getOutputBuffer(idx)
                         if (outBuf != null && info.size > 0) {
@@ -227,10 +297,16 @@ class ScreenCaptureEncoder(
                                 onEncoded(outBuf, info)
                                 encFrameCount++
                                 encBytesSinceLog += info.size
+                                if (info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0) {
+                                    iFrameCount++; iFrameBytes += info.size
+                                } else {
+                                    pFrameCount++; pFrameBytes += info.size
+                                }
                                 if (encFrameCount % 150 == 0) {
                                     AppLog.v(TAG, "[${profile.name}] $encFrameCount frames encoded, " +
                                         "${encBytesSinceLog / 1024}KB in last 150")
                                     encBytesSinceLog = 0
+                                    logFrameMix()
                                 }
                             }
                         }
@@ -241,6 +317,35 @@ class ScreenCaptureEncoder(
         } catch (t: Throwable) {
             if (running) AppLog.w(TAG, "drain loop error: ${t.message}")
         }
+    }
+
+    /** What the encoder says it actually configured. Every key is optional — read defensively. */
+    private fun logActualFormat(enc: MediaCodec) {
+        runCatching {
+            val f = enc.outputFormat
+            fun intOf(k: String): String = runCatching { f.getInteger(k).toString() }.getOrDefault("-")
+            AppLog.i(TAG, "encoder output format: ${intOf(MediaFormat.KEY_WIDTH)}x" +
+                "${intOf(MediaFormat.KEY_HEIGHT)} bitrate=${intOf(MediaFormat.KEY_BIT_RATE)} " +
+                "mode=${runCatching { modeLabel(f.getInteger(MediaFormat.KEY_BITRATE_MODE)) }
+                    .getOrDefault("not-reported")} " +
+                "iFrameInterval=${intOf(MediaFormat.KEY_I_FRAME_INTERVAL)}")
+        }.onFailure { AppLog.w(TAG, "could not read output format: ${it.message}") }
+    }
+
+    /**
+     * The verification that matters: how many bits an I-frame actually gets relative to a P-frame.
+     *
+     * ~2.5x means the rate controller is starving keyframes (the CBR behaviour that produced the
+     * pulse). 5-10x means keyframes are being allowed the bits a full intra frame needs. Logged
+     * cumulatively rather than per frame so a long session reads as one trend line instead of a
+     * keyframe-rate log spam.
+     */
+    private fun logFrameMix() {
+        if (iFrameCount == 0 || pFrameCount == 0) return
+        val iAvg = iFrameBytes / iFrameCount
+        val pAvg = pFrameBytes / pFrameCount
+        AppLog.i(TAG, "frame mix: I n=$iFrameCount avg=${iAvg / 1024}KB, " +
+            "P n=$pFrameCount avg=${pAvg / 1024}KB, I/P=${"%.2f".format(iAvg.toDouble() / pAvg)}x")
     }
 
     /**
@@ -304,7 +409,40 @@ class ScreenCaptureEncoder(
         private const val TAG = "ScreenCaptureEncoder"
         private const val Z: Byte = 0
         private const val O: Byte = 1
+        /**
+         * Seconds between forced IDRs. **Stays at 2 — [PREFER_VBR] is what fixed the pulse.**
+         *
+         * The 2026-08-04 fix plan paired VBR with a 2 -> 4 widening, on the theory that VBR
+         * might not work on this SoC and halving the number of keyframes would at least halve
+         * how OFTEN the pulse could happen. VBR did work (I/P went 2.53x -> 14x, operator
+         * confirmed the pulse gone), so the widening was addressing frequency after amplitude
+         * was already solved — and it is not free: a viewer joining mid-GOP waits up to one
+         * interval for a picture, and a broken prediction chain takes up to one interval to
+         * self-heal. Both doubled at 4s. Reverted to 2 rather than kept "for margin".
+         *
+         * So: if the pulse ever comes back, this is NOT the knob. Check the `frame mix:` I/P
+         * ratio first — a return to ~2.5x means the encoder stopped honouring VBR.
+         */
         private const val I_FRAME_INTERVAL_S = 2
+
+        /**
+         * Ask for VBR instead of CBR when the encoder declares it.
+         *
+         * Under CBR the rate controller holds every frame to roughly the same size, so an IDR —
+         * which has no motion prediction to lean on and legitimately needs 5-10x an average
+         * P-frame — gets quantised hard to fit. Measured on this controller at CBR: I/P was only
+         * 2.53x, and the resulting keyframe was visibly blockier than its neighbours. VBR lets
+         * the keyframe borrow from the cheap frames around it at the SAME average bitrate, so
+         * this costs no extra bandwidth — bitrates in [TranscodeProfile] are deliberately
+         * unchanged.
+         *
+         * Not assumed to work: this SoC's `OMX.qcom.video.encoder.hevc` is a legacy OMX
+         * component, its media_codecs.xml declares no `bitrate-modes` at all, and Android 11 has
+         * no VBR quality floor (API 31+ only), so the mode could be accepted and then ignored.
+         * The ladder in configureEncoder falls back to CBR either way. Check the "frame mix"
+         * I/P line in the log before believing it did anything.
+         */
+        private const val PREFER_VBR = true
 
         /**
          * Prefer Google's SOFTWARE HEVC encoder over this chip's hardware one.

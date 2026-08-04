@@ -52,8 +52,17 @@ android {
         //        from log data, not by watching the screen live. Smart Controller V3-specific
         //        sizing: readout text and the crosshair (arms + accuracy ring) bumped up for that
         //        screen's real size, HUD split top/bottom to clear the obstacle-radar labels.
-        versionCode 5
-        versionName "1.4.2"
+        // 1.5.0: kills the 2s keyframe pulse in the outgoing stream for good. Root cause was not
+        //        bitrate: the hardware HEVC encoder declares VBR only (probe: VBR=true CBR=false)
+        //        and we were requesting CBR, so IDRs got quantised down to fit a per-frame
+        //        budget. Asking for VBR took the I/P frame-size ratio 2.53x -> 14x at the same
+        //        average bitrate. The bitrates that had been doubled to paper over it are rolled
+        //        back (STANDARD 1.6M->800k, HIGH 3.6M->1.8M, LOW 475k->375k), so this build
+        //        SHRINKS what goes on the wire while looking better. New: long-press LIVE for the
+        //        quality tier, which now applies instantly by reusing the MediaProjection instead
+        //        of re-prompting for screen capture.
+        versionCode 6
+        versionName "1.5.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
