@@ -276,26 +276,41 @@
 
     </LinearLayout>
 
-    <!-- Debug-only live resource monitor (memory / contact count), top-left under the toolbar.
-         Off by default — see AppLog.resourceMonitor / ResourceMonitor.kt. Deliberately plain
-         monospace on a dark chip, matching the Debug Log screen's style, since this is a
+    <!-- Debug-only live resource monitor (memory/CPU/GPU/contact count), one line across the
+         bottom. Off by default — see AppLog.resourceMonitor / ResourceMonitor.kt. Deliberately
+         plain monospace on a dark chip, matching the Debug Log screen's style, since this is a
          diagnostic aid, not a normal-flight HUD element. Placed AFTER flightNoVideoCover in
          z-order (declared earlier above) so it stays visible even while that full-screen
          "Waiting for aircraft…" cover is showing — it needs to be watchable before a connection
-         is up, not just once flying. -->
-    <TextView
-        android:id="@+id/flightResourceMonitor"
-        android:layout_width="wrap_content"
+         is up, not just once flying.
+
+         Positioned to match the mini-map exactly (operator's spec, 2026-08-04): bottom edge
+         level with the map's bottom, spanning the screen's left edge to the map's left edge,
+         with its five cells evenly spaced across that span. The map sits inside
+         flightHudColumn (130dp wide, paddingEnd 14dp, paddingBottom 12dp — see that column's
+         own comment), so the map's left edge is exactly 144dp in from the screen's right edge
+         and its bottom edge is exactly 12dp up from the screen's bottom; marginEnd/marginBottom
+         below mirror those two numbers rather than being eyeballed. If the map's size or the
+         column's padding ever changes, these must change with it. -->
+    <LinearLayout
+        android:id="@+id/flightResourceMonitorRow"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginTop="60dp"
-        android:layout_marginStart="4dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginBottom="12dp"
+        android:layout_marginEnd="144dp"
         android:background="#B0000000"
-        android:fontFamily="monospace"
-        android:padding="6dp"
-        android:textColor="@color/tp_state_go_soft"
-        android:textSize="11sp"
-        android:visibility="gone" />
+        android:orientation="horizontal"
+        android:paddingVertical="6dp"
+        android:visibility="gone">
+
+        <TextView android:id="@+id/flightResSys" style="@style/flightResCell" />
+        <TextView android:id="@+id/flightResApp" style="@style/flightResCell" />
+        <TextView android:id="@+id/flightResCpu" style="@style/flightResCell" />
+        <TextView android:id="@+id/flightResGpu" style="@style/flightResCell" />
+        <TextView android:id="@+id/flightResTak" style="@style/flightResCell" />
+
+    </LinearLayout>
 
     <!-- Transient notice ("Home Point Set", etc.) — upper-left over the video, below the
          toolbar. Hidden by default; shown + auto-hidden in code. Same as DJI's fpvNotice. -->

@@ -136,17 +136,24 @@ object ResourceMonitor {
         (File("/sys/class/kgsl/kgsl-3d0/gpuclk").readText().trim().toLong() / 1_000_000L).toInt()
     }.getOrNull()
 
-    /** Compact multi-line text for the flight-screen overlay panel. */
-    fun formatted(context: Context): String {
+    /**
+     * Five short strings for a one-line, evenly-spaced overlay row (SYS / APP / CPU / GPU / TAK),
+     * one per fixed cell — see the flight layout's `flightResourceMonitorRow`. Always five
+     * entries, in this order, even when a value is unavailable (GPU shows "—" rather than the
+     * cell disappearing), so the row's cell positions never shift while it's being watched.
+     */
+    fun formattedSegments(context: Context): List<String> {
         val s = snapshot(context)
-        val lowFlag = if (s.lowMemory) "  ⚠ LOW MEM" else ""
-        val cpuLine = "CPU  sys ${s.sysCpuPct?.let { "$it%" } ?: "—"}  app ${s.appCpuPct?.let { "$it%" } ?: "—"}"
-        val gpuLine = if (s.gpuBusyPct != null || s.gpuClockMhz != null) {
-            "\nGPU  " + (s.gpuBusyPct?.let { "$it%" } ?: "—") + (s.gpuClockMhz?.let { "  ${it}MHz" } ?: "")
-        } else ""
-        return "SYS  ${s.sysAvailMb}/${s.sysTotalMb} MB free$lowFlag\n" +
-            "APP  pss ${s.appPssMb}MB  heap ${s.heapUsedMb}/${s.heapMaxMb}MB\n" +
-            "$cpuLine$gpuLine\n" +
-            "TAK  ${s.contactCount} known contacts"
+        val lowFlag = if (s.lowMemory) " ⚠" else ""
+        val gpu = if (s.gpuBusyPct != null || s.gpuClockMhz != null) {
+            (s.gpuBusyPct?.let { "$it%" } ?: "—") + (s.gpuClockMhz?.let { " ${it}MHz" } ?: "")
+        } else "—"
+        return listOf(
+            "SYS ${s.sysAvailMb}/${s.sysTotalMb}MB$lowFlag",
+            "APP ${s.appPssMb}MB/${s.heapUsedMb}MB",
+            "CPU ${s.sysCpuPct?.let { "$it%" } ?: "—"}/${s.appCpuPct?.let { "$it%" } ?: "—"}",
+            "GPU $gpu",
+            "TAK ${s.contactCount}",
+        )
     }
 }
