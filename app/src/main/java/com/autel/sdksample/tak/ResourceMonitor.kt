@@ -3,10 +3,13 @@ package com.autel.sdksample.tak
 import android.app.ActivityManager
 import android.content.Context
 import android.os.Process
+import android.os.SystemClock
 import com.taklite.client.tak.TakManager
+import java.io.File
 
 /**
- * Live memory/contact-count diagnostics for the flight-screen overlay (see [AppLog.resourceMonitor]).
+ * Live memory/CPU/GPU/contact-count diagnostics for the flight-screen overlay (see
+ * [AppLog.resourceMonitor]).
  *
  * Added 2026-08-03 while chasing a sequence of app-process OOM kills near busy airspace: the
  * "known contacts" count (see [TakManager.getTakUsers]) is included deliberately, since a stale
@@ -15,6 +18,18 @@ import com.taklite.client.tak.TakManager
  * app showed 161 "known" contacts while a second TAK client showed a handful. That specific bug
  * is fixed, but the count stays on the overlay as the fastest way to see whether it (or a future
  * variant of it) is recurring, alongside the raw memory figures, right up to a crash.
+ *
+ * CPU/GPU added 2026-08-04. Both are true instantaneous load, not memory — the same night's
+ * `media.swcodec` leak (see [ScreenCaptureEncoder]'s PREFER_SOFTWARE_ENCODER history) was found by
+ * watching memory, but a software encoder pegging a core, or a GPU-bound VirtualDisplay path,
+ * would show here first and show nowhere in the memory figures at all.
+ *
+ * GPU is read from this SoC's Adreno sysfs node (`/sys/class/kgsl/kgsl-3d0/`), confirmed readable
+ * by an ordinary app process (not just adb shell) on THIS controller — verified via `run-as`,
+ * 2026-08-04. That is a device/build property, not an Android guarantee: SELinux locks this down
+ * to root on plenty of devices. Every GPU read is wrapped in [runCatching] and the GPU line is
+ * omitted entirely (not shown as "—") when unavailable, so this degrades cleanly on hardware
+ * that doesn't expose it.
  */
 object ResourceMonitor {
 
@@ -26,7 +41,20 @@ object ResourceMonitor {
         val heapUsedMb: Int,
         val heapMaxMb: Int,
         val contactCount: Int,
+        /** Null on the first sample only — both need a delta against the previous call. */
+        val sysCpuPct: Int?,
+        val appCpuPct: Int?,
+        /** Null if this device/build doesn't expose GPU sysfs to an app process. */
+        val gpuBusyPct: Int?,
+        val gpuClockMhz: Int?,
     )
+
+    // Previous-sample state for the CPU deltas. SystemClock.elapsedRealtime() (monotonic, immune
+    // to RTC/timezone changes) is the wall clock; -1 means "no previous sample yet".
+    @Volatile private var lastWallMs: Long = -1
+    @Volatile private var lastSysTotalJiffies: Long = -1
+    @Volatile private var lastSysIdleJiffies: Long = -1
+    @Volatile private var lastAppCpuMs: Long = -1
 
     fun snapshot(context: Context): Snapshot {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -46,6 +74,32 @@ object ResourceMonitor {
 
         val contactCount = runCatching { TakManager.getInstance().takUsers.size }.getOrDefault(-1)
 
+        // ---- CPU: delta against the previous snapshot ----
+        val nowWallMs = SystemClock.elapsedRealtime()
+        val sysJiffies = readSystemCpuJiffies()
+        val appCpuMs = Process.getElapsedCpuTime()   // official API: this process's CPU time, in ms
+
+        var sysCpuPct: Int? = null
+        var appCpuPct: Int? = null
+        if (lastWallMs >= 0) {
+            val wallDeltaMs = nowWallMs - lastWallMs
+            if (sysJiffies != null && lastSysTotalJiffies >= 0 && wallDeltaMs > 0) {
+                val totalDelta = sysJiffies.first - lastSysTotalJiffies
+                val idleDelta = sysJiffies.second - lastSysIdleJiffies
+                if (totalDelta > 0) {
+                    sysCpuPct = (100 * (totalDelta - idleDelta) / totalDelta).toInt().coerceIn(0, 100)
+                }
+            }
+            if (wallDeltaMs > 0) {
+                // NOT clamped to 100 — a multi-threaded process can legitimately use more than
+                // one core's worth of wall-clock time, same convention `top` uses.
+                appCpuPct = (100 * (appCpuMs - lastAppCpuMs) / wallDeltaMs).toInt().coerceAtLeast(0)
+            }
+        }
+        lastWallMs = nowWallMs
+        if (sysJiffies != null) { lastSysTotalJiffies = sysJiffies.first; lastSysIdleJiffies = sysJiffies.second }
+        lastAppCpuMs = appCpuMs
+
         return Snapshot(
             sysAvailMb = (memInfo.availMem / (1024 * 1024)).toInt(),
             sysTotalMb = (memInfo.totalMem / (1024 * 1024)).toInt(),
@@ -54,15 +108,45 @@ object ResourceMonitor {
             heapUsedMb = heapUsedMb,
             heapMaxMb = heapMaxMb,
             contactCount = contactCount,
+            sysCpuPct = sysCpuPct,
+            appCpuPct = appCpuPct,
+            gpuBusyPct = readGpuBusyPct(),
+            gpuClockMhz = readGpuClockMhz(),
         )
     }
+
+    /** (total, idle+iowait) jiffies from /proc/stat's aggregate "cpu " line, or null if unreadable. */
+    private fun readSystemCpuJiffies(): Pair<Long, Long>? = runCatching {
+        val line = File("/proc/stat").bufferedReader().use { it.readLine() } ?: return null
+        // "cpu  57354 18884 56145 282250 1808 6151 3171 0 0 0"
+        // fields: user nice system idle iowait irq softirq steal guest guest_nice
+        val fields = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+        if (fields.size < 4) return null
+        val idle = fields[3] + (fields.getOrElse(4) { 0L })
+        val total = fields.sum()
+        total to idle
+    }.getOrNull()
+
+    private fun readGpuBusyPct(): Int? = runCatching {
+        File("/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage")
+            .readText().trim().takeWhile { it.isDigit() }.toIntOrNull()
+    }.getOrNull()
+
+    private fun readGpuClockMhz(): Int? = runCatching {
+        (File("/sys/class/kgsl/kgsl-3d0/gpuclk").readText().trim().toLong() / 1_000_000L).toInt()
+    }.getOrNull()
 
     /** Compact multi-line text for the flight-screen overlay panel. */
     fun formatted(context: Context): String {
         val s = snapshot(context)
         val lowFlag = if (s.lowMemory) "  ⚠ LOW MEM" else ""
+        val cpuLine = "CPU  sys ${s.sysCpuPct?.let { "$it%" } ?: "—"}  app ${s.appCpuPct?.let { "$it%" } ?: "—"}"
+        val gpuLine = if (s.gpuBusyPct != null || s.gpuClockMhz != null) {
+            "\nGPU  " + (s.gpuBusyPct?.let { "$it%" } ?: "—") + (s.gpuClockMhz?.let { "  ${it}MHz" } ?: "")
+        } else ""
         return "SYS  ${s.sysAvailMb}/${s.sysTotalMb} MB free$lowFlag\n" +
             "APP  pss ${s.appPssMb}MB  heap ${s.heapUsedMb}/${s.heapMaxMb}MB\n" +
+            "$cpuLine$gpuLine\n" +
             "TAK  ${s.contactCount} known contacts"
     }
 }
