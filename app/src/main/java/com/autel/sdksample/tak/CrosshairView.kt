@@ -10,6 +10,7 @@ import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import com.autel.sdksample.R
 import kotlin.math.hypot
 
 /**
@@ -83,30 +84,33 @@ class CrosshairView @JvmOverloads constructor(
     }
 
     private var ringColor = Color.WHITE
-    /** Twice the arms' weight (1.5f): the ring carries the accuracy state, so it should read
-     *  at a glance without the pilot looking for it. */
+    /** Twice the arms' weight: the ring carries the accuracy state, so it should read at a
+     *  glance without the pilot looking for it. Stroke widths come from dimens (crosshair_*_width)
+     *  rather than hardcoded floats so the Smart Controller V3 can run ~25% heavier (operator
+     *  request 2026-08-04: the reticle read too fine on that screen) while every other screen
+     *  keeps the exact original weight — see values/dimens.xml's comment for the reasoning. */
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        strokeWidth = 3f
+        strokeWidth = resources.getDimension(R.dimen.crosshair_ring_width)
         style = Paint.Style.STROKE
     }
     /** Matching heavier outline, so the thicker ring keeps its dark edge on bright ground. */
     private val ringOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         alpha = 160
-        strokeWidth = 6f
+        strokeWidth = resources.getDimension(R.dimen.crosshair_ring_outline_width)
         style = Paint.Style.STROKE
     }
 
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         alpha = 160
-        strokeWidth = 3f
+        strokeWidth = resources.getDimension(R.dimen.crosshair_arm_outline_width)
         style = Paint.Style.STROKE
     }
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        strokeWidth = 1.5f
+        strokeWidth = resources.getDimension(R.dimen.crosshair_arm_line_width)
         style = Paint.Style.STROKE
     }
     // Drawn outline-then-white each frame. Held as a field so onDraw doesn't allocate the

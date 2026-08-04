@@ -37,4 +37,12 @@
 	     Controller SE, RT3) keeps the base 12sp from values/dimens.xml; this bucket is the V3
 	     specifically, same reasoning as flight_map_size above. -->
 	<dimen name="flight_readout_text_size">18sp</dimen>
+
+	<!-- CrosshairView stroke widths, ~25% heavier than the base bucket's exact-current-appearance
+	     values (see values/dimens.xml's comment) — operator request 2026-08-04: the reticle
+	     reads too fine on the V3's real screen. 3px->3.75px, 1.5px->1.875px, 6px->7.5px. -->
+	<dimen name="crosshair_arm_outline_width">3.75px</dimen>
+	<dimen name="crosshair_arm_line_width">1.875px</dimen>
+	<dimen name="crosshair_ring_width">3.75px</dimen>
+	<dimen name="crosshair_ring_outline_width">7.5px</dimen>
 </resources>

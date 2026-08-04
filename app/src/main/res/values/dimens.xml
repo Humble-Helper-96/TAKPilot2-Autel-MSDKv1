@@ -642,4 +642,17 @@
 	     that screen. -->
 	<dimen name="flight_readout_text_size">12sp</dimen>
 
+	<!-- CrosshairView stroke widths — arms (outline/line) and the accuracy ring (ring/
+	     ringOutline). Base values here are in PX, not DP, deliberately: they match exactly what
+	     CrosshairView.kt hardcoded as raw Paint.strokeWidth floats before 2026-08-04 (3f, 1.5f,
+	     3f, 6f), so this bucket's on-screen appearance is byte-for-byte unchanged on every
+	     existing screen. Only values-w820dp (the Smart Controller V3) overrides them, ~25%
+	     heavier per the operator's request — the reticle read too fine at this screen's real
+	     size/viewing distance. Read via Resources.getDimension(), which returns PX values as-is
+	     with no density scaling, same reasoning as the raw-px choice. -->
+	<dimen name="crosshair_arm_outline_width">3px</dimen>
+	<dimen name="crosshair_arm_line_width">1.5px</dimen>
+	<dimen name="crosshair_ring_width">3px</dimen>
+	<dimen name="crosshair_ring_outline_width">6px</dimen>
+
 </resources>
