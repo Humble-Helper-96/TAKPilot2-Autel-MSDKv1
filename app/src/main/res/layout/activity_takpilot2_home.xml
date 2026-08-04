@@ -49,26 +49,18 @@
                     android:textColor="@color/tp_text_primary"
                     android:textSize="22sp"
                     android:textStyle="bold" />
-                <LinearLayout
+                <!-- Which exact build a controller is running — precise enough (build TIME, not
+                     just version) to tell apart two sideloads made minutes apart during testing.
+                     Replaces the TAK status indicator, which moved to the ENTER FLIGHT card:
+                     that is where a pilot actually needs it, right before they act on it. -->
+                <TextView
+                    android:id="@+id/homeVersion"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginTop="6dp">
-                    <View
-                        android:id="@+id/homeTakDot"
-                        android:layout_width="10dp"
-                        android:layout_height="10dp"
-                        android:layout_marginEnd="6dp"
-                        android:background="@drawable/tak_status_dot" />
-                    <TextView
-                        android:id="@+id/homeTakStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="TAK: Disconnected"
-                        android:textColor="@color/tp_text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
+                    android:layout_marginTop="6dp"
+                    android:text="v— · built —"
+                    android:textColor="@color/tp_text_secondary"
+                    android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -176,13 +168,37 @@
             android:textSize="15sp"
             android:layout_marginTop="6dp" />
 
+        <!-- TAK connection status — moved here from under the app name (2026-08-03). This card
+             is what a pilot taps to fly, so the one thing that decides whether the team will see
+             them belongs right where they're about to act on it, not on the screen's other side. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="10dp">
+            <View
+                android:id="@+id/homeTakDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homeTakStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TAK: Disconnected"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
         <!-- Aircraft info, centered under the title -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:layout_marginTop="18dp">
+            android:layout_marginTop="10dp">
             <TextView style="@style/homeCardTitle" android:text="Aircraft"
                 android:layout_gravity="center_horizontal" />
             <TextView android:id="@+id/homeAircraft" style="@style/homeCardValue"

@@ -12,6 +12,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.autel.sdk.Autel
+import com.autel.sdksample.BuildConfig
 import com.autel.sdksample.R
 import com.taklite.client.tak.TakManager
 import com.taklite.util.AppLog
@@ -76,6 +77,9 @@ class TakPilotHomeActivity : AppCompatActivity() {
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
+        // Fixed at build time, not runtime state — set once, no need to touch it in updateStatus().
+        findViewById<TextView>(R.id.homeVersion).text =
+            "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})  ·  built ${BuildConfig.BUILD_TIME}"
 
         // One tap target: the whole card. The separate "Enter Flight" button that used to sit
         // below it was removed — it duplicated the card's own click and cost ~56dp of a
