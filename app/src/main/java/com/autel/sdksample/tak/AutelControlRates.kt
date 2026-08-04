@@ -80,11 +80,13 @@ object AutelControlRates {
     /**
      * Yaw rate in Precision = 35%.
      *
-     * ⚠ THE ONE NUMBER HERE STILL EXPECTED TO NEED TUNING. Everything else in this block is
-     * either Autel's own default or a value the operator has flown; this is a first setting,
-     * chosen as roughly half of Normal and comfortably inside the 20-200% range Explorer offers.
-     * If Precision yaw is still too quick, lower it toward 0.20; if it feels dead, raise it.
-     * The settings dump logs what the aircraft reports back as `feel.yawStrokeSensitivity`.
+     * **FLOWN AND ACCEPTED 2026-08-04** — chosen as roughly half of Normal, inside the 20-200%
+     * range Explorer offers, and confirmed in the air rather than left as a guess. This is the
+     * first setting that made Precision yaw genuinely slower, because the parameter the app had
+     * been tuning for two rounds was the stick curve, not the rate.
+     *
+     * If it ever needs revisiting: lower toward 0.20 for slower, raise for more authority. The
+     * settings dump logs what the aircraft reports back as `feel.yawStrokeSensitivity`.
      */
     private const val PRECISION_YAW_RATE = 0.35f
 
@@ -98,8 +100,10 @@ object AutelControlRates {
      *
      * 0.30, not the 0.2 floor. Yaw sits at the floor because it is almost purely an AIMING axis
      * — a slow centre costs nothing. These three also FLY the aircraft, and bottoming them out
-     * risks Precision feeling sluggish to reposition rather than merely fine. Halfway is the
-     * conservative first step; drop to 0.2 if it is not soft enough.
+     * risks Precision feeling sluggish to reposition rather than merely fine.
+     *
+     * **FLOWN AND ACCEPTED 2026-08-04** at 0.30. Drop toward 0.2 only if a pilot asks for softer;
+     * it was deliberately not taken to the floor.
      */
     private const val NORMAL_STICK_EXP = 0.50f
     private const val PRECISION_STICK_EXP = 0.30f

@@ -2396,7 +2396,10 @@ Three guards now exist so this cannot repeat quietly:
   presets differ by rate alone and tuning changes one variable at a time.
 - **Yaw sits at the 0.2 curve floor because it is an aiming axis**; a slow centre costs nothing.
   Throttle/pitch/roll also fly the aircraft, so they stop at 0.30 rather than bottoming out.
-- `PRECISION_YAW_RATE` (0.35) is the one value still expected to need tuning.
+**✅ FLIGHT-VALIDATED 2026-08-04 (v1.5.1).** The operator flew these values and accepted them —
+Precision yaw is genuinely slower for the first time, and the softened throttle/pitch/roll curves
+were flown in the same session. They are no longer first guesses; treat a change to any of them as
+a retune that needs its own flight, not a correction of an untested number.
 
 ### Applied on EVERY connect, not just when chosen
 
