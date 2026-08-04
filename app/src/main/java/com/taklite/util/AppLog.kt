@@ -37,6 +37,7 @@ object AppLog {
     private const val KEY_VERBOSE = "debug_logging_verbose"
     private const val KEY_TAK = "debug_logging_tak"
     private const val KEY_RADAR = "debug_logging_radar"
+    private const val KEY_RESOURCE_MONITOR = "debug_resource_monitor"
     private const val ACTIVE_FILE_NAME = "app.log"
     private const val MAX_FILE_SIZE_BYTES = 1L * 1024 * 1024
     private const val RETENTION_MS = 2L * 60 * 60 * 1000
@@ -115,6 +116,19 @@ object AppLog {
         get() = initialized && prefs.getBoolean(KEY_RADAR, false)
         set(value) {
             if (initialized) prefs.edit().putBoolean(KEY_RADAR, value).apply()
+        }
+
+    /**
+     * Live memory/contact-count overlay on the flight screen (top-left, under the toolbar).
+     * Default false — it is a diagnostic aid for chasing memory-pressure crashes, not something
+     * a pilot needs in the way during normal flight. Added 2026-08-03 after a sequence of
+     * app-process OOM kills; see [com.autel.sdksample.tak.ResourceMonitor].
+     */
+    @JvmStatic
+    var resourceMonitor: Boolean
+        get() = initialized && prefs.getBoolean(KEY_RESOURCE_MONITOR, false)
+        set(value) {
+            if (initialized) prefs.edit().putBoolean(KEY_RESOURCE_MONITOR, value).apply()
         }
 
     /**

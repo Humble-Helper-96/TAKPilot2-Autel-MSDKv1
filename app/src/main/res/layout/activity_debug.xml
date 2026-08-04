@@ -84,6 +84,22 @@
                 android:text="The radar fills the log. Select this box only to examine obstacle avoidance. Avoidance changes and warnings stay in the log."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:paddingTop="4dp">
+                <CheckBox android:id="@+id/debugResourceMonitorToggle" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_light" android:textSize="15sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:paddingStart="8dp" android:paddingTop="2dp"
+                android:text="Adds a small panel on the flight screen with memory and contact-count numbers. Use it to watch the system before a crash."
+                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
+
             <!-- Autel Explorer watchdog — a single on/off toggle. Kills Explorer's background
                  process when it tries to take the aircraft link. No permanent change to the
                  controller; Explorer opens normally when the pilot opens it. -->

@@ -80,11 +80,23 @@ public class CotParser {
                         String staleStr = parser.getAttributeValue(null, "stale");
                         if (staleStr != null) {
                             staleTime = parseTime(staleStr);
-                            // Enforce minimum stale window so contacts don't grey out
-                            // between PLI updates from users with long reporting intervals
-                            long minStale = System.currentTimeMillis() + MIN_STALE_DURATION_MS;
-                            if (staleTime < minStale) {
-                                staleTime = minStale;
+                            // Enforce a minimum stale window so contacts don't grey out between
+                            // PLI updates from users with long reporting intervals — but NOT for
+                            // air-domain contacts (ADS-B tracks, other drones). Those self-declare
+                            // an honest, short stale window (an ADS-B ping is typically valid ~30s)
+                            // and update every couple of seconds anyway, so the floor buys them
+                            // nothing. Applying it anyway was a real bug: near busy airspace the
+                            // known-contacts map held every distinct aircraft for a MINIMUM of
+                            // ~10 minutes (this floor plus TakUser.isExpired()'s own +5min grace),
+                            // growing effectively unbounded over a session — 161 "known" contacts
+                            // were held here while the live picture on a second TAK client showed
+                            // a handful. That unbounded growth is the root cause traced to a
+                            // sequence of app-process OOM kills on 2026-08-03.
+                            if (!isAirDomain(type)) {
+                                long minStale = System.currentTimeMillis() + MIN_STALE_DURATION_MS;
+                                if (staleTime < minStale) {
+                                    staleTime = minStale;
+                                }
                             }
                         }
                     } else if ("point".equals(tag)) {
@@ -128,11 +140,8 @@ public class CotParser {
             user.setType(type);   // raw CoT type, used to resolve the map symbol/icon
 
             // Detect drone: type contains "-A-" (Air domain, e.g. a-f-A-M-H-Q)
-            if (type != null && type.length() >= 5) {
-                String[] parts = type.split("-");
-                if (parts.length >= 3 && "A".equals(parts[2])) {
-                    user.setDrone(true);
-                }
+            if (isAirDomain(type)) {
+                user.setDrone(true);
             }
             if (videoUrl != null) user.setVideoUrl(videoUrl);
             if (videoAlias != null) user.setVideoAlias(videoAlias);
@@ -228,6 +237,17 @@ public class CotParser {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * True for CoT types in the Air domain (position index 2 of the dash-separated type, e.g.
+     * "A" in a-f-A-M-H-Q or a-f-A-C-F). Covers both drones and ADS-B-fed manned aircraft — both
+     * report frequently and self-declare an honest stale window, unlike slow-reporting ground PLI.
+     */
+    private static boolean isAirDomain(String type) {
+        if (type == null || type.length() < 5) return false;
+        String[] parts = type.split("-");
+        return parts.length >= 3 && "A".equals(parts[2]);
     }
 
     private static long parseTime(String timeStr) {

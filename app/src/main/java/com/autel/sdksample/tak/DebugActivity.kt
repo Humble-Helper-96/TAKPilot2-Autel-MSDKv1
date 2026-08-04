@@ -114,6 +114,13 @@ class DebugActivity : AppCompatActivity() {
             AppLog.i(TAG, "obstacle radar logs ${if (on) "INCLUDED" else "HIDDEN"}")
         }
 
+        val resourceMonitorToggle = findViewById<CheckBox>(R.id.debugResourceMonitorToggle)
+        resourceMonitorToggle.isChecked = AppLog.resourceMonitor
+        resourceMonitorToggle.setOnCheckedChangeListener { _, on ->
+            AppLog.resourceMonitor = on
+            AppLog.i(TAG, "flight-screen resource monitor ${if (on) "ENABLED" else "DISABLED"}")
+        }
+
         setupExplorerControls()
 
         findViewById<android.widget.Button>(R.id.debugExportButton).setOnClickListener {

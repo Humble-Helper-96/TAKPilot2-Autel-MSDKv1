@@ -53,6 +53,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvRthAltitude: TextView
     private lateinit var lightsButton: ImageButton
     private lateinit var fpvNotice: TextView
+    private lateinit var resourceMonitor: TextView
     private lateinit var crosshairView: CrosshairView
     private lateinit var arOverlay: ArOverlayView
     private lateinit var obstacleEdges: ObstacleEdgeView
@@ -153,6 +154,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
+        resourceMonitor = findViewById(R.id.flightResourceMonitor)
+        resourceMonitor.visibility = if (AppLog.resourceMonitor) View.VISIBLE else View.GONE
         crosshairView = findViewById(R.id.flightCrosshair)
         arOverlay = findViewById(R.id.flightArOverlay)
         obstacleEdges = findViewById(R.id.flightObstacleEdges)
@@ -635,6 +638,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // video", so it does not claim more than it knows.
         findViewById<View>(R.id.flightNoVideoCover).visibility =
             if (acOk) View.GONE else View.VISIBLE
+
+        // Debug-only memory/contact overlay — see AppLog.resourceMonitor. Piggybacks on the same
+        // slow cadence the old exposure poll used (500ms * 4 = ~2s): frequent enough to actually
+        // watch a leak grow, cheap enough that the monitor itself is not a load source.
+        if (AppLog.resourceMonitor && hudTickCount % 4 == 0) {
+            resourceMonitor.text = ResourceMonitor.formatted(this)
+        }
 
         // REC shows the CAMERA's own reported state (MediaStatus events), not the last button
         // press — so a record that failed to start, or stopped itself (card full/removed),
