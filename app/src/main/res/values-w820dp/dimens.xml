@@ -23,4 +23,18 @@
 	     the square 160dp from values-h440dp — that bucket must stay usable. -->
 	<dimen name="flight_map_size">180dp</dimen>
 	<dimen name="flight_map_height">240dp</dimen>
+
+	<!-- flight_map_size (180dp here) + flightHudColumn's paddingEnd (14dp) — see the base
+	     entry's comment. Bug found and fixed 2026-08-04: was hardcoded at the base bucket's
+	     144dp everywhere, ~50dp short of this bucket's real map edge. -->
+	<dimen name="flight_resource_row_margin_end">194dp</dimen>
+
+	<!-- Readout column text (Clock / SPI overlay / gimbal pitch / FAA ceiling / RTH altitude).
+	     Operator request 2026-08-04: 12sp is hard to read on the V3's real screen size at
+	     normal viewing distance, even though it reads fine on smaller hardware at the same
+	     dp value (a smaller physical screen puts the same dp closer to the eye). Bumped to
+	     18sp — a clear, deliberate increase, not a rounding nudge. Smaller hardware (Smart
+	     Controller SE, RT3) keeps the base 12sp from values/dimens.xml; this bucket is the V3
+	     specifically, same reasoning as flight_map_size above. -->
+	<dimen name="flight_readout_text_size">18sp</dimen>
 </resources>

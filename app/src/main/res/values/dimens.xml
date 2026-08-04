@@ -622,9 +622,24 @@
 	<dimen name="flight_map_size">130dp</dimen>
 	<dimen name="flight_map_height">130dp</dimen>
 
+	<!-- flightResourceMonitorRow's marginEnd — see its own layout comment. MUST equal
+	     flight_map_size + flightHudColumn's paddingEnd (14dp), so it stays pinned to the map's
+	     left edge in every size bucket. Caught 2026-08-04: this used to be a plain 144dp
+	     hardcoded straight into the layout, correct only for THIS (base) bucket — it silently
+	     fell ~50dp short of the map's real edge on the Smart Controller V3, which lands in
+	     values-w820dp where the map is 180dp, not 130dp. Update alongside flight_map_size. -->
+	<dimen name="flight_resource_row_margin_end">144dp</dimen>
+
 	<dimen name="margin_84dp">84dp</dimen>
 	<dimen name="margin_30dp">30dp</dimen>
 	<dimen name="margin_50dp">50dp</dimen>
 	<dimen name="margin_350dp">350dp</dimen>
+
+	<!-- Flight-screen readout column text (Clock / SPI overlay text / gimbal pitch / FAA ceiling
+	     / RTH altitude) — the flightReadoutText style in styles.xml. Base size matches hudText's
+	     12sp, unchanged on smaller hardware (e.g. Smart Controller SE). See values-w820dp for
+	     the Smart Controller V3 override, operator request 2026-08-04: hard to read at 12sp on
+	     that screen. -->
+	<dimen name="flight_readout_text_size">12sp</dimen>
 
 </resources>

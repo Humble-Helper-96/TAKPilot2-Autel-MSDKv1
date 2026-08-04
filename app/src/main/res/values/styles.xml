@@ -241,6 +241,16 @@
         <item name="android:shadowRadius">3</item>
     </style>
 
+    <!-- Flight-screen readout column (Clock / SPI overlay text / gimbal pitch / FAA ceiling /
+         RTH altitude) — everything from fpvClock down to fpvRthAltitude, per the operator's
+         2026-08-04 request. Identical to hudText (which stays untouched — it's shared with the
+         EV-scale labels, outside this request's scope) except the text size, which comes from
+         @dimen/flight_readout_text_size so it can scale up specifically on the Smart Controller
+         V3's screen (see values-w820dp) while staying the current size on smaller hardware. -->
+    <style name="flightReadoutText" parent="hudText">
+        <item name="android:textSize">@dimen/flight_readout_text_size</item>
+    </style>
+
     <!-- One cell of the flight-screen resource-monitor row (flightResourceMonitorRow). Equal
          weight + centered text is what makes the five cells land evenly spaced across the row's
          width, not just left-packed. -->

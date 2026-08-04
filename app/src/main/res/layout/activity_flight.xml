@@ -286,19 +286,21 @@
 
          Positioned to match the mini-map exactly (operator's spec, 2026-08-04): bottom edge
          level with the map's bottom, spanning the screen's left edge to the map's left edge,
-         with its five cells evenly spaced across that span. The map sits inside
-         flightHudColumn (130dp wide, paddingEnd 14dp, paddingBottom 12dp — see that column's
-         own comment), so the map's left edge is exactly 144dp in from the screen's right edge
-         and its bottom edge is exactly 12dp up from the screen's bottom; marginEnd/marginBottom
-         below mirror those two numbers rather than being eyeballed. If the map's size or the
-         column's padding ever changes, these must change with it. -->
+         with its five cells evenly spaced across that span. marginEnd is
+         @dimen/flight_resource_row_margin_end (flight_map_size + flightHudColumn's paddingEnd of
+         14dp) — a per-size-bucket dimension, NOT a hardcoded number, because flight_map_size
+         itself varies by bucket (130dp base, 180dp on the Smart Controller V3's values-w820dp).
+         A hardcoded 144dp here was correct only for the base bucket and silently landed ~50dp
+         short of the map's real edge on the V3 — caught and fixed 2026-08-04. marginBottom stays
+         a plain 12dp: the map is pinned to the column's bottom by a weighted spacer regardless of
+         the map's own size, so that number does not vary by bucket the way the width does. -->
     <LinearLayout
         android:id="@+id/flightResourceMonitorRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
         android:layout_marginBottom="12dp"
-        android:layout_marginEnd="144dp"
+        android:layout_marginEnd="@dimen/flight_resource_row_margin_end"
         android:background="#B0000000"
         android:orientation="horizontal"
         android:paddingVertical="6dp"
@@ -412,7 +414,7 @@
              point — without them it cannot resolve the delay it exists to show. -->
         <TextView
             android:id="@+id/fpvClock"
-            style="@style/hudText"
+            style="@style/flightReadoutText"
             android:layout_marginBottom="4dp"
             android:gravity="end"
             android:fontFamily="monospace"
@@ -420,7 +422,7 @@
 
         <TextView
             android:id="@+id/fpvOverlayText"
-            style="@style/hudText"
+            style="@style/flightReadoutText"
             android:layout_marginBottom="4dp"
             android:gravity="end"
             android:text="" />
@@ -430,7 +432,7 @@
              is a real accuracy warning rather than decoration. -->
         <TextView
             android:id="@+id/fpvGimbalPitch"
-            style="@style/hudText"
+            style="@style/flightReadoutText"
             android:layout_marginBottom="4dp"
             android:gravity="end"
             android:text="" />
@@ -438,7 +440,7 @@
         <!-- FAA UASFM ceiling; own view so it can turn amber/red independently. Advisory. -->
         <TextView
             android:id="@+id/fpvFaaCeiling"
-            style="@style/hudText"
+            style="@style/flightReadoutText"
             android:layout_marginBottom="6dp"
             android:gravity="end"
             android:text=""
@@ -453,7 +455,7 @@
              must look unknown. -->
         <TextView
             android:id="@+id/fpvRthAltitude"
-            style="@style/hudText"
+            style="@style/flightReadoutText"
             android:layout_marginBottom="6dp"
             android:gravity="end"
             android:text="RTH --" />
