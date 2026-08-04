@@ -309,16 +309,27 @@ class ScreenCaptureEncoder(
         /**
          * Prefer Google's SOFTWARE HEVC encoder over this chip's hardware one.
          *
+         * ⚠ REVERTED TO FALSE 2026-08-03 — the software encoder LEAKS. Confirmed live: the
+         * `media.swcodec` process (which hosts `c2.android.hevc.encoder`, the software encoder
+         * this flag selects) grew from 628MB to 786MB PSS in about 20 seconds of active
+         * streaming — device-wide `MemAvailable` was falling in lockstep, ~3.4MB/s. That is far
+         * more severe than the artifact this flag was chasing, and is a strong suspect (maybe
+         * THE cause) for the app-process OOM kills seen earlier this same night — a device-wide
+         * memory exhaustion event kills several unrelated background services simultaneously
+         * (seen both nights), which is what runs out when ANY process — not just this app —
+         * leaks enough. Do not flip this back to true without checking `media.swcodec`'s PSS
+         * over a sustained streaming session first.
+         *
          * Set true 2026-08-02 to test whether the 2s keyframe pulse is the hardware encoder's
          * rate control. The other devices this app runs on (OUKITEL RT3, Pixel 8, Pixel 10) never
-         * showed the pulse, and the operator believes those were software-encoding.
+         * showed the pulse, and the operator believes those were software-encoding. That question
+         * is still open — a live memory leak is just a worse problem than a cosmetic pulse.
          *
-         * Flip to false to go back to the hardware encoder. Keep the flag rather than deleting
-         * the loser: which encoder is in use is the single most useful thing to change when
-         * stream quality is in question, and hunting for the call site each time is how this
-         * ends up hard-coded by accident.
+         * Keep the flag rather than deleting the loser: which encoder is in use is the single
+         * most useful thing to change when stream quality is in question, and hunting for the
+         * call site each time is how this ends up hard-coded by accident.
          */
-        private const val PREFER_SOFTWARE_ENCODER = true
+        private const val PREFER_SOFTWARE_ENCODER = false
 
         /** Google's software HEVC encoder. Present on this controller; verified against its own
          *  /vendor/etc/media_codecs_google_c2_video.xml. */
