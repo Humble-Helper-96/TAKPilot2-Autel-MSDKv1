@@ -122,6 +122,21 @@
             android:layout_marginTop="20dp"
             android:text="Apply to Aircraft" />
 
+        <!-- Fills over the fixed read-back wait (see VERIFY_DELAY_MS / applyAllToAircraft).
+             Determinate, not a spinner: the wait is a known, bounded duration, so showing how
+             much of it remains is what actually reassures a pilot this hasn't frozen — a
+             spinner alone says "something is happening" but not "how much longer". Hidden until
+             a push is in flight. -->
+        <ProgressBar
+            android:id="@+id/limitApplyProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:max="100"
+            android:progress="0"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/limitApplyStatus"
             android:layout_width="match_parent"

@@ -457,21 +457,38 @@ class TakConnectActivity : AppCompatActivity() {
     // value is silently kept at the old setting. "Sent" is not "set".
     private val applyHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var pendingVerify: Runnable? = null
+    private var pendingTick: Runnable? = null
 
     private fun cancelPendingSettingPushes() {
         pendingVerify?.let { applyHandler.removeCallbacks(it) }
         pendingVerify = null
+        pendingTick?.let { applyHandler.removeCallbacks(it) }
+        pendingTick = null
     }
 
-    /** Resends every aircraft-bound Pre-Flight setting, then reports what the aircraft holds. */
-    private fun applyAllToAircraft(status: TextView) {
+    /**
+     * Resends every aircraft-bound Pre-Flight setting, then reports what the aircraft holds.
+     *
+     * The push-then-wait-11s-then-verify shape (see the class doc above) has no natural
+     * "in progress" signal of its own — the writes are fire-and-forget, so there is nothing to
+     * await except the clock. Without visible progress a pilot watching a static line of text
+     * for 11 seconds has no way to tell that from a frozen screen, and the natural response is
+     * to tap the button again or navigate away mid-push. The button is disabled and a determinate
+     * progress bar fills across exactly [VERIFY_DELAY_MS] — a known, bounded wait — with a
+     * live countdown in the status text, so the pilot can see it counting down to the verify
+     * rather than just running to it. Operator request, 2026-08-03.
+     */
+    private fun applyAllToAircraft(button: Button, progress: android.widget.ProgressBar, status: TextView) {
         if (AutelProductHolder.evo2 == null) {
             status.text = "The aircraft is not connected. The settings are saved. " +
                 "Connect the aircraft, then press the button again."
             status.setTextColor(0xFFFFC107.toInt())
             return
         }
-        status.text = "Sending the settings to the aircraft…"
+        cancelPendingSettingPushes()
+        button.isEnabled = false
+        progress.visibility = android.view.View.VISIBLE
+        progress.progress = 0
         status.setTextColor(0xFF909090.toInt())
 
         FlightLimitsController.pushLimitsNow(this)
@@ -480,11 +497,34 @@ class TakConnectActivity : AppCompatActivity() {
 
         // Verify AFTER the writes have had time to land. The failsafe write in particular takes a
         // 10s timeout to fail on this firmware, so a verify any sooner would read mid-flight.
-        cancelPendingSettingPushes()
+        val startNs = android.os.SystemClock.elapsedRealtime()
+        val tick = object : Runnable {
+            override fun run() {
+                val elapsedMs = android.os.SystemClock.elapsedRealtime() - startNs
+                val pct = (elapsedMs * 100 / VERIFY_DELAY_MS).toInt().coerceIn(0, 100)
+                progress.progress = pct
+                // Ceiling division so the countdown starts at exactly VERIFY_DELAY_MS/1000
+                // seconds and never overshoots by rounding up an extra whole second.
+                val remainingMs = (VERIFY_DELAY_MS - elapsedMs).coerceAtLeast(0)
+                val remainingSec = (remainingMs + 999) / 1000L
+                status.text = "Sending the settings to the aircraft… confirming in ${remainingSec}s"
+                if (elapsedMs < VERIFY_DELAY_MS) {
+                    pendingTick = this
+                    applyHandler.postDelayed(this, APPLY_TICK_MS)
+                } else {
+                    pendingTick = null
+                }
+            }
+        }
+        pendingTick = tick
+        applyHandler.post(tick)
+
         val verify = Runnable {
             pendingVerify = null
             FlightLimitsController.readBack(this) { report ->
                 runOnUiThread {
+                    button.isEnabled = true
+                    progress.visibility = android.view.View.GONE
                     status.text = report.text
                     status.setTextColor(if (report.allMatched) 0xFF4CAF50.toInt() else 0xFFFF6B6B.toInt())
                 }
@@ -566,8 +606,10 @@ class TakConnectActivity : AppCompatActivity() {
         listOf(maxAlt, maxRadius, rthAlt).forEach { it.addTextChangedListener(watcher) }
 
         val applyStatus = findViewById<TextView>(R.id.limitApplyStatus)
-        findViewById<android.widget.Button>(R.id.limitApplyButton).setOnClickListener {
-            applyAllToAircraft(applyStatus)
+        val applyProgress = findViewById<android.widget.ProgressBar>(R.id.limitApplyProgress)
+        val applyButton = findViewById<Button>(R.id.limitApplyButton)
+        applyButton.setOnClickListener {
+            applyAllToAircraft(applyButton, applyProgress, applyStatus)
         }
 
         setupFailsafe()
@@ -1256,6 +1298,8 @@ class TakConnectActivity : AppCompatActivity() {
          *  the failsafe takes a full 10s to time out on this firmware, so verifying sooner would
          *  read while writes are still in flight and report a false mismatch. */
         private const val VERIFY_DELAY_MS = 11000L
+        /** Progress-bar/countdown refresh rate while waiting for [VERIFY_DELAY_MS] to elapse. */
+        private const val APPLY_TICK_MS = 200L
         private const val REQUEST_CODE_DTED_PICK = 4301
         private const val REQUEST_CODE_LOCATION = 4302
         private const val PREFS = "takpilot2_tak"
