@@ -42,9 +42,18 @@ android {
         // 1.4.1: reverts ScreenCaptureEncoder to the hardware HEVC encoder -- the software one
         //        (PREFER_SOFTWARE_ENCODER, set 2026-08-02) leaks system memory via the
         //        out-of-process media.swcodec service while streaming, and was a likely
-        //        contributor to the same night's OOM kills.
-        versionCode 4
-        versionName "1.4.1"
+        //        contributor to the same night's OOM kills. (Never tagged/released on its own --
+        //        1.4.2 is the first build to actually ship it.)
+        // 1.4.2: Apply to Aircraft gets a progress bar + countdown instead of a frozen-looking
+        //        11s wait, button disabled for the duration. Resource-monitor overlay grows CPU
+        //        (system + app) and GPU (Adreno busy%/clock), flattens to one line pixel-aligned
+        //        to the mini-map, and now also reaches the debug log (not just the screen) every
+        //        ~2s -- the media.swcodec and CotParser leaks above were both actually diagnosed
+        //        from log data, not by watching the screen live. Smart Controller V3-specific
+        //        sizing: readout text and the crosshair (arms + accuracy ring) bumped up for that
+        //        screen's real size, HUD split top/bottom to clear the obstacle-radar labels.
+        versionCode 5
+        versionName "1.4.2"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
