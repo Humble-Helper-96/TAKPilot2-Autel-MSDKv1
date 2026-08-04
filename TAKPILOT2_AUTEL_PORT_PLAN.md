@@ -1546,6 +1546,20 @@ target by 8%.)
 Rejected by the operator, recorded so they are not re-proposed: **intra-refresh** (complexity plus
 unknown mid-stream-join behaviour) and a **longer GOP** (join latency, slower loss recovery).
 
+**✅ FLIGHT-VALIDATED 2026-08-04 (v1.5.0, one full battery in the air):**
+- All three tiers streamed and accepted by the operator — LOW at 375k, STANDARD at 800k, HIGH at
+  1.8M. Residual pulse at the low tier judged "very acceptable for the low bitrates", so the
+  rolled-back bitrates stand; do not raise them again without a new complaint.
+- **The push survived an extended battery change with the aircraft down.** This is the whole
+  reason screen capture replaced the aircraft-camera tap — viewers keep seeing the controller
+  (map, last telemetry, HUD) instead of the feed going dead — and it is now confirmed in the air
+  rather than merely intended. Treat it as a regression test for anything that touches
+  `ScreenCaptureService` or `VideoStreamerHolder`: a change that makes the stream depend on the
+  aircraft again has broken a field-proven property.
+- Also observed, aircraft-side and outside this app: at **15% battery** the controller beeps and
+  the aircraft self-initiates RTH; acknowledging with the **physical RTH button** defers it and
+  allows flight down to **10%**. The SDK exposes only NOTIFY thresholds, not this trigger.
+
 **Do not reach for the software encoder.** `PREFER_SOFTWARE_ENCODER` stays `false` — it leaks
 badly (see `ScreenCaptureEncoder`). Verified across this change: `media.swcodec` PSS was 20,188K
 before and 20,188K after several minutes of sustained streaming, i.e. untouched.
