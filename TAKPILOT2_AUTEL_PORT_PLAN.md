@@ -2302,6 +2302,113 @@ suppress V/D from `AutelAvoidance` — silently does nothing, because the readou
   `aircraft.serial HL7825031094`.
 - Home-screen aircraft image done — real EVO II art at mdpi/hdpi/xhdpi/xxhdpi, alpha verified.
 
+## Battery levels — settable, pilot-facing, and shown from the aircraft (2026-08-04)
+
+The two levels the aircraft acts on by itself. **They ARE settable from the SDK** — the public
+`AutelBattery.setLowBatteryNotifyThreshold` delegates straight to
+`BatteryRequestManager2.setLowBatteryWarning` (verified in bytecode), so the misleading "Notify"
+name is the same command Explorer uses. Takes a FRACTION (0.15), not a percent.
+
+- **Pre-Flight fields**: "Battery Warning (%)" / "Battery Critical (%)", under the Return Home
+  radio. Named for the PARAMETERS they are, not the behaviour they produce — "Return home at" was
+  a conclusion, and conclusions drift: the Warning action is deferrable, so it was already an
+  overstatement. Refuses to send Warning <= Critical, and says so while the pilot types rather
+  than in a log line at Apply time.
+- **Flight-screen gauge** bands from these: amber from Warning, red from Critical. It previously
+  put RED at the Warning level and invented amber ten points above it — so at 15/10 it showed red
+  at 15% and amber at 25%, neither of which the aircraft acts on. Prefers the aircraft read-back,
+  falling back to the pref, and refreshes on resume.
+- **ENTER FLIGHT card** shows `BATTERY: WARN n% · CRIT n%` from the aircraft read-back **only** —
+  no pref fallback. If an Apply silently did not take, that line is where it shows, and falling
+  back to what the pilot typed would hide the one failure it exists to catch.
+
+No new SDK calls: `AircraftSettingsDump` already reads both once per connect, so those results are
+published rather than re-read. Given the wall strike came from repeated getters on the
+fly-controller channel, a second pair of reads for values we are handed anyway is the wrong trade.
+
+⚠ **Timing.** The push lands at T+4.5s, the dump reads at T+15s, and the INITIALIZING hold clears
+at T+5s — so the card is tappable for ~10s while still showing `BATTERY: —`. The 15s is not
+arbitrary (see the camera-enumeration timeout storm above); do not shorten it without testing.
+
+**Flight-verified 2026-08-04:** 15% Warning fires at exactly 15%, and acknowledging with the
+controller's physical RTH button DEFERS the automatic return, allowing flight down to Critical.
+An older note claiming the action lands ~1% low did not reproduce — its "25/15" figures were just
+the factory values at the time.
+
+## Control response — the yaw parameters, mapped to Autel Explorer (2026-08-04)
+
+**Precision yaw was never actually slower, for two rounds of tuning.** The app was writing the
+wrong parameter, the SDK clamped it silently, and a fuzzy state check reported success anyway.
+Mapping the SDK to Explorer's own UI settled it. Read this before touching control feel.
+
+### The mapping (verified, not inferred)
+
+Every row confirmed twice: the SDK method traced to its aircraft parameter in the bundled
+`autel-sdk-release.aar` bytecode, then the value read back and matched against the number showing
+on Explorer's screen.
+
+| Explorer screen | SDK call | aircraft param | range | this airframe |
+|---|---|---|---|---|
+| EXP · Throttle | `setGasPedalSensitivity` | `SM_THRUST_SEN` | 0.2–0.7 | 0.5 |
+| EXP · Rotate | `setYawCoefficient` | `SM_YAW_SEN_NEW` | 0.2–0.7 | 0.20 |
+| EXP · Forward | `setPitchSensitivity` | `SM_PITCH_SEN` | 0.2–0.7 | 0.5 |
+| EXP · Right | `setRollSensitivity` | `SM_ROLL_SEN` | 0.2–0.7 | 0.5 |
+| Sensitivity · Attitude | `setATTISensitivity` | `SM_ATT_SEN` | 20–100% | 1.0 |
+| Sensitivity · Brake | `setBrakeSensitivity` | `SM_BRAKE_SEN` | 50–200% | 1.0 |
+| Sensitivity · Yaw Movement | `setYawStrokeSensitivity` | `SM_YAW_SCH_SEN` | 20–200% | 0.75 |
+
+Two things this table fixes:
+
+- **`setYawCoefficient` is the EXP CURVE, not a rate.** It is exposed on the SDK's *remote
+  controller* interface, which is a naming artefact — it delegates to
+  `FlyControllerManager2.setYawSenCoefficient` and writes an aircraft parameter. Low = soft around
+  centre, high = linear. It does NOT change top-end yaw speed.
+- **`setYawStrokeSensitivity` is the rate**, and Explorer calls it "Yaw Movement". The SDK takes a
+  fraction of Explorer's percentage (0.75 = 75%).
+
+### How it went wrong
+
+`PRECISION_YAW` was set to 0.13, then 0.10. Both are below the published 0.2 floor for
+`SM_YAW_SEN_NEW`, so `setPrecision`'s range clamp silently raised them to 0.2 — the same value
+Normal was writing. The log printed `-> PRECISION (dial=75 yaw=0.2)` and looked fine. Meanwhile
+the state check compared with a shared tolerance (`abs(a-b) <= abs(b)*0.15 + 0.5`) whose 0.5
+absolute floor was sized for the integer dial; against yaw values 0.15 apart it matched
+everything, so `precisionActive` was decided by the dial alone and reported PRECISION regardless.
+
+Three guards now exist so this cannot repeat quietly:
+- the clamp LOGS when it overrules a requested value, naming the value, the published range and
+  what it was forced to;
+- `AircraftSettingsDump` logs `rc.range.yawCoefficient` and `rc.range.dialAdjustSpeed`, so a
+  clamped value and an honoured one no longer look identical in the log;
+- the state check is an exact match on the gimbal dial, with three outcomes — a controller on
+  neither preset reports "neither" rather than being rounded to the closer one.
+
+### The presets as they now stand
+
+| | gimbal dial | yaw curve | throttle/pitch/roll curve | yaw rate |
+|---|---|---|---|---|
+| Normal | 90 | 0.20 | 0.50 | 0.75 = 75% |
+| Precision | 75 | 0.20 | 0.30 | 0.35 = 35% |
+
+- **The yaw curve is 0.20 in BOTH, deliberately.** It was briefly set to 0.5 for Normal on the
+  theory that 0.5 is Autel's default (the other three axes read 0.5) — that is NOT established for
+  yaw, and raising it would have made Normal *more* sensitive. Left at the flown value so the two
+  presets differ by rate alone and tuning changes one variable at a time.
+- **Yaw sits at the 0.2 curve floor because it is an aiming axis**; a slow centre costs nothing.
+  Throttle/pitch/roll also fly the aircraft, so they stop at 0.30 rather than bottoming out.
+- `PRECISION_YAW_RATE` (0.35) is the one value still expected to need tuning.
+
+### Applied on EVERY connect, not just when chosen
+
+`AutelControlRates.applyAtConnect` used to skip when no preference had been saved. It now always
+pushes, defaulting to Normal: launching TAKPilot sets a clean slate, so whatever Autel Explorer
+left behind is overwritten rather than inherited (operator, 2026-08-04). The Pre-Flight radio
+shows the PILOT'S SAVED CHOICE, not a read-back — reflecting the controller's current state let a
+value Explorer had left appear to be the selection, moments before the app overwrote it.
+
+Stick mode keeps the opposite rule and is only pushed once the pilot has chosen one: a wrong stick
+mode swaps throttle and pitch and can only be discovered in the air.
+
 ## To resume
 
 Open a new chat, point it at this file plus the project directory. Phases 0–1 (headless)

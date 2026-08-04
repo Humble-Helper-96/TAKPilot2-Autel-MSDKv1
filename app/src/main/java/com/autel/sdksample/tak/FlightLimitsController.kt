@@ -168,12 +168,32 @@ object FlightLimitsController {
             .apply()
     }
 
+    /**
+     * Saves the battery levels locally. Separate from [save] because these are the aircraft's
+     * own AUTOMATIC ACTIONS rather than geometric limits, and because an invalid pair here is
+     * dangerous in a way an out-of-range altitude is not — see [applyBatteryThresholds], which
+     * refuses to push low <= critical.
+     *
+     * Stored as typed, not clamped: a blank field means "keep the aircraft's present setting",
+     * matching every other field on the Pre-Flight screen.
+     */
+    fun saveBatteryLevels(context: Context, lowPct: String, criticalPct: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_LOW_BATT_PCT, lowPct.trim())
+            .putString(KEY_CRIT_BATT_PCT, criticalPct.trim())
+            .apply()
+    }
+
     @Volatile private var appliedForThisConnect = false
 
     fun onProductDisconnected() {
         appliedForThisConnect = false
         // The HUD must not keep showing the last aircraft's RTH altitude as if it were current.
         aircraftReturnHeightM = null
+        // Same for the battery levels: the next aircraft may be configured differently, and a
+        // gauge still banded from the last one would be quietly wrong.
+        aircraftWarningPct = null
+        aircraftCriticalPct = null
     }
 
     /**
@@ -247,6 +267,35 @@ object FlightLimitsController {
      */
     @Volatile var aircraftReturnHeightM: Float? = null
         private set
+
+    /**
+     * The battery levels the AIRCRAFT actually holds, in percent — null until it tells us.
+     *
+     * Distinct from [savedLowBatteryPct]/[savedCriticalBatteryPct], which are what the PILOT
+     * typed. The two disagree whenever a value has been edited but not yet applied, or when an
+     * apply failed, and anything a pilot reads in flight must show the aircraft's state rather
+     * than our intent — a battery gauge coloured from an unsent setting is exactly the kind of
+     * confident-and-wrong readout this app tries not to produce.
+     *
+     * NOT read by a call of its own. These are filled in by [AircraftSettingsDump], which
+     * already reads both once per connect; issuing a second pair of reads would add traffic to
+     * the fly-controller channel for a value we are handed anyway. Only ever written from an
+     * aircraft reply.
+     */
+    @Volatile var aircraftWarningPct: Float? = null
+        private set
+    @Volatile var aircraftCriticalPct: Float? = null
+        private set
+
+    /**
+     * Records a battery level reported by the aircraft. Takes the SDK's FRACTION (0.15) and
+     * stores percent; a value outside 0-1 is discarded rather than shown, since a nonsense
+     * threshold on the gauge would recolour the whole readout.
+     */
+    fun reportAircraftBatteryLevel(isCritical: Boolean, fraction: Float?) {
+        val pct = fraction?.takeIf { it > 0f && it <= 1f }?.let { it * 100f }
+        if (isCritical) aircraftCriticalPct = pct else aircraftWarningPct = pct
+    }
 
     /**
      * One-shot read of the aircraft's RTH altitude, cached into [aircraftReturnHeightM].

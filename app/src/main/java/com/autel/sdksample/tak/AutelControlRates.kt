@@ -39,22 +39,71 @@ object AutelControlRates {
     private const val NORMAL_DIAL = 90
     private const val PRECISION_DIAL = 75
 
-    // Yaw rate. 0.25 is what the controller reported with no adjustment ever made in Autel's
-    // app, so it is this airframe's true default and Normal keeps it exactly.
-    private const val NORMAL_YAW = 0.25f
-    /**
-     * Yaw in Precision. NOT tied to the dial ratio — that link was dropped once the dial range
-     * narrowed to 90/75, because scaling yaw by the same 0.83 would be imperceptible.
-     *
-     * Roughly half of normal, chosen independently. The operator has not commented on yaw feel,
-     * so this is the least-validated number here: if Precision yaw feels dead rather than calm,
-     * this is the one to raise.
-     */
-    private const val PRECISION_YAW = 0.13f
+    // ---- YAW: TWO SEPARATE PARAMETERS, AND THEY ARE NOT INTERCHANGEABLE --------------------
+    //
+    // Both are AIRCRAFT flight-controller parameters, despite one of them being exposed on the
+    // SDK's remote-controller interface. Traced through the SDK bytecode and matched against
+    // Autel Explorer's own UI on 2026-08-04:
+    //
+    //   SDK setYawCoefficient()        -> SM_YAW_SEN_NEW  = Explorer "EXP > Rotate"
+    //                                     the STICK CURVE. Range 0.2-0.7, per Explorer's own
+    //                                     caption ("X = physical stick output, Y = logical
+    //                                     output"). LOW = soft around centre, high = linear.
+    //   SDK setYawStrokeSensitivity()  -> SM_YAW_SCH_SEN  = Explorer "Sensitivity > Yaw Movement"
+    //                                     the RATE. Range 20-200%, sent as a fraction (the
+    //                                     aircraft reported 0.75 for Explorer's 75%).
+    //
+    // WHY THIS MATTERS: the curve was already pinned at its 0.2 floor on this airframe, so two
+    // rounds of "make Precision yaw slower" (0.13, then 0.10) were silently clamped back up to
+    // 0.2 and changed nothing, while the log reported "-> PRECISION" each time. Yaw felt fast
+    // because the RATE had never been touched. Curve and rate are different questions: the curve
+    // decides how twitchy the centre feels, the rate decides how fast full deflection yaws.
 
-    /** Tolerance when deciding whether the live values "are" Precision. Dial speed is an int and
-     *  yaw a float, and the controller may round, so an exact compare would flap. */
-    private const val MATCH_TOLERANCE = 0.15
+    /**
+     * Stick curve — THE SAME 0.2 IN BOTH PRESETS, deliberately (operator, 2026-08-04).
+     *
+     * 0.2 is the floor of the published 0.2-0.7 range: the softest centre, where a small stick
+     * movement yaws least. It is also what this aircraft has actually been flying, because
+     * TAKPilot has been writing this parameter on every connect while believing it was a rate
+     * control (Normal wrote 0.25 then 0.20; Precision asked for 0.13/0.10 and was clamped up).
+     *
+     * It was briefly set to 0.5 for Normal on the theory that 0.5 is Autel's default — the other
+     * three axes read 0.5. That is NOT established for yaw, and raising it would have made
+     * Normal MORE sensitive, which is the wrong direction. Left at the flown value: the two
+     * presets differ by RATE alone, so tuning changes one variable at a time.
+     */
+    private const val NORMAL_YAW_EXP = 0.20f
+    private const val PRECISION_YAW_EXP = 0.20f
+
+    /** Yaw rate, as a fraction of Explorer's percentage. 0.75 = 75%, this airframe's setting. */
+    private const val NORMAL_YAW_RATE = 0.75f
+    /**
+     * Yaw rate in Precision = 35%.
+     *
+     * ⚠ THE ONE NUMBER HERE STILL EXPECTED TO NEED TUNING. Everything else in this block is
+     * either Autel's own default or a value the operator has flown; this is a first setting,
+     * chosen as roughly half of Normal and comfortably inside the 20-200% range Explorer offers.
+     * If Precision yaw is still too quick, lower it toward 0.20; if it feels dead, raise it.
+     * The settings dump logs what the aircraft reports back as `feel.yawStrokeSensitivity`.
+     */
+    private const val PRECISION_YAW_RATE = 0.35f
+
+    /**
+     * Stick curve for THROTTLE, PITCH and ROLL — Explorer's other three EXP graphs.
+     *
+     * Same parameter family and same 0.2-0.7 range as the yaw curve, confirmed by reading them
+     * back: Explorer showed Throttle/Forward/Right at 0.5 and the aircraft reported
+     * gasPedal/pitch/roll = 0.5. Normal keeps that; Precision softens the centre so small stick
+     * movements move the aircraft less, which is what Precision is for.
+     *
+     * 0.30, not the 0.2 floor. Yaw sits at the floor because it is almost purely an AIMING axis
+     * — a slow centre costs nothing. These three also FLY the aircraft, and bottoming them out
+     * risks Precision feeling sluggish to reposition rather than merely fine. Halfway is the
+     * conservative first step; drop to 0.2 if it is not soft enough.
+     */
+    private const val NORMAL_STICK_EXP = 0.50f
+    private const val PRECISION_STICK_EXP = 0.30f
+
 
     /**
      * Guards the connect-time push. productConnected fires REPEATEDLY — three times in 17
@@ -115,15 +164,31 @@ object AutelControlRates {
         }.onFailure { AppLog.w(TAG, "rates refresh threw: ${it.message}"); then?.invoke() }
     }
 
-    /** Decides whether the live values match Precision. No learning: both states are explicit. */
+    /**
+     * Reports which preset the controller is on, from the GIMBAL DIAL alone.
+     *
+     * The dial is the only value that differs between the two presets and is also cached here.
+     * The yaw CURVE is 0.2 in both by design, so it cannot discriminate — and including a value
+     * that is identical in both states does not add rigour, it just adds a way to report
+     * "neither" when someone changes it in Autel's app. The yaw RATE, which does differ, is an
+     * aircraft parameter rather than a controller one and is not in this cached read; fetching
+     * it would put traffic on the fly-controller channel on every refresh, so the settings dump
+     * reports it once per connect instead.
+     *
+     * Exact match, not a tolerance: an earlier version compared with a shared fuzzy tolerance
+     * and that hid a real defect for two rounds of tuning. Still THREE outcomes — a dial on
+     * neither 90 nor 75 reports null rather than being rounded to whichever is closer, because
+     * claiming PRECISION for an aircraft that is not on the Precision numbers is how a pilot
+     * ends up trusting a feel they do not have.
+     */
     private fun evaluate(@Suppress("UNUSED_PARAMETER") context: Context) {
         val d = dialSpeed ?: return
-        val y = yawCoefficient ?: return
-        precisionActive = near(d.toDouble(), PRECISION_DIAL.toDouble()) &&
-            near(y.toDouble(), PRECISION_YAW.toDouble())
+        precisionActive = when (d) {
+            PRECISION_DIAL -> true
+            NORMAL_DIAL -> false
+            else -> null
+        }
     }
-
-    private fun near(a: Double, b: Double) = kotlin.math.abs(a - b) <= kotlin.math.abs(b) * MATCH_TOLERANCE + 0.5
 
     /**
      * Switches between Normal and Precision.
@@ -134,7 +199,7 @@ object AutelControlRates {
     fun setPrecision(context: Context, on: Boolean, then: (Boolean) -> Unit) {
         val rc = AutelProductHolder.evo2?.remoteController ?: run { then(false); return }
         var targetDial = if (on) PRECISION_DIAL else NORMAL_DIAL
-        var targetYaw = if (on) PRECISION_YAW else NORMAL_YAW
+        var targetYaw = if (on) PRECISION_YAW_EXP else NORMAL_YAW_EXP
         // Clamp to what the controller itself says it accepts, so a constant edited later can
         // never push a value the hardware rejects.
         runCatching {
@@ -142,6 +207,52 @@ object AutelControlRates {
                 r.dialAdjustSpeed?.let { targetDial = targetDial.coerceIn(it.valueFrom, it.valueTo) }
                 r.yawCoefficient?.let { targetYaw = targetYaw.coerceIn(it.valueFrom, it.valueTo) }
             }
+        }
+        // SAY SO WHEN THE HARDWARE OVERRULES US. The clamp above used to be silent, and that hid
+        // a real defect for two rounds of tuning: the yaw curve was set to 0.13, then 0.10, and
+        // BOTH were raised to the controller's published minimum on the way out — so Precision
+        // yaw was never actually slower than Normal, while the log cheerfully reported
+        // "-> PRECISION". A constant the pilot asked for and the hardware refused is exactly the
+        // thing that must not pass quietly.
+        if (targetDial != (if (on) PRECISION_DIAL else NORMAL_DIAL)) {
+            AppLog.w(TAG, "gimbal dial ${if (on) PRECISION_DIAL else NORMAL_DIAL} is outside the " +
+                "controller's accepted range — clamped to $targetDial")
+        }
+        val wantedYaw = if (on) PRECISION_YAW_EXP else NORMAL_YAW_EXP
+        if (kotlin.math.abs(targetYaw - wantedYaw) >= 0.0001f) {
+            AppLog.w(TAG, "yaw $wantedYaw is outside the controller's accepted range " +
+                "(${runCatching { rc.parameterRangeManager?.yawCoefficient }.getOrNull()}) — " +
+                "clamped to $targetYaw. The requested feel is NOT what the aircraft will fly.")
+        }
+
+        // THE AIRCRAFT-SIDE HALF OF THE PRESET. The dial and the yaw curve above go to the
+        // controller; these four go to the fly controller, so they are separate writes on a
+        // different channel — and they happen BEFORE the "already correct" check below, which
+        // only knows about the two CONTROLLER values. Placed after it they would be skipped on
+        // exactly the common case: a controller that kept its dial across a power cycle
+        // short-circuits the write, and the feel the pilot asked for would never reach the
+        // aircraft.
+        //
+        // Unconditional, because nothing caches these and reading them back to compare would
+        // add fly-controller traffic for no benefit — four writes per connect, the same order
+        // as the flight limits. Fire-and-forget: none of them is part of the state check, so a
+        // failure must not make the whole preset report failure when the controller half landed.
+        AutelProductHolder.evo2?.flyController?.let { fc ->
+            val exp = if (on) PRECISION_STICK_EXP else NORMAL_STICK_EXP
+            fun push(name: String, value: Float, call: (Float, CallbackWithOneParam<Boolean>) -> Unit) {
+                runCatching {
+                    call(value, object : CallbackWithOneParam<Boolean> {
+                        override fun onSuccess(v: Boolean?) { AppLog.i(TAG, "$name -> $value: OK") }
+                        override fun onFailure(error: AutelError?) {
+                            AppLog.w(TAG, "$name -> $value FAILED: ${error?.description}")
+                        }
+                    })
+                }.onFailure { AppLog.w(TAG, "$name threw: ${it.message}") }
+            }
+            push("yaw rate", if (on) PRECISION_YAW_RATE else NORMAL_YAW_RATE, fc::setYawStrokeSensitivity)
+            push("throttle curve", exp, fc::setGasPedalSensitivity)
+            push("pitch curve", exp, fc::setPitchSensitivity)
+            push("roll curve", exp, fc::setRollSensitivity)
         }
 
         // DO NOT WRITE A VALUE THE CONTROLLER ALREADY HOLDS. Each write draws an acknowledgement
@@ -295,20 +406,22 @@ object AutelControlRates {
      * every connect — which is the point, and why the Enter Flight card shows it before the
      * pilot can reach the flight screen.
      *
-     * CONTROL RESPONSE FOLLOWS THE SAME RULE (2026-08-02). It previously pushed a hardcoded
-     * default of NORMAL on every connect, so Precision could not survive a launch. It is now
-     * pushed only once the pilot has chosen, and then on every connect — so the choice holds
-     * between sessions and is re-asserted if anything else changed it.
+     * CONTROL RESPONSE IS DIFFERENT: IT IS ALWAYS PUSHED (operator, 2026-08-04). Launching
+     * TAKPilot sets a clean slate — the Pre-Flight choice is applied to the airframe every
+     * time, so whatever Autel Explorer or another pilot left behind is overwritten rather than
+     * inherited. An unset preference means NORMAL, which is a real state to assert, not a reason
+     * to leave the controller alone.
+     *
+     * (This is the opposite of the stick-mode rule above, deliberately. A wrong stick mode swaps
+     * throttle and pitch and can only be discovered in the air, so the app refuses to guess one.
+     * Control response only changes how fast the gimbal wheel and yaw respond — asserting a
+     * known feel is safer than inheriting an unknown one.)
      */
     fun applyAtConnect(context: Context) {
         if (appliedForThisConnect) return
         appliedForThisConnect = true
         pushStickMode(context) { }
-        val want = savedPrecisionOrNull(context)
-        if (want == null) {
-            AppLog.i(TAG, "control response: no pilot choice saved, leaving the controller as it is")
-            return
-        }
+        val want = savedPrecision(context)
         // READ FIRST. Without the current values the "already correct" check below has nothing
         // to compare against, so a controller that was already in the right state would still be
         // written to — and still beep.

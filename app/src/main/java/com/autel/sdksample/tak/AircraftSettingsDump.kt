@@ -64,17 +64,23 @@ object AircraftSettingsDump {
         // The retry is deliberately ONE. These are diagnostics, and re-issuing reads at volume on
         // a contended fly-controller channel is the exact shape of the mistake that caused the
         // wall strike. A value that stays missing is a fine outcome; a read storm is not.
-        fun <T> read(name: String, attempt: Int = 1, call: (CallbackWithOneParam<T>) -> Unit) {
+        fun <T> read(
+            name: String,
+            attempt: Int = 1,
+            onValue: ((T?) -> Unit)? = null,
+            call: (CallbackWithOneParam<T>) -> Unit,
+        ) {
             runCatching {
                 call(object : CallbackWithOneParam<T> {
                     override fun onSuccess(v: T?) {
                         AppLog.i(TAG, "  $name = $v" + if (attempt > 1) " (attempt $attempt)" else "")
+                        runCatching { onValue?.invoke(v) }
                     }
                     override fun onFailure(error: AutelError?) {
                         if (attempt < MAX_ATTEMPTS && AutelProductHolder.evo2 != null) {
                             handler.postDelayed({
                                 // Re-check: the aircraft may have gone away while we waited.
-                                if (AutelProductHolder.evo2 != null) read(name, attempt + 1, call)
+                                if (AutelProductHolder.evo2 != null) read(name, attempt + 1, onValue, call)
                                 else AppLog.i(TAG, "  $name = <failed, aircraft gone before retry>")
                             }, RETRY_DELAY_MS)
                         } else {
@@ -120,6 +126,15 @@ object AircraftSettingsDump {
             "rc.commandStickMode") { rc.getCommandStickMode(it) }
         read<Int>("rc.gimbalDialAdjustSpeed") { rc.getGimbalDialAdjustSpeed(it) }
         read<Float>("rc.yawCoefficient") { rc.getYawCoefficient(it) }
+        // The ACCEPTED RANGES, not just the current values. Without these a value the controller
+        // silently clamps looks identical to one it honoured — which is how Precision yaw spent
+        // two tuning rounds pinned at the hardware minimum while the log said it had been set.
+        runCatching {
+            rc.parameterRangeManager?.let { r ->
+                AppLog.i(TAG, "  rc.range.yawCoefficient = ${r.yawCoefficient}")
+                AppLog.i(TAG, "  rc.range.dialAdjustSpeed = ${r.dialAdjustSpeed}")
+            } ?: AppLog.i(TAG, "  rc.range = <not reported>")
+        }.onFailure { AppLog.w(TAG, "  rc.range read failed: ${it.message}") }
         read<com.autel.common.remotecontroller.RFPower>("rc.rfPower") { rc.getRFPower(it) }
         read<com.autel.common.remotecontroller.RemoteControllerParameterUnit>(
             "rc.lengthUnit") { rc.getLengthUnit(it) }
@@ -128,8 +143,19 @@ object AircraftSettingsDump {
         // the only battery policy the SDK exposes and worth having on record next to the two
         // low-battery events that behaved differently.
         val bat = evo.battery
-        read<Float>("battery.lowNotifyThreshold") { bat.getLowBatteryNotifyThreshold(it) }
-        read<Float>("battery.criticalNotifyThreshold") { bat.getCriticalBatteryNotifyThreshold(it) }
+        // These two are also PUBLISHED, not just logged: the flight screen's battery gauge and
+        // the ENTER FLIGHT card colour themselves from what the aircraft actually holds rather
+        // than from the pilot's saved preference, and this dump is already reading both. A
+        // second pair of reads for the same values would be traffic on the fly-controller
+        // channel for nothing — see this file's header on why that matters here.
+        read<Float>("battery.lowNotifyThreshold",
+            onValue = { FlightLimitsController.reportAircraftBatteryLevel(false, it) }) {
+            bat.getLowBatteryNotifyThreshold(it)
+        }
+        read<Float>("battery.criticalNotifyThreshold",
+            onValue = { FlightLimitsController.reportAircraftBatteryLevel(true, it) }) {
+            bat.getCriticalBatteryNotifyThreshold(it)
+        }
         read<String>("battery.serial") { bat.getSerialNumber(it) }
 
         // Vision positioning — the downward sensors that HOLD A HOVER, distinct from the

@@ -116,6 +116,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private val refresh = object : Runnable {
         override fun run() {
             updateHud()
+            // Polled rather than pushed: the aircraft's battery levels arrive from
+            // AircraftSettingsDump a few seconds after connect, and setBands ignores a repeat.
+            refreshBatteryBands()
             // Every ~5s, not every 500ms tick, so Detailed mode stays readable in flight.
             if (++hudTickCount % 10 == 0) logHudSnapshot()
             handler.postDelayed(this, 500)
@@ -238,11 +241,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         TakDropMarkers.ui = this
         TakMapMarkers.install(applicationContext)
         TakDropMarkers.init(applicationContext)
-        // Point the battery gauge at what the AIRCRAFT will actually do. Red starts where
-        // it begins returning home; amber is the pilot caution above that. Hard-coded band
-        // edges here would drift from the thresholds every time they were retuned.
-        val rthPct = FlightLimitsController.savedLowBatteryPct(this).toFloatOrNull() ?: 15f
-        toolbarBattery.setBands(rthPct, rthPct + 10f)
+        refreshBatteryBands()
         TakMapMarkers.onMapReady(map)
 
         findViewById<ImageButton>(R.id.flightBackButton).setOnClickListener {
@@ -466,7 +465,28 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         syncIrStateFromCamera()
         map.onResume()
         installHardwareButtonListener()
+        // Pre-Flight Setup may have changed the two battery levels while this screen was in the
+        // background, and the gauge's colours are meaningless if they lag them.
+        refreshBatteryBands()
         handler.post(refresh)
+    }
+
+    /**
+     * Colours the toolbar gauge from the SAME two settings Pre-Flight sends to the aircraft:
+     * amber from Battery Warning, red from Battery Critical. Hard-coded edges here would drift
+     * from the thresholds every time they were retuned, which is how the gauge previously ended
+     * up showing amber while the aircraft was seconds from acting.
+     */
+    private fun refreshBatteryBands() {
+        // AIRCRAFT FIRST, pref only as a stand-in. The pilot's saved value is what they INTEND;
+        // it differs from the aircraft's whenever a level was edited but not applied, or an
+        // apply failed. A gauge is read to judge how much flying is left, so it has to be
+        // coloured from the levels the aircraft will actually act on.
+        val warn = FlightLimitsController.aircraftWarningPct
+            ?: FlightLimitsController.savedLowBatteryPct(this).toFloatOrNull() ?: 15f
+        val crit = FlightLimitsController.aircraftCriticalPct
+            ?: FlightLimitsController.savedCriticalBatteryPct(this).toFloatOrNull() ?: 10f
+        toolbarBattery.setBands(crit, warn)
     }
 
     override fun onPause() {

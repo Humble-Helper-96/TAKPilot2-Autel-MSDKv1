@@ -61,8 +61,17 @@ android {
         //        SHRINKS what goes on the wire while looking better. New: long-press LIVE for the
         //        quality tier, which now applies instantly by reusing the MediaProjection instead
         //        of re-prompting for screen capture.
-        versionCode 6
-        versionName "1.5.0"
+        // 1.5.1: Pre-Flight restructured to fit one screen without scrolling, sections ordered
+        //        by how often they are used, and the helper prose stripped -- it is a parameter
+        //        screen, not a field guide. New: Battery Warning/Critical fields, with the
+        //        flight-screen gauge and the ENTER FLIGHT card now banded and read from the
+        //        AIRCRAFT rather than from the saved preference. Control response is applied on
+        //        every connect (clean slate over whatever Explorer left) and its yaw handling is
+        //        corrected: the app had been writing the EXP stick curve while believing it was
+        //        a rate, and the SDK silently clamped it, so Precision yaw was never actually
+        //        slower. Precision now also softens the throttle/pitch/roll curves.
+        versionCode 7
+        versionName "1.5.1"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

@@ -220,6 +220,13 @@
             <TextView android:id="@+id/homeControlResponse" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="2dp" android:textStyle="bold" />
+            <!-- The two battery levels READ BACK FROM THE AIRCRAFT, not the saved preference.
+                 Here because they decide how long this flight can last, which is a pre-flight
+                 decision, and because seeing the aircraft's own values is the only way to catch
+                 an Apply that silently did not take. Blank until the aircraft reports them. -->
+            <TextView android:id="@+id/homeBatteryLevels" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" android:textStyle="bold" />
             <!-- Shown while the connect-time pushes are still landing. The card refuses taps
                  until it clears, so a pilot cannot reach the flight screen before the aircraft
                  has actually been configured — see TakPilotHomeActivity.startInitializing. -->

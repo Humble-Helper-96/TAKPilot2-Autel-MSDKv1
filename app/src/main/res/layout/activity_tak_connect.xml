@@ -11,8 +11,16 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <!-- 1. Aircraft Settings — flight-safety limits, all optional (blank = leave the
-             aircraft's own default alone). Feet in the UI, converted to meters for the SDK. -->
+        <!-- 1. Aircraft Settings.
+             LAID OUT TO FIT ONE SCREEN WITHOUT SCROLLING (operator, 2026-08-04), because this is
+             the pre-flight check: a setting the pilot has to scroll to find is a setting that
+             gets skipped. The controller is 1024dp WIDE and only ~720dp tall, so related
+             controls are placed side by side across the width rather than stacked down it, and
+             "Apply Updated Settings to Aircraft" sits last — after every value it sends.
+
+             Helper prose was stripped for the same reason. This is a parameter screen, not a
+             field guide; the labels say what each control is, and only CONSEQUENCE warnings
+             (out-of-range, invalid battery pair, FAA advisory) earn on-screen text. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -20,15 +28,7 @@
             android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Press Apply to Aircraft to send these settings. A change does not go to the aircraft until you press the button. Leave a box empty to keep the present setting."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="12dp" />
+            android:paddingBottom="8dp" />
 
         <LinearLayout style="@style/takFormRow">
             <LinearLayout style="@style/takColumn">
@@ -70,69 +70,255 @@
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
-            android:paddingTop="6dp" />
+            android:paddingTop="4dp" />
 
-        <!-- Signal-loss failsafe. RETURN TO HOME IS THE ONLY OPTION (operator, 2026-08-02).
-             Hover and Land were removed deliberately: this app cannot verify that any of them
-             took. doEmergencyAction() emits MAV_CMD_SET_MSN_EMERGENCY, that write is NOT
-             acknowledged on this firmware (10s timeout on a clean channel), and the SDK exposes
-             no getter to read the value back. Offering three choices implied a control we do not
-             have. Flight testing on 2026-08-02 confirmed the aircraft returns home on link loss
-             of its own accord, so RTH is both the safe default and the observed behaviour. -->
-        <TextView style="@style/takLabelStyle" android:text="If the signal is lost" />
+        <!-- Battery levels and the signal-loss failsafe share a row: all three describe things
+             the AIRCRAFT does on its own, so they read as one group.
+
+             The battery pair are LABELLED AS THE PARAMETERS THEY ARE — Warning and Critical —
+             not as the behaviour they produce (operator, 2026-08-04). "Return home at" / "Land
+             at" was a conclusion about what the aircraft does with them, and conclusions drift:
+             the Warning action is deferrable with the RTH button, so calling it "return home at"
+             was already an overstatement. See FlightLimitsController.savedLowBatteryPct.
+
+             Signal-loss: RETURN TO HOME IS THE ONLY OPTION (operator, 2026-08-02). Hover and
+             Land were removed deliberately — this app cannot verify any of them took.
+             doEmergencyAction() emits MAV_CMD_SET_MSN_EMERGENCY, that write is NOT acknowledged
+             on this firmware (10s timeout on a clean channel), and the SDK exposes no getter to
+             read it back. Offering three choices implied a control we do not have. Flight
+             testing confirmed the aircraft returns home on link loss of its own accord. -->
+        <LinearLayout style="@style/takFormRow"
+            android:paddingTop="12dp">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Battery Warning (%)" />
+                <EditText
+                    android:id="@+id/limitLowBattery"
+                    style="@style/takFieldStyle"
+                    android:hint="e.g. 15"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Battery Critical (%)" />
+                <EditText
+                    android:id="@+id/limitCriticalBattery"
+                    style="@style/takFieldStyle"
+                    android:hint="e.g. 10"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="If the signal is lost" />
+                <RadioGroup
+                    android:id="@+id/limitFailsafeGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <RadioButton
+                        android:id="@+id/failsafeGoHome"
+                        style="@style/takColumnRadio"
+                        android:text="Return Home" />
+                </RadioGroup>
+            </LinearLayout>
+        </LinearLayout>
+
         <TextView
+            android:id="@+id/limitBatteryStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="If the aircraft loses the signal, it returns to home."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
-            android:paddingBottom="6dp" />
+            android:paddingTop="4dp" />
 
-        <RadioGroup
-            android:id="@+id/limitFailsafeGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/failsafeGoHome"
-                style="@style/takColumnRadio"
-                android:text="Return Home" />
-
-        </RadioGroup>
-
+        <!-- Kept in the tree though setupFailsafe() hides it: the single-option radio has
+             nothing to report. Restoring a second option restores its status line. -->
         <TextView
             android:id="@+id/limitFailsafeStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingTop="6dp" />
+            android:textSize="12sp" />
 
-        <!-- Resends every setting above and then READS BACK what the aircraft actually holds.
-             Editing a field only saves it locally; this is the deliberate act that sends it, and
-             the only thing that reports the aircraft's real state rather than what we asked for.
-             Doubles as recovery: one tap re-asserts everything after a reconnect or an Autel
-             Explorer link steal. -->
+        <!-- Obstacle avoidance. DIFFERENT FROM EVERYTHING ELSE ON THIS SCREEN, deliberately.
+             Every other control here stores a value and PUSHES it to the aircraft on connect.
+             This one stores nothing and pushes nothing: it shows the aircraft's live state and
+             changes it only when the pilot touches a switch.
+
+             The reason is that a stale saved checkbox pushing "avoidance off" at connect would
+             disable a safety system without anyone deciding to, and the pilot would have no
+             reason to suspect it. The rest of this screen pushes LIMITS; this is a sensor
+             system, which is a different category of risk.
+
+             The three switches are one row of columns, not three rows: they are read together
+             ("what is the aircraft protecting me from right now") and their labels are short
+             enough that stacking them only cost height. Labels drop the word "obstacle" — the
+             section header above them already supplies it. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Obstacle avoidance"
+            android:paddingTop="12dp" />
+
+        <TextView
+            android:id="@+id/avoidStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/tp_state_caution"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="The aircraft is not connected." />
+
+        <LinearLayout style="@style/takFormRow"
+            android:paddingTop="2dp">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <CheckBox
+                    android:id="@+id/avoidSystem"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:enabled="false"
+                    android:buttonTint="@color/tp_btn_primary" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="System"
+                    android:textColor="@color/tp_text_primary"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <CheckBox
+                    android:id="@+id/avoidRth"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:enabled="false"
+                    android:buttonTint="@color/tp_btn_primary" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="During Return to Home"
+                    android:textColor="@color/tp_text_primary"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <CheckBox
+                    android:id="@+id/avoidLanding"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:enabled="false"
+                    android:buttonTint="@color/tp_btn_primary" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Landing protection"
+                    android:textColor="@color/tp_text_primary"
+                    android:textSize="15sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Control feel and stick mode, side by side. Both live on the REMOTE CONTROLLER rather
+             than the aircraft and both are read live, so they belong together and neither is
+             saved or pushed at connect.
+
+             Control response: "Normal" is LEARNED from the controller rather than hard-coded —
+             there is no documented default and the pilot may have tuned it in Autel's own app,
+             so a hard-coded number would quietly overwrite their setting.
+
+             Stick mode is READ-ONLY. The SDK names these USA/CHINA/JAPAN and the mapping to
+             "Mode 1/2/3" is convention, not something confirmed on this aircraft. A wrong mode
+             number in front of a pilot swaps throttle and pitch, so the app reports what the
+             controller says and changes nothing. -->
+        <LinearLayout style="@style/takFormRow"
+            android:paddingTop="12dp">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Control response" />
+                <RadioGroup
+                    android:id="@+id/ratesGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <RadioButton
+                        android:id="@+id/ratesNormal"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Normal" />
+                    <RadioButton
+                        android:id="@+id/ratesPrecision"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Precision" />
+                </RadioGroup>
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Stick mode" />
+                <RadioGroup
+                    android:id="@+id/stickModeGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <RadioButton
+                        android:id="@+id/stickMode1"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Mode 1" />
+                    <RadioButton
+                        android:id="@+id/stickMode2"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Mode 2" />
+                    <RadioButton
+                        android:id="@+id/stickMode3"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Mode 3" />
+                </RadioGroup>
+                <TextView
+                    android:id="@+id/stickModeStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/tp_text_tertiary"
+                    android:textSize="12sp"
+                    android:paddingTop="4dp"
+                    android:text="" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- LAST in the section, after every value it sends. Resends everything above and then
+             READS BACK what the aircraft actually holds: editing a field only saves it locally,
+             this is the deliberate act that sends it, and the only thing that reports the
+             aircraft's real state rather than what we asked for. Doubles as recovery — one tap
+             re-asserts everything after a reconnect or an Autel Explorer link steal. -->
         <Button
             style="@style/TakButton.Primary"
             android:id="@+id/limitApplyButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="Apply to Aircraft" />
+            android:layout_marginTop="14dp"
+            android:text="Apply Updated Settings to Aircraft" />
 
         <!-- Fills over the fixed read-back wait (see VERIFY_DELAY_MS / applyAllToAircraft).
              Determinate, not a spinner: the wait is a known, bounded duration, so showing how
-             much of it remains is what actually reassures a pilot this hasn't frozen — a
-             spinner alone says "something is happening" but not "how much longer". Hidden until
-             a push is in flight. -->
+             much of it remains is what actually reassures a pilot this hasn't frozen. -->
         <ProgressBar
             android:id="@+id/limitApplyProgress"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="8dp"
             android:max="100"
             android:progress="0"
             android:visibility="gone" />
@@ -143,189 +329,8 @@
             android:layout_height="wrap_content"
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
-            android:paddingTop="6dp"
-            android:text="Press the button to send the settings to the aircraft." />
-
-        <!-- Obstacle avoidance. A SUBSECTION of Aircraft Settings, placed under the signal-loss
-             failsafe because both describe what the aircraft does on its own.
-
-             DIFFERENT FROM EVERYTHING ELSE ON THIS SCREEN, deliberately. Every other control
-             here stores a value and PUSHES it to the aircraft on connect. This one stores
-             nothing and pushes nothing: it shows the aircraft's live state and changes it only
-             when the pilot touches a switch.
-
-             The reason is that a stale saved checkbox pushing "avoidance off" at connect would
-             disable a safety system without anyone deciding to, and the pilot would have no
-             reason to suspect it. The rest of this screen pushes LIMITS; this is a sensor
-             system, which is a different category of risk. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="Obstacle avoidance"
-            android:paddingTop="16dp" />
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="These switches show the settings in the aircraft. Connect the aircraft to see them. A change goes to the aircraft immediately."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="6dp" />
-
-        <TextView
-            android:id="@+id/avoidStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
-            android:textColor="@color/tp_state_caution"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:text="The aircraft is not connected." />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
             android:paddingTop="4dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/avoidSystem"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:buttonTint="@color/tp_btn_primary" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Obstacle avoidance system"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="4dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/avoidRth"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:buttonTint="@color/tp_btn_primary" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Avoid obstacles in Return to Home"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="4dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/avoidLanding"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:buttonTint="@color/tp_btn_primary" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Landing protection"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <!-- Control feel. Both values live on the REMOTE CONTROLLER, not the aircraft, and both
-             are read live. "Normal" is LEARNED from the controller rather than hard-coded: there
-             is no documented default and the pilot may have tuned these in Autel's own app, so a
-             hard-coded number would quietly overwrite their setting. Like obstacle avoidance
-             above, nothing here is saved and pushed at connect. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="Control response"
-            android:paddingTop="16dp" />
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Precision mode moves the gimbal wheel and the aircraft yaw more slowly. Use it to aim the camera accurately and to make smooth video. It does not change the speed of the aircraft."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="6dp" />
-
-        <RadioGroup
-            android:id="@+id/ratesGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <RadioButton
-                android:id="@+id/ratesNormal"
-                style="@style/takColumnRadio"
-                android:enabled="false"
-                android:text="Normal" />
-            <RadioButton
-                android:id="@+id/ratesPrecision"
-                style="@style/takColumnRadio"
-                android:enabled="false"
-                android:text="Precision" />
-        </RadioGroup>
-
-        <TextView
-            android:id="@+id/ratesStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingTop="6dp" />
-
-        <!-- Stick mode: READ-ONLY. The SDK names these USA/CHINA/JAPAN and the mapping to
-             "Mode 1/2/3" is convention, not something confirmed on this aircraft. A wrong mode
-             number in front of a pilot swaps throttle and pitch, so the app reports what the
-             controller says and changes nothing. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="Stick mode"
-            android:paddingTop="16dp" />
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="The app sets this mode on the controller at each connection. The sticks always do what you select here. The ENTER FLIGHT card shows the mode before you fly."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="6dp" />
-
-        <RadioGroup
-            android:id="@+id/stickModeGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <RadioButton
-                android:id="@+id/stickMode1"
-                style="@style/takColumnRadio"
-                android:enabled="false"
-                android:text="Mode 1" />
-            <RadioButton
-                android:id="@+id/stickMode2"
-                style="@style/takColumnRadio"
-                android:enabled="false"
-                android:text="Mode 2" />
-            <RadioButton
-                android:id="@+id/stickMode3"
-                style="@style/takColumnRadio"
-                android:enabled="false"
-                android:text="Mode 3" />
-        </RadioGroup>
-
-        <TextView
-            android:id="@+id/stickModeStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
-            android:paddingTop="6dp"
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:text="" />
+            android:text="Not sent yet." />
 
         <View
             android:layout_width="match_parent"
@@ -333,157 +338,143 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
-        <!-- 2. Map Display — flight mini-map tile source. Street + Custom only; DJI's third
-             "Hybrid" (satellite) option is deliberately absent here, since providing imagery
-             means choosing a satellite tile provider, which is a licensing decision (operator's
-             call, 2026-07-30). A pilot wanting imagery points Custom at their own provider. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="2. Map Display"
+            android:text="2. Video Streaming"
             android:textColor="@color/tp_text_primary"
-            android:textSize="18sp"
+            android:textSize="22sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
 
+
+
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Server host" />
+                <EditText
+                    android:id="@+id/videoHost"
+                    style="@style/takFieldStyle"
+                    android:hint="stream.example.com"
+                    android:inputType="textUri" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Port" />
+                <EditText
+                    android:id="@+id/videoPort"
+                    style="@style/takFieldStyle"
+                    android:text="8554"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Broadcast ID" />
+                <EditText
+                    android:id="@+id/videoStreamId"
+                    style="@style/takFieldStyle"
+                    android:hint="UAS-CALLSIGN"
+                    android:inputType="text" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Username" />
+                <EditText
+                    android:id="@+id/videoUser"
+                    style="@style/takFieldStyle"
+                    android:inputType="text" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Password" />
+                <EditText
+                    android:id="@+id/videoPassword"
+                    style="@style/takFieldStyle"
+                    android:inputType="textPassword" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- After the fields it protects, same reasoning as the TAK section's lock. Quality and
+             transport below stay editable: those are link decisions a pilot legitimately makes
+             in the field, not server configuration. -->
+        <CheckBox
+            android:id="@+id/videoLockConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="@color/tp_accent"
+            android:text="Lock configuration (fields read-only)"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp" />
+
+
+        <TextView style="@style/takLabelStyle" android:text="Video quality (on-device transcode)" />
         <RadioGroup
-            android:id="@+id/mapStyleGroup"
+            android:id="@+id/videoProfileGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
             <RadioButton
-                android:id="@+id/mapStyleStreet"
+                android:id="@+id/videoProfileLow"
                 style="@style/takColumnRadio"
-                android:text="Street" />
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Low" />
 
             <RadioButton
-                android:id="@+id/mapStyleCustom"
+                android:id="@+id/videoProfileStandard"
                 style="@style/takColumnRadio"
-                android:text="Custom" />
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Standard" />
+
+            <RadioButton
+                android:id="@+id/videoProfileHigh"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="High" />
+
         </RadioGroup>
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="12dp"
+            android:gravity="center_vertical">
+            <CheckBox
+                android:id="@+id/videoTcp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:buttonTint="@color/tp_btn_info" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Use TCP transport (append ?tcp)"
+                android:textColor="@color/tp_text_primary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
         <TextView style="@style/takLabelStyle"
-            android:text="Custom map address. Used only when you select Custom." />
-        <EditText
-            android:id="@+id/mapCustomUrl"
-            style="@style/takFieldStyle"
-            android:hint="https://tiles.example.com/{z}/{x}/{y}.png"
-            android:inputType="textUri" />
-
+            android:text="Full stream URL (push + advertised to ATAK)"
+            android:paddingTop="8dp" />
         <TextView
+            android:id="@+id/videoFullUrl"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="The address must contain {z}, {x} and {y}. The app keeps the tiles you look at for offline use."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <Button
-            style="@style/TakButton.Neutral"
-            android:id="@+id/mapDisplaySaveButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Save Map Display" />
-
-        <!-- Offline map tiles. Same shape as the UASFM download below on purpose: centre,
-             radius, check the size, then download. A pilot who has done one already knows
-             how to do the other. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="Offline map area"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="15sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="The app keeps the map tiles you look at. Download an area to get the map for ground you have not flown. Press Check Size first. A larger radius increases the size quickly."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="10dp" />
-
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Centre latitude" />
-                <EditText
-                    android:id="@+id/mapCacheLat"
-                    style="@style/takFieldStyle"
-                    android:hint="61.2170"
-                    android:inputType="numberDecimal|numberSigned" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Centre longitude" />
-                <EditText
-                    android:id="@+id/mapCacheLon"
-                    style="@style/takFieldStyle"
-                    android:hint="-149.8925"
-                    android:inputType="numberDecimal|numberSigned" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Radius (mi)" />
-                <EditText
-                    android:id="@+id/mapCacheRadius"
-                    style="@style/takFieldStyle"
-                    android:hint="10"
-                    android:inputType="number" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow"
-            android:layout_marginTop="10dp">
-
-            <Button
-            style="@style/TakButton.Neutral"
-                android:id="@+id/mapCacheUseLocationButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Use My Location" />
-
-            <Button
-            style="@style/TakButton.Neutral"
-                android:id="@+id/mapCacheCheckButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
-                android:text="Check Size" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow"
-            android:layout_marginTop="8dp">
-
-            <Button
-            style="@style/TakButton.Confirm"
-                android:id="@+id/mapCacheDownloadButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Download Area" />
-
-            <Button
-            style="@style/TakButton.DangerSoft"
-                android:id="@+id/mapCacheClearButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
-                android:text="Clear Cache" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/mapCacheStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/tp_accent"
-            android:textSize="13sp"
-            android:paddingTop="10dp" />
+            android:background="@color/tp_surface_dialog"
+            android:padding="12dp"
+            android:textColor="@color/tp_state_go"
+            android:textSize="14sp"
+            android:textIsSelectable="true"
+            android:fontFamily="monospace"
+            android:text="rtsp://…" />
 
         <View
             android:layout_width="match_parent"
@@ -653,7 +644,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="These are the channels for your TAK login. The channels you select receive the aircraft position and the markers. If you select none, the server default applies."
+            android:text="Selected channels receive the aircraft position and markers. None selected uses the server default."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
@@ -687,159 +678,157 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
+        <!-- 4. Map Display — flight mini-map tile source. Street + Custom only; DJI's third
+             "Hybrid" (satellite) option is deliberately absent here, since providing imagery
+             means choosing a satellite tile provider, which is a licensing decision (operator's
+             call, 2026-07-30). A pilot wanting imagery points Custom at their own provider. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="4. Video Streaming"
+            android:text="4. Map Display"
             android:textColor="@color/tp_text_primary"
-            android:textSize="18sp"
+            android:textSize="22sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
 
-
-
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Server host" />
-                <EditText
-                    android:id="@+id/videoHost"
-                    style="@style/takFieldStyle"
-                    android:hint="stream.example.com"
-                    android:inputType="textUri" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Port" />
-                <EditText
-                    android:id="@+id/videoPort"
-                    style="@style/takFieldStyle"
-                    android:text="8554"
-                    android:inputType="number" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Broadcast ID" />
-                <EditText
-                    android:id="@+id/videoStreamId"
-                    style="@style/takFieldStyle"
-                    android:hint="UAS-CALLSIGN"
-                    android:inputType="text" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Username" />
-                <EditText
-                    android:id="@+id/videoUser"
-                    style="@style/takFieldStyle"
-                    android:inputType="text" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Password" />
-                <EditText
-                    android:id="@+id/videoPassword"
-                    style="@style/takFieldStyle"
-                    android:inputType="textPassword" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- After the fields it protects, same reasoning as the TAK section's lock. Quality and
-             transport below stay editable: those are link decisions a pilot legitimately makes
-             in the field, not server configuration. -->
-        <CheckBox
-            android:id="@+id/videoLockConfig"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock configuration (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
-
-
-        <TextView style="@style/takLabelStyle" android:text="Video quality (on-device transcode)" />
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Select the quality of the video you send to TAK. Standard is the default. Use Low if the network signal is weak."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="6dp" />
-
         <RadioGroup
-            android:id="@+id/videoProfileGroup"
+            android:id="@+id/mapStyleGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
             <RadioButton
-                android:id="@+id/videoProfileLow"
+                android:id="@+id/mapStyleStreet"
                 style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Low\n480 max · 10fps\n475 kbps" />
+                android:text="Street" />
 
             <RadioButton
-                android:id="@+id/videoProfileStandard"
+                android:id="@+id/mapStyleCustom"
                 style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Standard\n720 max · 15fps\n1.6 Mbps" />
-
-            <RadioButton
-                android:id="@+id/videoProfileHigh"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="High\n1080 max · 15fps\n3.6 Mbps" />
-
+                android:text="Custom" />
         </RadioGroup>
 
-        <LinearLayout
+        <TextView style="@style/takLabelStyle"
+            android:text="Custom map address" />
+        <EditText
+            android:id="@+id/mapCustomUrl"
+            style="@style/takFieldStyle"
+            android:hint="https://tiles.example.com/{z}/{x}/{y}.png"
+            android:inputType="textUri" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="12dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/videoTcp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:buttonTint="@color/tp_btn_info" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Use TCP transport (append ?tcp)"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
+            android:text="Must contain {z}, {x} and {y}."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp"
+            android:paddingTop="4dp" />
+
+        <Button
+            style="@style/TakButton.Neutral"
+            android:id="@+id/mapDisplaySaveButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Save Map Display" />
+
+        <!-- Offline map tiles. Same shape as the UASFM download below on purpose: centre,
+             radius, check the size, then download. A pilot who has done one already knows
+             how to do the other. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Offline map area"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tiles you view are kept automatically. Download to cover ground you have not flown — check the size first."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp"
+            android:paddingBottom="10dp" />
+
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Centre latitude" />
+                <EditText
+                    android:id="@+id/mapCacheLat"
+                    style="@style/takFieldStyle"
+                    android:hint="61.2170"
+                    android:inputType="numberDecimal|numberSigned" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Centre longitude" />
+                <EditText
+                    android:id="@+id/mapCacheLon"
+                    style="@style/takFieldStyle"
+                    android:hint="-149.8925"
+                    android:inputType="numberDecimal|numberSigned" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Radius (mi)" />
+                <EditText
+                    android:id="@+id/mapCacheRadius"
+                    style="@style/takFieldStyle"
+                    android:hint="10"
+                    android:inputType="number" />
+            </LinearLayout>
         </LinearLayout>
 
-        <TextView style="@style/takLabelStyle"
-            android:text="Full stream URL (push + advertised to ATAK)"
-            android:paddingTop="8dp" />
-        <TextView
-            android:id="@+id/videoFullUrl"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@color/tp_surface_dialog"
-            android:padding="12dp"
-            android:textColor="@color/tp_state_go"
-            android:textSize="14sp"
-            android:textIsSelectable="true"
-            android:fontFamily="monospace"
-            android:text="rtsp://…" />
+        <LinearLayout style="@style/takFormRow"
+            android:layout_marginTop="10dp">
+
+            <Button
+            style="@style/TakButton.Neutral"
+                android:id="@+id/mapCacheUseLocationButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Use My Location" />
+
+            <Button
+            style="@style/TakButton.Neutral"
+                android:id="@+id/mapCacheCheckButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Check Size" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/takFormRow"
+            android:layout_marginTop="8dp">
+
+            <Button
+            style="@style/TakButton.Confirm"
+                android:id="@+id/mapCacheDownloadButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Download Area" />
+
+            <Button
+            style="@style/TakButton.DangerSoft"
+                android:id="@+id/mapCacheClearButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Clear Cache" />
+        </LinearLayout>
 
         <TextView
+            android:id="@+id/mapCacheStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Use the LIVE button on the flight screen to start and stop the video."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
+            android:textColor="@color/tp_accent"
+            android:textSize="13sp"
+            android:paddingTop="10dp" />
 
         <View
             android:layout_width="match_parent"
@@ -854,7 +843,7 @@
             android:layout_height="wrap_content"
             android:text="5. Elevation Data (DTED)"
             android:textColor="@color/tp_text_primary"
-            android:textSize="18sp"
+            android:textSize="22sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
@@ -862,7 +851,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Terrain data makes the marker positions more accurate. Import one .zip file for each flight area. A new import of the same area replaces the old data."
+            android:text="Improves marker position accuracy. Import one .zip per area; re-importing replaces it."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="8dp" />
@@ -918,7 +907,7 @@
             android:layout_height="wrap_content"
             android:text="6. FAA Airspace Ceilings (UASFM)"
             android:textColor="@color/tp_text_primary"
-            android:textSize="18sp"
+            android:textSize="22sp"
             android:textStyle="bold"
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
@@ -926,7 +915,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="These are the FAA altitude ceilings. The flight screen shows them. Download the data on wifi before you go to the flight area.\n\n⚠ This is advice only. It is NOT an FAA authorisation. It does not change the altitude limit of the aircraft."
+            android:text="FAA altitude ceilings, shown on the flight screen. Download on wifi before you travel.\n\n⚠ Advice only — NOT an authorisation, and it does not change the aircraft\u2019s altitude limit."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingBottom="10dp" />

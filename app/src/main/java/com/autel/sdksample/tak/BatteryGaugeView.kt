@@ -87,21 +87,31 @@ class BatteryGaugeView @JvmOverloads constructor(
         canvas.drawText(label, width / 2f, textY, textPaint)
     }
 
-    /** Red band edge — the charge at which the AIRCRAFT starts returning home. */
+    /** Red band edge — the aircraft's Battery Critical setting. */
     private var criticalPct = DEFAULT_CRITICAL_PCT
-    /** Amber band edge — pilot caution, above the level at which the aircraft acts. */
+    /** Amber band edge — the aircraft's Battery Warning setting. */
     private var warningPct = DEFAULT_WARNING_PCT
 
     /**
-     * Points the gauge at the aircraft's real thresholds.
+     * Points the gauge at the two levels the aircraft is actually configured with, so the
+     * colours mean the same thing as the Pre-Flight fields that set them: **amber from Battery
+     * Warning, red from Battery Critical** (operator, 2026-08-04).
      *
-     * Red is set to the level the aircraft RETURNS HOME at, not the level it force-lands at:
-     * by the time it is landing itself the pilot has no decision left to make, so the red band
-     * has to start where they still do.
+     * This used to put RED at the Warning level and invent amber ten points above it, on the
+     * reasoning that red should start where the pilot still has a decision. That made the gauge
+     * tell a different story from the screen that configures it — and it was built on a belief
+     * that Warning is a hard turn-around, which it is not: the return can be deferred with the
+     * controller's RTH button. Two levels are set, so two levels are shown.
      */
-    fun setBands(returnHomePct: Float, cautionPct: Float) {
-        criticalPct = returnHomePct.coerceIn(1f, 99f)
-        warningPct = cautionPct.coerceIn(criticalPct + 1f, 100f)
+    fun setBands(criticalPct: Float, warningPct: Float) {
+        val c = criticalPct.coerceIn(1f, 99f)
+        val w = warningPct.coerceIn(c + 1f, 100f)
+        // No-op when nothing moved. The caller polls this from the HUD loop so the bands pick up
+        // the aircraft's read-back as soon as it lands; without this guard that would be an
+        // invalidate() twice a second, forever, for a value that changes once per connect.
+        if (c == this.criticalPct && w == this.warningPct) return
+        this.criticalPct = c
+        this.warningPct = w
         invalidate()
     }
 
@@ -113,13 +123,13 @@ class BatteryGaugeView @JvmOverloads constructor(
          * thresholds the aircraft is actually configured with, so the gauge cannot say "you are
          * fine" at a charge where the aircraft is about to fly itself home.
          *
-         * They were 15/30 and fixed, chosen before anyone knew what the aircraft did. It turned
-         * out the airframe returns home at its LOW threshold and force-lands at its CRITICAL one
-         * (measured 2026-08-02), so a gauge with its own unrelated numbers was showing amber
-         * while the aircraft was seconds from acting.
+         * They were 15/30 and fixed, chosen before anyone knew what the aircraft did, so a gauge
+         * with its own unrelated numbers was showing amber while the aircraft was seconds from
+         * acting. These now match FlightLimitsController's own defaults for the same two
+         * settings — keep them in step if those change.
          */
-        private const val DEFAULT_CRITICAL_PCT = 15f
-        private const val DEFAULT_WARNING_PCT = 25f
+        private const val DEFAULT_CRITICAL_PCT = 10f
+        private const val DEFAULT_WARNING_PCT = 15f
         private val COLOR_CRITICAL = 0xFFF44336.toInt()
         private val COLOR_WARNING = 0xFFFFB74D.toInt()
         private val COLOR_GOOD = 0xFF4CAF50.toInt()

@@ -605,6 +605,8 @@ class TakConnectActivity : AppCompatActivity() {
         }
         listOf(maxAlt, maxRadius, rthAlt).forEach { it.addTextChangedListener(watcher) }
 
+        setupBatteryLevels()
+
         val applyStatus = findViewById<TextView>(R.id.limitApplyStatus)
         val applyProgress = findViewById<android.widget.ProgressBar>(R.id.limitApplyProgress)
         val applyButton = findViewById<Button>(R.id.limitApplyButton)
@@ -613,6 +615,61 @@ class TakConnectActivity : AppCompatActivity() {
         }
 
         setupFailsafe()
+    }
+
+    /**
+     * Battery levels — the two percentages at which the AIRCRAFT acts on its own.
+     *
+     * Saved locally on edit and pushed by "Apply to Aircraft", exactly like the numeric limits
+     * above. Until now these two had prefs, a push path and defaults of 15/10, but no UI at all:
+     * the only way to change them was Autel Explorer, and a value the app pushes on every
+     * connect but never shows is a setting the pilot cannot reason about.
+     *
+     * The validation is the point of this function. [FlightLimitsController.applyBatteryThresholds]
+     * already REFUSES to push low <= critical — the aircraft would begin its return and force a
+     * landing in the same moment — but refusing at Apply time, in a log line, is too late and
+     * invisible. This says so while the pilot is typing, and says what will happen if they leave
+     * it: the aircraft keeps what it already has.
+     */
+    private fun setupBatteryLevels() {
+        val low = findViewById<EditText>(R.id.limitLowBattery)
+        val crit = findViewById<EditText>(R.id.limitCriticalBattery)
+        val status = findViewById<TextView>(R.id.limitBatteryStatus)
+
+        low.setText(FlightLimitsController.savedLowBatteryPct(this))
+        crit.setText(FlightLimitsController.savedCriticalBatteryPct(this))
+
+        val refresh = {
+            val l = low.text.toString().trim().toIntOrNull()
+            val c = crit.text.toString().trim().toIntOrNull()
+            when {
+                l == null || c == null -> {
+                    status.setText("Empty keeps the aircraft's current level.")
+                    status.setTextColor(0xFF909090.toInt())
+                }
+                l <= c -> {
+                    status.setText("⚠ Battery Warning ($l%) must be above Battery Critical " +
+                        "($c%) — the aircraft would act on both at once. Not sent until corrected.")
+                    status.setTextColor(0xFFFF6B6B.toInt())
+                }
+                // A valid pair says nothing: the two fields already show it. This line exists
+                // only to report a problem.
+                else -> status.setText("")
+            }
+        }
+        refresh()
+
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) {
+                FlightLimitsController.saveBatteryLevels(
+                    this@TakConnectActivity, low.text.toString(), crit.text.toString(),
+                )
+                refresh()
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        }
+        listOf(low, crit).forEach { it.addTextChangedListener(watcher) }
     }
 
     /**
@@ -1433,7 +1490,6 @@ class TakConnectActivity : AppCompatActivity() {
         val group = findViewById<android.widget.RadioGroup>(R.id.ratesGroup)
         val normal = findViewById<android.widget.RadioButton>(R.id.ratesNormal)
         val precision = findViewById<android.widget.RadioButton>(R.id.ratesPrecision)
-        val status = findViewById<android.widget.TextView>(R.id.ratesStatus)
         val stick = findViewById<android.widget.TextView>(R.id.stickModeStatus)
 
         val stickGroup = findViewById<android.widget.RadioGroup>(R.id.stickModeGroup)
@@ -1441,7 +1497,6 @@ class TakConnectActivity : AppCompatActivity() {
 
         fun render() {
             val connected = AutelProductHolder.isConnected
-            val known = AutelControlRates.precisionActive != null
             // SEED FROM THE AIRCRAFT the first time. The app must not invent a stick mode — that
             // would swap throttle and pitch for a pilot who never opened this screen — but once
             // seeded it is enforced on every connect so Autel's app cannot change it behind them.
@@ -1469,14 +1524,14 @@ class TakConnectActivity : AppCompatActivity() {
             // Set the radio WITHOUT its listener, or drawing the controller's state would look
             // like a pilot tap and be sent straight back at it.
             group.setOnCheckedChangeListener(null)
-            group.check(if (AutelControlRates.precisionActive == true) R.id.ratesPrecision else R.id.ratesNormal)
-            normal.isEnabled = connected && known
-            precision.isEnabled = connected && known
-            status.text = when {
-                !connected -> "The aircraft is not connected."
-                !known -> "Wait. The controller did not send the values yet."
-                else -> "Gimbal wheel ${AutelControlRates.dialSpeed}, yaw ${"%.2f".format(AutelControlRates.yawCoefficient)}."
-            }
+            // THE RADIO SHOWS THE PILOT'S CHOICE, NOT THE CONTROLLER'S CURRENT STATE. TAKPilot
+            // asserts this setting on every connect, so the saved choice IS what the airframe
+            // will be flying — reflecting a read-back here would let a value Autel Explorer left
+            // behind appear to be the selection, moments before the app overwrote it anyway.
+            group.check(if (AutelControlRates.savedPrecision(this)) R.id.ratesPrecision
+                        else R.id.ratesNormal)
+            normal.isEnabled = connected
+            precision.isEnabled = connected
             group.setOnCheckedChangeListener { _, id ->
                 normal.isEnabled = false; precision.isEnabled = false
                 val wantPrecision = id == R.id.ratesPrecision

@@ -42,6 +42,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var avoidance: TextView
     private lateinit var stickMode: TextView
     private lateinit var controlResponse: TextView
+    private lateinit var batteryLevels: TextView
     private lateinit var initializing: TextView
     private lateinit var sdk: TextView
     private lateinit var takStatus: TextView
@@ -73,6 +74,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         avoidance = findViewById(R.id.homeAvoidance)
         stickMode = findViewById(R.id.homeStickMode)
         controlResponse = findViewById(R.id.homeControlResponse)
+        batteryLevels = findViewById(R.id.homeBatteryLevels)
         initializing = findViewById(R.id.homeInitializing)
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
@@ -253,6 +255,22 @@ class TakPilotHomeActivity : AppCompatActivity() {
             AutelControlRates.precisionActive == false -> "CONTROL RESPONSE: NORMAL"
             else -> "CONTROL RESPONSE: —"
         }
+        // Battery levels, straight from the aircraft — never the saved preference. If Apply to
+        // Aircraft did not take, this is where it shows, so falling back to what the pilot typed
+        // would hide the one failure this line exists to catch. Amber until they arrive, matching
+        // the "unknown is not the same as known" rule the avoidance line above follows.
+        val warn = FlightLimitsController.aircraftWarningPct
+        val crit = FlightLimitsController.aircraftCriticalPct
+        batteryLevels.text = when {
+            product == null -> ""
+            warn != null && crit != null ->
+                "BATTERY: WARN ${Math.round(warn)}% · CRIT ${Math.round(crit)}%"
+            else -> "BATTERY: —"
+        }
+        batteryLevels.setTextColor(
+            if (warn != null && crit != null) Color.parseColor("#9AC4FF")
+            else Color.parseColor("#FFB300"))
+
         val settled = AutelControlRates.precisionActive != null
         val infoColor = if (settled) Color.parseColor("#9AC4FF") else Color.parseColor("#FFB300")
         stickMode.setTextColor(infoColor)
