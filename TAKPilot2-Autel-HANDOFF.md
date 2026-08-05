@@ -1,213 +1,257 @@
-Sandbox is back and the working tree survived intact. Writing the handoff doc now.The sandbox is flapping — it came back briefly (long enough to confirm your project tree survived intact at `/home/claude/takpilot-autel`), then dropped again mid-write. I don't want to keep you waiting on it, so here's the handoff document inline. Copy it into a file named `TAKPilot2-Autel-HANDOFF.md` alongside your source.
+# TAKPilot2-Autel — Handoff and working context
 
----
+**Written in Simplified Technical English (ASD-STE100).**
 
-# TAKPilot2-Autel — Project Handoff / Working Context
+**Purpose:** give the intent, the decisions and the knowledge from the previous sessions to a new
+session. This is the internal working document.
 
-**Purpose:** carry the intent, decisions, and hard-won knowledge from the porting session into a fresh session. This is the *internal* working doc. `TAKPilot2-Autel-Overview.md` is the polished functional explainer for outside developers and deliberately contains no internal references. This one has everything.
+**Version:** v1.5.2
+**Status:** Tested in flight on the EVO II Dual 640T V3 and the Smart Controller V3 on 3 August 2026
+and 4 August 2026. Phases 0 to 5 are complete.
 
-**Current version:** v1.2
-**Status:** Builds. Installs. Runs on a Pixel 8 Pro test device. TAK server connection confirmed. Never yet run on the real Smart Controller V3 or with an aircraft attached.
+## 1. What the application does
 
-## 1. What we're building and why
+The application operates on the Autel Smart Controller V3. It has two functions at the same time:
 
-An Android app that runs **on the Autel Smart Controller V3** and acts simultaneously as the drone's flight interface (live video, telemetry HUD, map) and as a **TAK gateway** — publishing the aircraft's position to a TAK Server as CoT over TLS so the drone appears as a live track on the shared operating picture for every other TAK client, with its video linked from the marker.
+1. It is the flight interface for the aircraft. It gives the live video, the telemetry HUD and the
+   map.
+2. It is a TAK gateway. It sends the aircraft position to a TAK server as CoT over TLS. The aircraft
+   is then a live track for each other TAK client, and its video is linked from the marker.
 
-**How we got here:** the original plan was a lightweight background "gateway only" app running *beside* Autel Explorer, with Explorer remaining the pilot's interface. That plan had one unproven link: whether the Autel MSDK can receive telemetry while Explorer holds the aircraft connection. Forum evidence suggested vendor SDKs are often one-app-at-a-time, and no reference implementation anywhere had demonstrated "vendor flight app + telemetry app concurrently on the same Android box."
+### 1.1 Why the design is this way
 
-**Decision made this session: we ported the existing DJI app instead.** We already had a working application — **TAKPilot2**, built for DJI (MSDK v5, M30-series) — doing exactly this job. Porting was chosen as the path of least resistance to a working APK.
+The first plan was a small background application that operated at the same time as Autel Explorer.
+Explorer was to stay as the interface for the pilot.
 
-**Consequence:** this app *replaces* Autel Explorer during TAK operations, exactly as TAKPilot2 replaces the DJI flight app. This dissolves the Explorer-concurrency question entirely. The tradeoff: everything Explorer provided beyond raw stick input — camera settings UI, mission planning, firmware updates, warnings UX — is not in this app. Keep Explorer installed for pre-flight/config; fly TAK missions from TAKPilot2. Sticks and RTH work regardless, since stick input rides the Skylink RF link directly, not through the app.
+That plan had one unproven item: can the Autel MSDK receive telemetry while Explorer holds the
+connection to the aircraft? Manufacturer SDKs are frequently one application at a time. No example
+anywhere had shown a manufacturer flight application and a telemetry application together on one
+Android device.
 
-## 2. Project layout and provenance
+**The decision was to port the DJI application.** A working application already existed: TAKPilot2
+for DJI. It did this task.
 
-Built on the Autel `AndroidAdvanceSample` repo, with TAKPilot2's code grafted in.
+**The result:** this application replaces Autel Explorer during TAK operations. This removes the
+question about Explorer completely.
+
+**The cost:** the application does not have the other Explorer functions. It has no camera settings
+screen, no mission planning, no firmware update and no warnings screen. Keep Explorer installed for
+configuration before a flight. Use TAKPilot2 for TAK missions.
+
+The sticks and the RTH button operate at all times. Stick data goes on the Skylink radio link. It
+does not go through the application.
+
+## 2. Structure
+
+The application is built on the Autel `AndroidAdvanceSample` repository. The TAKPilot2 code is added
+to it.
 
 ```
-com.taklite.client.tak/     ← vendor-neutral TAK layer (Java) — COPIED VERBATIM
-    TakManager, TakClient, CotBuilder, CotParser,
-    TakCertEnroller, TakGroupAssigner, TakMissionClient, TakUser
+com.taklite.client.tak/     TAK layer (Java). It does not know the manufacturer.
+                            TakManager, TakClient, CotBuilder, CotParser,
+                            TakCertEnroller, TakGroupAssigner, TakMissionClient, TakUser
 
-com.autel.sdksample.tak/    ← drone-facing + UI layer (Kotlin)
-    AutelProductHolder.kt     connected-aircraft singleton              [NEW]
-    AutelTakBridge.kt         telemetry → CoT (+TakBridgeHolder)        [REWRITTEN]
-    AutelVideoStreamer.kt     raw frames → RTSP (+VideoStreamerHolder)  [REWRITTEN]
-    CameraSlantPoint.kt       look-point geometry                       [verbatim]
-    TakMapMarkers.kt          inbound entities on map                   [re-impl. osmdroid]
-    TakDropMarkers.kt         user-placed markers                       [re-impl. osmdroid]
-    TakMissionManager.kt      Data Sync orchestration                   [package swap]
-    TakAutoConnect.kt         silent reconnect at startup               [package swap]
-    TakForegroundService.kt   process survival                          [package swap]
-    TakPilotHomeActivity.kt   landing screen                            [ported]
-    FlightActivity.kt         flight screen                             [REBUILT]
-    TakConnectActivity.kt     configuration screen                      [package swap]
-    DataSyncActivity.kt       feed management                           [package swap]
+com.autel.sdksample.tak/    Aircraft layer and user interface (Kotlin).
 ```
 
-**The load-bearing architectural fact:** `com.taklite.client.tak` has zero drone-vendor imports — only JDK, Android framework, JSON/XML. That separation is what made this port tractable in a single session, and what would make a third vendor tractable. **Do not introduce SDK dependencies into that package.**
+**The most important architectural rule:** `com.taklite.client.tak` has no import from a
+manufacturer SDK. It uses only the JDK, the Android framework, JSON and XML.
 
-**What did NOT port:** `RcButtonManager` (Smart Controller V3 key codes unknown — log `onKeyDown` on hardware); `SpeakerMegaphoneManager`/`PayloadAccessoryManager` (DJI M30 payloads, no EVO II equivalent); `ArOverlayView` (was experimental in TAKPilot2 itself — deferred, but its data sources `TakDropMarkers.pinsForAr()`, `TakMapMarkers.isHidden()`, and the bridge telemetry cache are all ported and ready); PIP dual-lens control, HSI strip, on-screen camera controls (DJI widget-specific; EO/IR selection exists as `AutelTakBridge.activeLens` but isn't wired to a camera listener).
+That separation made this port possible in a short time. It would also make a third manufacturer
+possible. **Do not put an SDK import in that package.**
 
-## 3. Key technical decisions and findings
+## 3. Technical knowledge
 
-**3.1 The SDK is listener-only** — DJI offers synchronous `KeyManager.getValue()` polling; Autel MSDK v1.5 does not. `AutelTakBridge` registers three listeners once, caches latest values in `@Volatile` fields, and a 2-second timer reads the cache and emits one CoT event.
+### 3.1 The SDK uses listeners only
 
-| Listener | Provides |
+DJI gives synchronous polling with `KeyManager.getValue()`. Autel MSDK v1.5 does not.
+
+`AutelTakBridge` registers the listeners one time. It keeps the most recent values in `@Volatile`
+fields. A 2-second timer reads the values and sends one CoT event.
+
+| Listener | Data |
 |---|---|
-| `Evo2FlyController.setFlyControllerInfoListener` | GPS (lat/lon/alt/sats/accuracy), local coords (alt above takeoff, ground speed, home point), attitude |
-| `EvoBattery.setBatteryStateListener` | Remaining %, voltage, capacity |
-| `EvoGimbal.setAngleListener` | Gimbal pitch/roll/yaw |
+| `Evo2FlyController.setFlyControllerInfoListener` | GPS position, altitude, satellites, accuracy, local coordinates, home point, attitude |
+| `EvoBattery.setBatteryStateListener` | Percent remaining, voltage, capacity |
+| `EvoGimbal.setAngleListener` | Gimbal pitch, roll and yaw |
 
-Listener registrations **do not survive an aircraft reconnect** — `AutelProductHolder` re-arms them on every `productConnected`.
+**The listeners do not continue after the aircraft connects again.** `AutelProductHolder` registers
+them again at each `productConnected` event.
 
-**3.2 The altitude trap (most important correctness detail):**
+### 3.2 The altitude trap
+
+This is the most important correctness item.
 
 | Source | Meaning | Use |
 |---|---|---|
-| `EvoGpsInfo.getAltitude()` | Height above WGS-84 **ellipsoid** (HAE) | ✅ What CoT `hae` requires |
-| `EvoGpsInfo.getHeightMeanSeaLevel()` | Height above **MSL** | Terrain math only; cached for future DTED work |
-| `LocalCoordinateInfo.getAltitude()` | Height above **takeoff point** | ❌ Never send as `hae`. HUD display only |
+| `EvoGpsInfo.getAltitude()` | Height above the WGS-84 ellipsoid (HAE) | Correct for the CoT `hae` value |
+| `EvoGpsInfo.getHeightMeanSeaLevel()` | Height above MSL | Terrain calculations only |
+| `LocalCoordinateInfo.getAltitude()` | Height above the takeoff point | **Never send this as `hae`.** HUD only. |
 
-Sending takeoff-relative altitude as HAE is a well-known drone-to-CoT bug that makes tracks appear at wrong altitudes on every other client. Enforced in the bridge and commented at the call site. Still wants an empirical spot-check against a known surveyed HAE.
+If you send the takeoff-relative altitude as HAE, the track is at the wrong altitude on each other
+client. This is a known fault in drone-to-CoT applications.
 
-**3.3 Video: Autel is better than DJI here.** DJI only exposes a decoded surface, forcing a re-encode. Autel's `AutelCodecListener.onFrameStream()` hands over already-encoded H.264/H.265 Annex-B frames, so `AutelVideoStreamer` injects them straight into the RTSP client with **zero transcode** — near-zero CPU, no quality loss, and the media server can relay rather than transcode. Tradeoff: can't change resolution/bitrate since we never encode. RTSP needs SPS/PPS (plus VPS for H.265) before streaming, so the streamer sniffs those NAL units from the byte stream; drone downlinks repeat parameter sets every keyframe, so it resolves within ~1 GOP. H.264 vs H.265 auto-detected and logged.
+**The same trap has a second form.** A contact reports `hae`, which is an ellipsoid height. The
+aircraft altitude is MSL. If you subtract one from the other, the result contains the geoid
+separation. This was measured at 12.2 m on 4 August 2026. It put AR contact icons 2.3 degrees too
+high. Contacts that have a GROUND CoT type now use DTED terrain instead.
 
-**3.4 GPS comes from the aircraft, never the controller.** `AutelTakBridge` reads position exclusively from `EvoGpsInfo`. Correct, since the CoT track answers "where is the aircraft," and a controller position would show the pilot on the ground. *Future note:* an operator ground PLI would be a new telemetry source that doesn't exist in TAKPilot2 today.
+### 3.3 Video
 
-**3.5 Network activity is not owned by any screen.** TAK connection, telemetry bridge, and video stream live in process-wide singletons (`TakManager`, `TakBridgeHolder`, `VideoStreamerHolder`). Leaving the flight screen or backgrounding doesn't interrupt them. `TakForegroundService` (typed `dataSync` FGS, `START_STICKY`, persistent notification) keeps the process alive — Doze silently throttling a telemetry sender mid-flight is a real, hard-to-diagnose failure.
+The stream is a **MediaProjection screen capture** of the full flight screen. The application
+encodes it to H.265 and sends it with RTSP.
 
-**3.6 The global product-listener slot is contested.** `Autel.setProductConnectListener` is a single global slot, and the stock sample's `ProductActivity` (reachable from our "SDK Test Tools" button) overwrites it. `AutelProductHolder.install()` is called from `onResume` on both Home and Flight to reclaim it.
+The first design took the encoded frames directly from the aircraft with
+`AutelCodecListener.onFrameStream()`. That design had no transcode and almost no CPU cost, but it
+could not change the resolution or the bitrate.
 
-## 4. Build environment knowledge (learned the hard way)
+The screen capture design has two advantages. The stream continues through a link loss or a battery
+change. There is no second tap on the codec, so there is no competition with the view that shows the
+video to the pilot.
 
-- **Use JDK 11.** AGP 7.2.2 fails or misbehaves on JDK 17/21. Set `JAVA_HOME` explicitly if multiple JDKs are installed.
-- **`chmod +x gradlew` after every unzip.** The execute bit gets stripped by zip extraction and Synology Drive sync. This bit us twice.
-- Build: `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`. Install: `adb install -r <apk>` (`-r` preserves settings).
-- Toolchain: Gradle 7.3.3 / AGP 7.2.2 / Kotlin 1.7.20, `compileSdk` 33, `minSdk` 21.
-- Autel SDK is a **bundled AAR in-repo** (`app/libs/autel-sdk-release.aar`), not a remote artifact.
-- App ID `com.tak.uastoollite`; App Key already wired into `TestApplication.java`.
-- Java package (`com.autel.sdksample`) and applicationId (`com.tak.uastoollite`) intentionally differ — valid Android, just confusing if you forget.
+The encoder must use **VBR**, not CBR. The HEVC encoder of this chip declares VBR=true and
+CBR=false. A request for CBR made the I-frames too small and gave a pulse in the picture every 2
+seconds. `VIDEO-STREAM-VBR-FIX.md` has the full record.
 
-**Dependencies added:** `org.osmdroid:osmdroid-android:6.1.14` (map rendering, supports offline tile caches); `com.github.pedroSG94.rtmp-rtsp-stream-client-java:rtsp:2.2.6` (RTSP publishing — only its low-level `RtspClient` is used since we supply pre-encoded frames). No third-party TLS library; the CoT client uses JDK `SSLSocket` with `KeyStore`/`KeyManagerFactory`/`TrustManagerFactory`.
+### 3.4 The position comes from the aircraft
 
-**How the port was verified without running it:** every new Kotlin file was type-checked against the real `autel-sdk-release.aar`, real osmdroid 6.1.14, real pedro rtsp 2.2.6, and Android API 30 `android.jar` — 0 errors (androidx and `R` stubbed). This caught three real bugs pre-build: a duplicated singleton, a Kotlin scoping shadow, and the contested product-listener slot. Not possible: running aapt / full Gradle assembly — which is exactly why the bugs that surfaced on device were all resource/layout issues, not code issues.
+`AutelTakBridge` reads the position only from `EvoGpsInfo`. This is correct. The CoT track answers
+the question "where is the aircraft". A position from the controller would show the pilot on the
+ground.
 
-**Autel SDK API signatures were recovered by decompiling the AAR with `javap`**, since the public docs site documents methods but not field-level definitions for telemetry data classes. Reuse this for any future SDK gaps.
+### 3.5 No screen controls the network functions
 
-## 5. Bugs found and fixed on device (v1.0 → v1.1)` to just `## 5. Bugs found and fixed on device`, and replace that section's table with a version-tagged one:
+The TAK connection, the telemetry bridge and the video stream are in process-wide objects:
+`TakManager`, `TakBridgeHolder` and `VideoStreamerHolder`.
 
-| Version | Bug | Symptom | Cause | Fix |
-|---|---|---|---|---|
-| v1.1 | Missing buttons | TAK Setup and Data Sync absent from Home | Left column was `match_parent` with no ScrollView; overflow silently clipped. No error, no crash | Wrapped left column in `ScrollView` with `fillViewport` |
-| v1.2 | Dead touch target | "Enter Flight" card only responded at the very bottom edge | Click listener only on the 56dp button, not the surrounding card that *looks* like one big tile | Made whole card clickable + focusable with `selectableItemBackground` ripple |
+If the pilot leaves the flight screen, these functions continue. `TakForegroundService` keeps the
+process alive. Doze mode can stop a telemetry sender during a flight. That fault is very difficult
+to find.
 
-**Watch for more of the same in `FlightActivity`** — built from primitives, never rendered, and its right-side control column (Home / Video / Drop Pin / Pin @ Cam / Map ±) has the same risk profile. Screenshot-driven review works well.
+**One exception:** the screen capture stops when the flight screen is no longer visible. This is a
+privacy control. The stream is a copy of the full screen.
 
-## 6. Current test status
+### 3.6 The global product-listener position is contested
 
-| Item | Status |
-|---|---|
-| Builds and installs | ✅ |
-| Home screen renders, buttons reachable | ✅ (after v1.1 fixes) |
-| "Enter Flight" full-card tap target | ✅ (v1.2 fix) |
-| Flight screen opens | ✅ basic screen confirmed |
-| **TAK connect + cert enrollment** | ✅ **Confirmed against test OpenTAKServer, connected both ends.** Hardest part of the stack, same code path as the working DJI app |
-| CoT actually flowing / marker on server map | ❓ Not verified — "connected" proves the socket, not that telemetry is read and sent correctly |
-| Aircraft telemetry | ❌ Untested — no aircraft |
-| Video path | ❌ Untested |
-| Real Smart Controller V3 | ❌ Not yet — all testing on a Pixel 8 Pro |
+`Autel.setProductConnectListener` is one global position. The `ProductActivity` of the sample
+application writes over it. `AutelProductHolder.install()` is called at each `onResume` of the Home
+screen and the Flight screen to get it again.
 
-**Known non-issue — 16KB page size warning.** On the Pixel 8 Pro, Android shows "App Compatibility / not 16 KB compatible, ELF alignment check failed" listing `libAutelUtil.so`, `libAutelPlayer.so`, `libNetWorkProxy.so`, `libmappingplaning-lib.so`, `libwhitename.so`. These are **Autel's own precompiled native libraries** in the bundled AAR, built with an older toolchain. Nothing in our code touches this; unfixable without Autel's source. It's an OS notice on a debuggable build, not a crash. The Smart Controller V3 runs Android 11, which doesn't have 16KB pages, so this is likely a Pixel-as-test-device artifact. If aircraft connection or video misbehaves on real hardware, revisit — `libAutelPlayer.so` and `libAutelUtil.so` are almost certainly in the video and connection paths.
+### 3.7 The camera supplies the field of view
 
-## 7. Calibration items — resolve on first real flight
+`XT706CameraInfo.getHorizontalFOV()` and `getVerticalFOV()` give degrees. The application uses these
+values. The constants are a fallback only.
 
-All isolated as named constants in `AutelTakBridge`, instrumented so one flight resolves them.
+Do not make the vertical field of view a second calibration control. A rectilinear lens holds the
+two axes together through the frame aspect. Read `PORT-STATUS.md` section 5.
 
-| Item | Constant / location | Note |
+## 4. Build environment
+
+- **Use JDK 17.** An earlier version of this document said JDK 11. That is wrong. The project builds
+  correctly with JDK 17.
+- **Run `chmod +x gradlew` after each unzip.** The zip extraction and the Synology Drive
+  synchronization remove the execute permission. This has caused a failure two times.
+- Build: `./gradlew assembleDebug`. Install: `adb install -r <apk>`. The `-r` option keeps the
+  settings.
+- Toolchain: Gradle 7.3.3, AGP 7.2.2, Kotlin 1.7.20, compileSdk 33, minSdk 21, targetSdk 29.
+- The Autel SDK is an AAR file in the repository at `app/libs/`. It is not a remote artifact.
+- The application ID is `com.tak.uastoollite`. The application key is in `TestApplication.java`.
+- The Java package (`com.autel.sdksample`) and the application ID are different. This is valid
+  Android. It causes confusion if you forget it. **The FileProvider authority must use the
+  application ID.**
+
+**To find an SDK method, decompile the AAR with `javap`.** The public documentation does not give
+the field-level definitions of the telemetry classes. This method found
+`XT706CameraInfo.getHorizontalFOV()`, the units of the zoom scale and `EvoAngleInfo.getRoll()`. Use
+it for each gap in the documentation.
+
+**Search the full SDK, not one part of it.** Three wrong statements of the form "the SDK cannot do
+this" came from an examination of one subsystem only.
+
+## 5. Augmented reality: the accuracy limit
+
+**The AR overlay is for general awareness of an area. It is not accurate for a point.**
+
+A flight test on 4 August 2026 aimed at one target from three headings:
+
+| Heading | Range | Implied bearing offset |
 |---|---|---|
-| Gimbal pitch sign | `PITCH_SIGN` | Assumed DJI-like (down = negative). Flip to `-1.0` if SPI lands wrong side |
-| Gimbal yaw reference frame | `BEARING_MODE_RELATIVE`, `BEARING_OFFSET_DEG` | Unknown whether yaw is absolute compass bearing or body-relative. **DJI needed +105°; Autel starts at 0.** Both candidate bearings logged every SPI push so one flight settles it |
-| 640T FOV constants | `EO_HFOV/VFOV`, `IR_HFOV/VFOV` | Spec-sheet starting values; tune against rendered cone in ATAK |
-| GPS accuracy units | `ACC_DIVISOR` | Believed millimeters (standard GNSS convention), sanity-clamped. Bench-verify |
-| HAE altitude | `EvoGpsInfo.getAltitude()` | High-confidence structural inference; spot-check vs known surveyed HAE |
-| Video listener vs `AutelCodecView` concurrency | `AutelVideoStreamer` / `FlightActivity` | **Undocumented and untested.** If starting the stream blanks local video, mitigation is decoding our own frame tap into a `SurfaceView` via MediaCodec — we already have the frames, so it's small and contained |
-| `codec.cancel()` on stream stop | `AutelVideoStreamer.stop()` | If it also kills the display view's feed, remove the cancel and rely on the `stopped` guard |
-| CoT type code | `CotBuilder.buildDronePLI` | Should emit `a-f-A-M-H-Q` (rotary-wing UAS). Verify against a live client during bench testing |
+| 292 degrees | 225 m | 6.00 degrees |
+| 264 degrees | 349 m | 4.49 degrees |
+| 089 degrees | 358 m | 0.87 degrees |
 
-## 8. Known gaps / deferred work
+The spread is 5.13 degrees. This is too large for an error of aim by the pilot. The error changes
+with the heading. This is magnetometer error on the aircraft.
 
-1. **Certificate storage** — enrolled certs land as `.p12` in app-private `filesDir` with a conventional passphrase, not hardware-backed Android Keystore. Acceptable on a non-rooted controller; contained TODO in `TakCertEnroller`.
-2. **No automatic certificate renewal** — reconnects with stored certs but doesn't re-enroll before expiry. Add before fleet rollout if the server issues short-lived certs. An expired cert fails as an opaque TLS handshake error, which is miserable to diagnose in the field.
-3. **Terrain-aware look-point (DTED)** — currently flat-ground trigonometry. Intended upgrade is a ray-march: step outward along the camera vector, look up terrain elevation beneath each step, find where the ray drops below terrain, refine by bisection. `AutelTakBridge` already caches `heightMeanSeaLevel` (MSL) and the comment marks the splice point. DTED is MSL-referenced, so pairing with cached MSL needs no geoid conversion.
-4. **Wi-Fi handoff** — controllers move between hotspots. Client reconnects on socket failure but hasn't been observed switching hotspots mid-flight. A connectivity-change callback for immediate clean reconnect (rather than waiting for socket timeout) is small and worthwhile.
-5. **Thermal/EO switching** not wired to a camera listener, so FOV constants assume visible-light.
-6. **RC physical button mapping** — needs keycode logging on hardware.
-7. **AR overlay** — deferred; data sources ready.
+**One fixed offset cannot correct an error that changes with direction.** The correction is a compass
+calibration of the aircraft.
 
-## 9. NEXT UP: optional debug logging (designed, not yet built)
+The projection mathematics is correct. The drawn position of three markers was calculated again from
+known coordinates. The result agreed with the application to one pixel.
 
-Active task when the session ended. Requirements settled:
+**Do not correct the vertical error with the pitch offset.** The pitch offset also controls the SPI
+and the marker drop. If you change it to put an icon under the crosshair, the icons look correct and
+the dropped markers become wrong. Nothing shows this to the pilot. Calibrate the pitch against
+terrain that the camera aims at.
 
-- **Scope:** capture **only our TAK/Autel bridge code**, not all of logcat. Low noise.
-- **Crash capture:** only while the toggle is ON (not always-on).
-- **Retention:** delete logs older than **2 hours**, swept on app start and on entering the Debug screen. Explicitly to avoid filling the controller.
-- **Entry point:** a **Debug button at the bottom of the left-side button stack on Home** (below Data Sync).
-- **Debug screen:** options down the left side — on/off, export current log (share sheet, e.g. email), clear current log, delete current log. Log view fills the rest.
+## 6. Deferred work
 
-**Proposed implementation:**
-1. **`AppLog` facade** replacing scattered `Log.i/w/e` calls across `AutelTakBridge`, `AutelVideoStreamer`, `AutelProductHolder`, `TakForegroundService`, `TakMapMarkers`, `TakDropMarkers`, `TakMissionManager`, and the taklite Java layer. Always forwards to normal `Log.*` so `adb logcat` keeps working identically; *additionally* writes to file when enabled.
-2. **File sink** at `filesDir/logs/`, timestamped lines, size-capped with rotation.
-3. **Crash handler** via `Thread.setDefaultUncaughtExceptionHandler`, installed only while logging is on; writes full stack trace before the process dies. Arguably the highest-value part for field debugging.
-4. **Debug screen** with live-scrolling monospace view + the four actions.
+1. **Certificate storage.** The certificates are `.p12` files in the application-private `filesDir`.
+   They are not in the hardware-backed Android Keystore. This is satisfactory on a controller that
+   is not rooted.
+2. **No automatic certificate renewal.** The application reconnects with the stored certificates. It
+   does not enroll again before they expire. An expired certificate gives a TLS handshake error with
+   no clear cause. Add this function before a fleet deployment.
+3. **Wi-Fi handoff.** Controllers move between hotspots. The client reconnects after a socket
+   failure. A callback for a change of connectivity would make the reconnection faster.
+4. **The zoom button label** starts at 1X. The application does not read the zoom from the camera at
+   connect. Therefore the label can be wrong until the first touch. The zoom mathematics is correct.
+5. **`IR_HFOV = 33.0`** comes from one measurement. The lens was identified from the aspect ratio of
+   1.283 and the change of focal length. It was not identified from a lens name. This is a fallback
+   value that the live value replaces.
 
-**Open design question to confirm:** "Clear" vs "Delete" are nearly identical unless differentiated. Proposal — **Clear** wipes the current active log's contents but keeps logging running; **Delete** removes all log files on disk including rotated ones.
-
-**Why before hardware testing:** `adb logcat` works today only because the build is debuggable and tethered to a laptop. In the field on a Smart Controller V3, that's exactly when it stops being practical — and when you most need to know what happened.
-
-## 10. Testing that doesn't need an aircraft
-
-The TAK half has no SDK dependency: certificate enrollment, TLS connection, reconnection ✅ *(already proven)*; inbound CoT rendering; channel enumeration/selection; Data Sync feed creation, joining, marker publication; marker placement and transmission.
-
-**Genuinely needs hardware:** telemetry field validation, video path end-to-end, all sensor-point calibration.
-
-**Useful supplementary technique:** a small script that opens a TLS socket to 8089 with an exported certificate and replays synthetic CoT along a fake flight path. Validates the server-side contract — cert chain, channel routing, symbol rendering, stale-fade on every client type — independently of the Android app. Then the app only has to match something already proven.
-
-## 11. Server contract quick reference
+## 7. Server contract
 
 | Port | Protocol | Purpose |
 |---|---|---|
-| 8089 | TLS (mutual) | CoT streaming. One long-lived socket, CoT XML written as it occurs, no HTTP/framing. Same socket delivers inbound. Fire-and-forget, no replay |
-| 8446 | HTTPS | Certificate enrollment. Authenticate with user/pass once, generate keypair, submit CSR, receive signed cert + CA truststore |
-| 8443 | HTTPS REST | Data Sync / Mission API. Named persistent shareable feeds; durable unlike the ephemeral stream |
+| 8089 | TLS, both ends authenticate | CoT stream. One long connection. The application writes CoT XML when an event occurs. There is no HTTP and no framing. The same connection carries the inbound data. |
+| 8446 | HTTPS | Certificate enrollment. Authenticate one time with a name and a password, make a key pair, send a CSR, receive the signed certificate and the CA truststore. |
+| 8443 | HTTPS REST | Data Sync and the Mission API. These feeds have names and are permanent. |
 
-- **Identity:** server derives the user from the client cert's Common Name; group membership decides channel routing, entirely server-side. The app can *narrow* routing by tagging events with explicit destination channels.
-- **Track identity ≠ connection identity:** the map distinguishes entities by CoT `uid`, not certificate. Several devices sharing one cert still produce distinct markers as long as `uid`s differ.
-- **`uid` must be stable across sessions** — derived from the operator-entered callsign, so the same airframe is the same track forever. Never randomize per session.
-- **`stale` is short (10–15s)** — a fast-moving track whose link drops should fade rather than leave a ghost.
-- **Load:** at 0.5 Hz per aircraft, a six-airframe fleet is ~3 events/sec. Negligible for the server, modest on shared Wi-Fi.
+- **Identity.** The server finds the user from the Common Name of the client certificate. The group
+  membership decides the channel routing. This is fully on the server. The application can make the
+  routing narrower with explicit destination channels.
+- **A track identity is not a connection identity.** The map separates entities by the CoT `uid`. It
+  does not use the certificate. Several devices with one certificate give separate markers if the
+  `uid` values are different.
+- **The `uid` must not change between sessions.** It comes from the callsign that the operator
+  enters. The same airframe is then the same track at all times. Never make it random.
+- **The `stale` time is short (10 to 15 seconds).** A fast track that loses its link must disappear.
+  It must not stay on the map.
+- **Load.** At 0.5 Hz for each aircraft, six aircraft give approximately 3 events each second. This
+  is very small for the server.
 
-## 12. Deployment notes
+## 8. Deployment
 
-- **Wi-Fi only** — Smart Controller V3 has no SIM slot or cellular modem. Joins whatever hotspot is available on site, so the app must survive network changes mid-flight.
-- Fleet is **Autel EVO II Dual 640T V3** + **Smart Controller V3** (not SE), Android 11, controller firmware 1.3.9.23+. Matches MSDK v1.5 scope exactly.
-- **No laser rangefinder** on the EVO II V3 — the sensor look-point must be computed geometrically; no measured distance available.
-- Per-device configuration reduces to **callsign only**; everything else entered at runtime and persisted. Nothing compiled in.
-- Provisioning: sideload APK → enter host/user/pass/callsign once → done.
+- **Wi-Fi only.** The Smart Controller V3 has no SIM slot and no cellular modem. It joins a hotspot
+  on site. Therefore the application must continue through a change of network.
+- The fleet is the Autel EVO II Dual 640T V3 and the Smart Controller V3 (not the SE), Android 11,
+  controller firmware 1.3.9.23 or higher.
+- **The EVO II V3 has no laser rangefinder.** The application calculates the look point with
+  geometry. There is no measured distance.
+- The configuration for each device is the callsign only. A person enters the other values when the
+  application operates. The application keeps them. Nothing is in the build.
+- To provision a controller: install the APK, then enter the host, the user, the password and the
+  callsign one time.
 
-## 13. Files in play
+## 9. Related documents
 
-| File | What it is |
+| File | Contents |
 |---|---|
-| `TAKPilot2-Autel-Overview.md` | Polished functional/architectural doc for **outside developers**. Self-contained, no internal references, no credentials. Safe to circulate |
-| `PORT-STATUS.md` | In-repo port status: component map, first-build checklist, calibration table, divergences |
-| `TAKPilot2-Autel-HANDOFF.md` | This document — internal working context |
-| `TAKPilot2-source-V1.zip` | The **original DJI TAKPilot2 source**, the port's reference. Keep it — it's the answer key for anything ambiguous about intended behavior |
-
-## 14. Suggested first moves in the new session
-
-1. Upload the current `takpilot-autel_v1-2` source (or latest zip) plus this document.
-2. Build the debug logging feature (§9) — fully specified, was the active task.
-3. Verify CoT is actually reaching the server (marker visible for the callsign), closing the one open question from the successful connection test.
-4. Then move to the real Smart Controller V3, where the §7 calibration items become resolvable.
-
-**Recommendation:** carry over `TAKPilot2-source-V1.zip` too. Several times during the port, the fastest way to resolve "what was this supposed to do?" was reading the DJI original rather than reasoning about it.
+| `README.md` | The start point. |
+| `PORT-STATUS.md` | The component map, the accuracy limits and the calibration items. |
+| `FLIGHT-TEST-CHECKLIST.md` | The ordered test procedure. |
+| `TAKPILOT2_AUTEL_PORT_PLAN.md` | The full project reference. |
+| `VIDEO-STREAM-VBR-FIX.md` | The record of the video pulse and its correction. |
+| `TAKPilot2-DebugLogging-DevNotes.md` | The logging design, and how to move it to the DJI application. |
+| `REVIEW_2026-08-03_*.md` | The review records for the code, the UI, the language and the security. |
