@@ -192,11 +192,23 @@ class TakConnectActivity : AppCompatActivity() {
         val vStreamId = findViewById<EditText>(R.id.videoStreamId)
         val vTcp = findViewById<android.widget.CheckBox>(R.id.videoTcp)
         val vProfileGroup = findViewById<android.widget.RadioGroup>(R.id.videoProfileGroup)
+        val vCodecGroup = findViewById<android.widget.RadioGroup>(R.id.videoCodecGroup)
+        val vCodecHint = findViewById<TextView>(R.id.videoCodecHint)
         val vFullUrl = findViewById<TextView>(R.id.videoFullUrl)
 
         vHost.setText(prefs.getString(KEY_V_HOST, ""))
         vPort.setText(prefs.getInt(KEY_V_PORT, 8554).toString())
         vUser.setText(prefs.getString(KEY_V_USER, ""))
+        // ⚠ THIS LINE WAS MISSING, AND ITS ABSENCE ERASED THE SAVED PASSWORD.
+        //
+        // Every other field was restored; this one was not, so the box came up blank. The
+        // TextWatcher below then saved the WHOLE config on any edit, writing that blank over the
+        // stored value. So the password survived until the pilot next opened this screen and
+        // touched anything, and then it was gone — which is why it looked like it never saved.
+        //
+        // Observed on the wire 2026-08-05: `rtsp://tak:@host:8554/…`, empty password, and
+        // CloudTAK refusing the feed with "username and password must be both provided".
+        vPass.setText(prefs.getString(KEY_V_PASS, ""))
         vStreamId.setText(prefs.getString(KEY_V_STREAMID, ""))
         vTcp.isChecked = prefs.getBoolean(KEY_V_TCP, true)
         when (prefs.getString(KEY_V_PROFILE, "standard")) {
@@ -205,10 +217,30 @@ class TakConnectActivity : AppCompatActivity() {
             else -> vProfileGroup.check(R.id.videoProfileStandard)
         }
 
+        when (VideoCodec.fromPref(prefs.getString(KEY_V_CODEC, null))) {
+            VideoCodec.H265 -> vCodecGroup.check(R.id.videoCodecH265)
+            VideoCodec.H264 -> vCodecGroup.check(R.id.videoCodecH264)
+        }
+
         fun selectedProfile(): String = when (vProfileGroup.checkedRadioButtonId) {
             R.id.videoProfileLow -> "low"
             R.id.videoProfileHigh -> "high"
             else -> "standard"
+        }
+
+        fun selectedCodec(): VideoCodec = when (vCodecGroup.checkedRadioButtonId) {
+            R.id.videoCodecH265 -> VideoCodec.H265
+            else -> VideoCodec.H264
+        }
+
+        // The trade is not obvious and its cost lands on someone the pilot cannot see, so the
+        // screen states it. Deliberately NO named clients: which player supports which codec
+        // changes with every release, and a hint that names one is wrong the day that changes.
+        fun refreshCodecHint() {
+            vCodecHint.text = if (selectedCodec() == VideoCodec.H265)
+                "More efficient. Better picture for the bandwidth, but fewer clients play it."
+            else
+                "Most compatible. Plays on the widest range of clients."
         }
 
         fun buildConfig(): AutelVideoStreamer.VideoConfig = AutelVideoStreamer.VideoConfig(
@@ -219,6 +251,7 @@ class TakConnectActivity : AppCompatActivity() {
             streamId = vStreamId.text.toString().trim(),
             tcp = vTcp.isChecked,
             profile = selectedProfile(),
+            codec = selectedCodec().prefValue,
         )
 
         val refreshAndSave = {
@@ -229,10 +262,11 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(KEY_V_HOST, cfg.host)
                 .putInt(KEY_V_PORT, cfg.port)
                 .putString(KEY_V_USER, cfg.username)
-                .putString("video_pass", cfg.password)
+                .putString(KEY_V_PASS, cfg.password)
                 .putString(KEY_V_STREAMID, cfg.streamId)
                 .putBoolean(KEY_V_TCP, cfg.tcp)
                 .putString(KEY_V_PROFILE, cfg.profile)
+                .putString(KEY_V_CODEC, cfg.codec)
                 .apply()
         }
         val watcher = object : android.text.TextWatcher {
@@ -248,6 +282,13 @@ class TakConnectActivity : AppCompatActivity() {
             AppLog.v(TAG, "video profile -> ${selectedProfile()}")
             prefs.edit().putString(KEY_V_PROFILE, selectedProfile()).apply()
         }
+        // Same reasoning as the profile group: the LIVE pill reads prefs, so persist immediately.
+        vCodecGroup.setOnCheckedChangeListener { _, _ ->
+            AppLog.v(TAG, "video codec -> ${selectedCodec().prefValue}")
+            prefs.edit().putString(KEY_V_CODEC, selectedCodec().prefValue).apply()
+            refreshCodecHint()
+        }
+        refreshCodecHint()
         refreshAndSave()
     }
 
@@ -1171,9 +1212,14 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_V_HOST = "video_host"
         private const val KEY_V_PORT = "video_port"
         private const val KEY_V_USER = "video_user"
+        /** Named constant, not a literal. The save site used a bare "video_pass" while the
+         *  restore site did not exist at all — a constant makes the pair impossible to miss. */
+        private const val KEY_V_PASS = "video_pass"
         private const val KEY_V_STREAMID = "video_streamid"
         private const val KEY_V_TCP = "video_tcp"
         private const val KEY_V_PROFILE = "video_profile"
+        /** Must match the literal read in AutelVideoStreamer.startFromPrefs. */
+        private const val KEY_V_CODEC = "video_codec"
     }
 
     /**

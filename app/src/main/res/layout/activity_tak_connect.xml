@@ -441,6 +441,40 @@
 
         </RadioGroup>
 
+        <TextView style="@style/takLabelStyle" android:text="Video codec" />
+        <RadioGroup
+            android:id="@+id/videoCodecGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/videoCodecH264"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="H.264" />
+
+            <RadioButton
+                android:id="@+id/videoCodecH265"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="H.265" />
+
+        </RadioGroup>
+
+        <!-- The consequence of this choice is invisible from the controller: an H.265 stream
+             looks perfectly healthy here while browser viewers get an HTTP 500 they cannot
+             interpret. Say so on the screen rather than making a pilot learn it in the field. -->
+        <TextView
+            android:id="@+id/videoCodecHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="11sp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -192,8 +192,43 @@ android {
         //        Also: a local delete of a shared marker now removes it from the live contact
         //        map as well. The hidden set stopped it being drawn, but a marker is exempt from
         //        the stale sweep, so it stayed in memory for the life of the process.
-        versionCode 10
-        versionName "1.5.4"
+        // 1.5.5: THE VIDEO PASSWORD IS NOW SENT IN THE CoT. Pre-Flight Setup read each video
+        //        value from the store when the screen opened, but it did not read the password.
+        //        A listener then saved the values on the screen. Thus the empty box wrote over
+        //        the stored password, and the password erased itself each time the screen
+        //        opened. The URL in the CoT had no password, and viewers could not see the video.
+        //        ⚠ THE OLD FAULT ERASED THE STORED PASSWORD. Type it one more time.
+        //        The URL on the screen now shows "(NO PASSWORD)" when the box is empty. It
+        //        showed three stars at all times before, which hid this fault.
+        //
+        //        THE PILOT NOW HAS A POSITION MARKER. The application sent a position for the
+        //        aircraft only. The operator marker was one message at connection with the
+        //        position 0, 0, and nothing replaced it. The controller position is read from
+        //        its own receiver and sent every two seconds. The marker has the callsign
+        //        "<callsign>-Pilot", the colour cyan, and the controller battery level.
+        //        The video is on this marker as well as on the aircraft. The screen recording
+        //        continues when the aircraft is off, but the aircraft marker stops without a
+        //        position. Thus a video on the aircraft marker only was not available in the
+        //        condition that the screen recording exists to correct.
+        //        The pilot marker has no camera direction and no sensor point. Those are
+        //        aircraft data.
+        //
+        //        THE PILOT SELECTS THE VIDEO CODEC. Pre-Flight Setup has H.264 and H.265 below
+        //        the video quality. H.264 is the most compatible and is the default. H.265 is
+        //        more efficient and gives a better picture for the bandwidth, but fewer clients
+        //        can show it. ⚠ A client that cannot decode H.265 fails at a level that does not
+        //        mention video, and the controller shows no fault: the data rate and the frame
+        //        count stay correct. If viewers report a fault that this end does not show,
+        //        examine the codec first. The codec applies when the video starts, thus stop the
+        //        video and start it again after a change.
+        //
+        //        THE AIRCRAFT NOW REPORTS ITS TRUE IDENTITY. The aircraft data in the CoT gave
+        //        the type "DJIV5" and the camera "M30T", which came from the build that this
+        //        application was ported from. An Autel aircraft told each client that it was a
+        //        different manufacturer's aircraft with a different camera. The values are now
+        //        "AUTEL" and "EVO2".
+        versionCode 11
+        versionName "1.5.5"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

@@ -17,8 +17,8 @@ import com.taklite.util.AppLog
 import java.nio.ByteBuffer
 
 /**
- * Screen-capture H.265 encoder for the outbound RTSP push. Ported from the DJI blueprint's
- * `ScreenCaptureEncoder`, re-targeted to H.265 to match [TranscodeProfile].
+ * Screen-capture encoder for the outbound RTSP push. Ported from the DJI blueprint's
+ * `ScreenCaptureEncoder`. The codec is the pilot's Pre-Flight choice — see [VideoCodec].
  *
  * MediaProjection mirrors the whole flight screen — FPV, HUD, map, AR markers, toolbar — into a
  * [VirtualDisplay] sized to the profile, straight into the encoder's input Surface. Two
@@ -40,9 +40,11 @@ class ScreenCaptureEncoder(
     context: Context,
     private val mediaProjection: MediaProjection,
     private val profile: TranscodeProfile,
+    private val codec: VideoCodec,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
     private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) -> Unit,
 ) {
+    private val outMime: String get() = codec.mime
     private var encoder: MediaCodec? = null
     private var inputSurface: Surface? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -108,7 +110,8 @@ class ScreenCaptureEncoder(
 
             running = true
             drainThread = Thread({ drainLoop() }, "ScreenCaptureEncoder").apply { start() }
-            AppLog.i(TAG, "screen capture [${profile.name}] H.265: ${screenW}x$screenH -> " +
+            AppLog.i(TAG, "screen capture [${profile.name}] ${codec.label}: " +
+                "${screenW}x$screenH -> " +
                 "${targetW}x$targetH @ ${profile.fps}fps ${profile.bitrateBps / 1000}kbps, " +
                 "${I_FRAME_INTERVAL_S}s IDR — variant: $variant")
             true
@@ -139,21 +142,21 @@ class ScreenCaptureEncoder(
         // the average is unchanged, so this costs no bandwidth. It is asked for FIRST but is
         // not assumed — bitrateModesFor() only offers it where the encoder declares it, and
         // CBR remains in the ladder underneath so a device that rejects VBR still configures.
-        val variants = bitrateModesFor(OUT_MIME).flatMap { mode ->
+        val variants = bitrateModesFor(outMime).flatMap { mode ->
             val label = modeLabel(mode)
             listOf(
                 Variant("full (profile+level, $label, max-fps)") { f ->
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
-                    f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
-                    f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel4)
+                    f.setInteger(MediaFormat.KEY_PROFILE, codec.profile)
+                    f.setInteger(MediaFormat.KEY_LEVEL, codec.level)
                     if (Build.VERSION.SDK_INT >= 30) {
                         f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, profile.fps.toFloat())
                     }
                 },
                 Variant("no max-fps ($label)") { f ->
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
-                    f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
-                    f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel4)
+                    f.setInteger(MediaFormat.KEY_PROFILE, codec.profile)
+                    f.setInteger(MediaFormat.KEY_LEVEL, codec.level)
                 },
                 Variant("$label only (no profile/level)") { f ->
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
@@ -180,7 +183,7 @@ class ScreenCaptureEncoder(
         // hardware encoder would look exactly like "software did not help".
         for (name in encoderPreference) {
             for (v in variants) {
-                val format = MediaFormat.createVideoFormat(OUT_MIME, w, h).apply {
+                val format = MediaFormat.createVideoFormat(outMime, w, h).apply {
                     setInteger(MediaFormat.KEY_COLOR_FORMAT,
                         MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                     setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrateBps)
@@ -189,7 +192,7 @@ class ScreenCaptureEncoder(
                     v.apply(this)
                 }
                 val enc = runCatching {
-                    if (name == null) MediaCodec.createEncoderByType(OUT_MIME)
+                    if (name == null) MediaCodec.createEncoderByType(outMime)
                     else MediaCodec.createByCodecName(name)
                 }.getOrNull() ?: break     // this encoder does not exist — go to the next one
                 val ok = runCatching {
@@ -203,9 +206,13 @@ class ScreenCaptureEncoder(
         return null
     }
 
-    /** Encoders to try, in order. null means "let the platform choose" (normally hardware). */
+    /** Encoders to try, in order. null means "let the platform choose" (normally hardware).
+     *
+     *  [SW_HEVC_ENCODER] is an H.265 component, so it is only offered when we are encoding H.265
+     *  — naming it for an AVC stream would burn a configure attempt on a codec that cannot
+     *  produce the requested mime. */
     private val encoderPreference: List<String?> get() =
-        if (PREFER_SOFTWARE_ENCODER) listOf(SW_HEVC_ENCODER, null) else listOf(null)
+        if (PREFER_SOFTWARE_ENCODER && codec.isHevc) listOf(SW_HEVC_ENCODER, null) else listOf(null)
 
     /**
      * Which bitrate modes to offer the encoder, best first.
@@ -363,7 +370,7 @@ class ScreenCaptureEncoder(
         var pps: ByteArray? = null
         for (nal in splitAnnexB(bytes)) {
             val hdr = nal.getOrNull(startCodeLen(nal)) ?: continue
-            if (OUT_MIME == "video/hevc") {
+            if (codec.isHevc) {
                 when ((hdr.toInt() shr 1) and 0x3F) {
                     32 -> vps = nal
                     33 -> sps = nal
@@ -473,30 +480,9 @@ class ScreenCaptureEncoder(
          *  /vendor/etc/media_codecs_google_c2_video.xml. */
         private const val SW_HEVC_ENCODER = "c2.android.hevc.encoder"
         /**
-         * H.265 at the RAISED bitrates — the combination that has never actually been flown.
-         *
-         * History, because this constant has now moved twice and the reasoning matters more than
-         * the value:
-         *  - H.265 @ 800kbps STANDARD: a 2-second pixelated pulse, seen by stream viewers only
-         *    (the artifact is created by this re-encode, so it exists only in the outgoing
-         *    stream). Cause looked like a full IDR every 2s under forced CBR with no headroom.
-         *  - Bitrates roughly doubled. Pulse persisted.
-         *  - H.264 @ the raised bitrates: the operator judged the picture noticeably worse.
-         *    Expected — AVC needs roughly twice HEVC's bitrate for equivalent quality, so
-         *    doubling the rate only bought back what the codec gave up.
-         *  - NOW: H.265 @ the raised bitrates. HEVC's efficiency AND the keyframe headroom.
-         *
-         * The open question this build answers: is the pulse rate starvation that the extra bits
-         * now cover, or is it this controller's HEVC encoder itself? `OMX.qcom.video.encoder
-         * .hevc` here is a LEGACY OMX component (see configureEncoder's doc) whose rate control
-         * is less mature than the same vendor's AVC encoder. If the pulse returns at double the
-         * bitrate, the encoder is the cause and no bitrate will fix it — the next lever is VBR,
-         * which lets keyframes borrow bits without raising the average.
-         *
-         * Both codecs stay fully handled either side of this constant (parameter-set parsing in
-         * handleCodecConfig; RtspClient picks H264 vs H265 packetisation from whether a VPS
-         * reaches setVideoInfo). Flipping it is a one-line change in either direction.
+         * The codec itself is no longer decided here — it is a pilot choice in Pre-Flight,
+         * passed in as [VideoCodec]. See that enum for the full H.264/H.265 history and for why
+         * the right answer depends on whether the team is watching in ATAK or in a browser.
          */
-        private const val OUT_MIME = "video/hevc"
     }
 }

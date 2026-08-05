@@ -268,6 +268,44 @@ public class TakManager implements TakClient.TakClientListener {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
+    /**
+     * The PILOT's marker: the operator on the ground, at the controller's own position.
+     *
+     * ⚠ **The XML is NOT logged here, unlike the debug line below it used to do.** This message
+     * now carries the video url, and that url contains the media-server password. Logging it
+     * would write a credential to the log file and to logcat, which the security review of
+     * 2026-08-03 explicitly recorded this application as not doing.
+     */
+    public void sendPilotPLI(Location location, String callsign, String team, String role,
+                             int battery, String videoUrl) {
+        if (client != null && connected) {
+            lastLat = location.getLatitude();
+            lastLon = location.getLongitude();
+            String xml = CotBuilder.buildPLI(uid, pilotCallsign(callsign), PILOT_TEAM, role,
+                    location.getLatitude(), location.getLongitude(), location.getAltitude(),
+                    location.getBearing(), location.getSpeed(), battery,
+                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion, videoUrl);
+            sendCot(xml);
+            AppLog.d(TAG, "Pilot PLI sent: " + pilotCallsign(callsign) + " @ " + lastLat + ","
+                    + lastLon + (videoUrl != null && !videoUrl.isEmpty() ? " (+video)" : ""));
+        }
+    }
+
+    /**
+     * The operator marker's callsign — the aircraft callsign with "-Pilot" (operator, 2026-08-05).
+     *
+     * Without it the operator marker and the aircraft marker share a name, and a viewer sees the
+     * same callsign twice at two positions with no way to tell which is the aircraft.
+     */
+    public static String pilotCallsign(String callsign) {
+        if (callsign == null || callsign.isEmpty()) return "Pilot";
+        return callsign.endsWith("-Pilot") ? callsign : callsign + "-Pilot";
+    }
+
+    /** The pilot marker is always Cyan (operator, 2026-08-05), whatever team the configuration
+     *  uses, so the operator is one consistent colour across every aircraft. */
+    private static final String PILOT_TEAM = "Cyan";
+
     public void sendPLI(Location location, String callsign, String team, String role, int battery) {
         if (client != null && connected) {
             lastLat = location.getLatitude();
@@ -425,10 +463,20 @@ public class TakManager implements TakClient.TakClientListener {
         AppLog.d(TAG, "Connected to TAK server");
         if (uid != null) {
             String cs = callsign != null ? callsign : uid;
-            String initCot = CotBuilder.buildPLI(uid, cs, team, role, 0, 0, 0, 0, 0, 100,
+            // Registration message so the server lists this client and applies channel routing.
+            //
+            // ⚠ IT CARRIES 0,0 BECAUSE THERE IS NO FIX YET, AND THAT IS WHY IT MUST BE REPLACED.
+            // Until 2026-08-05 nothing replaced it: sendPLI had no caller anywhere, so the
+            // operator's callsign sat at latitude 0 longitude 0 on the team's map until it went
+            // stale. The bridge now publishes a real pilot position every tick once the
+            // controller has a fix. If it never gets one, this message simply goes stale and the
+            // marker disappears — which is the right outcome, because a marker at 0,0 is worse
+            // than no marker.
+            String initCot = CotBuilder.buildPLI(uid, pilotCallsign(cs), PILOT_TEAM, role,
+                    0, 0, 0, 0, 0, 100,
                     takvPlatform, deviceWithCallsign(cs), takvOs, takvVersion);
             client.sendMessage(initCot);
-            AppLog.d(TAG, "Initial PLI sent to register with server");
+            AppLog.d(TAG, "Initial PLI sent to register with server (position follows)");
         }
         mainHandler.post(() -> {
             synchronized (listeners) {

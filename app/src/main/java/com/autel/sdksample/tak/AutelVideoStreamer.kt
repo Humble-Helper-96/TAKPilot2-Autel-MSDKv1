@@ -50,9 +50,15 @@ class AutelVideoStreamer(
         /** Pilot-selected video quality: "low" | "standard" | "high", matching the DJI
          *  blueprint's video_profile pref. Every profile is an on-device encode. */
         val profile: String = "standard",
+        /** Pilot-selected codec: "h264" | "h265". See [VideoCodec] for why this is a field
+         *  decision rather than a build-time constant. */
+        val codec: String = "h264",
     ) {
         val transcodeProfile: TranscodeProfile
             get() = TranscodeProfile.fromPref(profile)
+
+        val videoCodec: VideoCodec
+            get() = VideoCodec.fromPref(codec)
 
         // -Low suffix flows through push/advertise/display URLs alike, so the CoT always
         // points at whichever stream is actually live — full-res and -Low are never both up.
@@ -66,8 +72,21 @@ class AutelVideoStreamer(
             val q = if (tcp) "?tcp" else ""
             return "rtsp://$cred$host:$port/${path()}$q"
         }
+        /**
+         * The url with the password masked, for the screen and the log.
+         *
+         * ⚠ **It must distinguish "set" from "empty".** It used to print `user:***@` whenever the
+         * USERNAME was non-empty, so a missing password looked identical to a present one — and
+         * the Pre-Flight preview, the one place a pilot would check, could not answer the
+         * question it exists to answer. A password really was empty on 2026-08-05 and the screen
+         * showed stars for it.
+         */
         fun urlSafe(): String {
-            val who = if (username.isNotEmpty()) "$username:***@" else ""
+            val who = when {
+                username.isEmpty() -> ""
+                password.isEmpty() -> "$username:(NO PASSWORD)@"
+                else -> "$username:***@"
+            }
             val q = if (tcp) "?tcp" else ""
             return "rtsp://$who$host:$port/${path()}$q"
         }
@@ -114,7 +133,7 @@ class AutelVideoStreamer(
         // The encoder must be producing parameter sets BEFORE connect — connect()'s worker waits
         // up to 5s for setVideoInfo.
         val enc = ScreenCaptureEncoder(
-            context, mediaProjection, config.transcodeProfile,
+            context, mediaProjection, config.transcodeProfile, config.videoCodec,
             onEncoded = { buf, bufInfo ->
                 client.sendVideo(buf, bufInfo)
                 // isLive gates the LIVE pill on frameCount, so without this the pill would sit
@@ -258,10 +277,14 @@ object VideoStreamerHolder {
             host = host,
             port = p.getInt("video_port", 8554),
             username = p.getString("video_user", "") ?: "",
+            // Key must match TakConnectActivity.KEY_V_PASS. Kept as a literal here only because
+            // this file has no access to that private constant; if either moves, move both.
             password = p.getString("video_pass", "") ?: "",
             streamId = streamId,
             tcp = p.getBoolean("video_tcp", true),
             profile = p.getString("video_profile", "standard") ?: "standard",
+            codec = p.getString("video_codec", VideoCodec.H264.prefValue)
+                ?: VideoCodec.H264.prefValue,
         )
         // Only advertise the URL in the drone CoT if the push actually started — telling the
         // team where to watch a stream that never began is worse than saying nothing.

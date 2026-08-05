@@ -136,6 +136,10 @@ class AutelTakBridge(
         // New session = new flight = a new takeoff point, so the latched terrain reference
         // from the last one must not carry over (see TerrainAgl).
         TerrainAgl.reset()
+        // The CONTROLLER's own position, for the pilot marker. Idempotent, and silent when the
+        // permission is missing — see OperatorLocation for why getLastKnownLocation alone never
+        // worked here.
+        com.autel.sdksample.TestApplication.getInstance()?.let { OperatorLocation.start(it) }
         subscribe()
         handler.post(tick)
         AppLog.i(TAG, "AutelTakBridge started ($droneCallsign / $droneUid, every ${intervalMs}ms)")
@@ -318,6 +322,17 @@ class AutelTakBridge(
 
     private fun pushOnce() {
         if (!tak.isConnected) return
+
+        // THE PILOT MARKER GOES FIRST, AND IS NOT GATED ON THE AIRCRAFT.
+        //
+        // Everything below this returns early without a GPS fix from the AIRCRAFT, which is
+        // correct — a drone marker at 0,0 would be a lie. But the operator is on the ground with
+        // their own position, and the video is a capture of THEIR screen that keeps streaming
+        // when the aircraft is down. Attaching the video to the drone marker meant that in
+        // exactly the case screen capture exists for, nothing on the network said where the
+        // stream was. So the pilot marker carries it, and it is published whenever the
+        // CONTROLLER has a fix, aircraft or no aircraft.
+        pushPilotPli()
         // SNAPSHOT every field this push consumes, in one go. The SDK listeners write these on
         // their own thread; reading them live through the body would let one PLI mix position
         // from one telemetry frame with heading/altitude/battery from the next. @Volatile gives
@@ -356,6 +371,10 @@ class AutelTakBridge(
         // north reference stays 0.0 — <sensor azimuth> is an ABSOLUTE true-north bearing
         // (the DJI original calibrated this the hard way; see its 2026-07 comment).
         tak.sendDronePLI(droneUid, droneCallsign, lat, lon, hae, heading, speedMs, batteryPct,
+            // The drone marker keeps its video advertisement — unchanged. The PILOT marker
+            // carries the same url as WELL (operator, 2026-08-05), so the stream is still
+            // findable when the aircraft has no GPS and this message is not being sent at all.
+            // Two markers advertising one stream is the point, not a duplication bug.
             videoUrl, spiUid,
             sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, 0.0,
             0.0, gimbalPitch, gimbalYaw,
@@ -494,6 +513,32 @@ class AutelTakBridge(
             ?: if (activeLens == Lens.IR) IR_HFOV else TakBridgeHolder.currentHFovBase
         return h to TakBridgeHolder.vFovFor(h)
     }
+
+    /**
+     * Publishes the operator's own marker: `<callsign>-Pilot`, Cyan, at the CONTROLLER's position,
+     * carrying the video url while a stream is running.
+     *
+     * Silent when the controller has no fix. That is deliberate — the registration message sent at
+     * connect already sits at 0,0, and refreshing it with more zeros would keep a false marker
+     * alive on the team's map for ever instead of letting it go stale and disappear.
+     */
+    private fun pushPilotPli() {
+        val fix = OperatorLocation.latest ?: return
+        runCatching {
+            tak.sendPilotPLI(fix, droneCallsign, "Cyan", "Team Member",
+                pilotBatteryPct(), TakBridgeHolder.videoUrlOrNull())
+        }.onFailure { AppLog.w(TAG, "pilot PLI failed: ${it.message}") }
+    }
+
+    /** CONTROLLER battery, not the aircraft's — the aircraft has its own marker and its own
+     *  number. A controller about to die is a reason to end the flight, and nothing else on the
+     *  network reports it. */
+    private fun pilotBatteryPct(): Int = runCatching {
+        val ctx = com.autel.sdksample.TestApplication.getInstance() ?: return@runCatching 100
+        val bm = ctx.getSystemService(android.content.Context.BATTERY_SERVICE)
+            as? android.os.BatteryManager ?: return@runCatching 100
+        bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
+    }.getOrDefault(100)
 
     private fun isValidLat(v: Double) = v.isFinite() && v != 0.0 && v >= -90.0 && v <= 90.0
     private fun isValidLon(v: Double) = v.isFinite() && v != 0.0 && v >= -180.0 && v <= 180.0
@@ -842,6 +887,10 @@ object TakBridgeHolder {
     /** Called by [AutelProductHolder] when the aircraft (re)connects — re-arm listeners. */
     fun onProductConnected() { bridge?.onProductConnected() }
     fun onProductDisconnected() { /* cache goes stale; PLI keeps last fix until fresh data */ }
+
+    /** The RTSP url currently advertised, or null when nothing is streaming. Read by the
+     *  bridge each tick so the pilot marker carries it. */
+    fun videoUrlOrNull(): String? = videoUrl
 
     fun setVideoUrl(url: String?) {
         videoUrl = url?.takeIf { it.isNotBlank() }
