@@ -67,6 +67,19 @@ object ArSettings {
         }
     }
 
+    /**
+     * True for a CoT type whose battle dimension is GROUND (`a-?-G-…`), i.e. something that is by
+     * definition standing on the terrain.
+     *
+     * Used to pick the altitude source in [ArOverlayView]: for these, DTED under the contact beats
+     * the contact's own reported altitude. Same `type` grammar [categoryFor] parses — position 2
+     * is the dimension, `A` air / `G` ground / `S` surface / `U` subsurface.
+     */
+    fun isGroundAffiliation(type: String?): Boolean {
+        val parts = type?.split("-").orEmpty()
+        return parts.size >= 3 && parts[0] == "a" && parts[2] == "G"
+    }
+
     /** Set by the operator's METAR gateway as `METAR-<ICAO>`; see its runbook. */
     private const val METAR_UID_PREFIX = "METAR-"
 
@@ -166,37 +179,44 @@ object ArSettings {
     }
 
     private const val KEY_HFOV = "fov_h_deg"
-    private const val KEY_VFOV = "fov_v_deg"
 
     /**
      * Calibrated camera field of view (degrees at 1x), persisted across flights.
      *
-     * The defaults are derived from published specs, not measured. AR accuracy is most sensitive
-     * to this at the FRAME EDGES — an FOV error is invisible at the centre and grows outward —
-     * so it is calibrated by putting a marker on a known object near the edge and adjusting
-     * until the icon sits on it. See the 6D plan's calibration section.
+     * ONLY THE HORIZONTAL IS PERSISTED. The vertical is derived from it and the live video aspect
+     * — see [TakBridgeHolder.currentVFovBase]. There used to be a `fov_v_deg` key alongside this
+     * one; any value stored under it is deliberately ignored, because a saved pair from before
+     * this change is almost certainly aspect-inconsistent (the field-calibrated 64.5 x 36.5
+     * implied an aspect of 1.913 against a 1.778 stream).
+     *
+     * AR accuracy is most sensitive to this at the FRAME EDGES — an FOV error is invisible at the
+     * centre and grows outward — so it is calibrated by putting a marker on a known object near
+     * the edge and adjusting until the icon sits on it.
+     *
+     * ⚠ CALIBRATE ON THE TOP OR BOTTOM EDGE, NOT THE SIDES. The video is cropped to fill a 4:3
+     * screen, and the crop is asymmetric: vertically the frame fits exactly, so the screen edge is
+     * the frame edge and what you see is the real vertical FOV. Horizontally ~25% of the frame is
+     * off-screen, so the left/right screen edge sits at only ~0.75 of the frame half-width — a
+     * weak lever that is easy to overshoot. That asymmetry is the likely reason the two axes were
+     * historically tuned into disagreement.
      */
     fun loadFov(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        TakBridgeHolder.setFovBase(
-            p.getFloat(KEY_HFOV, TakBridgeHolder.DEFAULT_HFOV.toFloat()).toDouble(),
-            p.getFloat(KEY_VFOV, TakBridgeHolder.DEFAULT_VFOV.toFloat()).toDouble(),
-        )
+        TakBridgeHolder.setHFovBase(
+            p.getFloat(KEY_HFOV, TakBridgeHolder.DEFAULT_HFOV.toFloat()).toDouble())
     }
 
     /** Applies immediately AND persists — the pilot is adjusting while watching the overlay. */
-    fun saveFov(context: Context, hDeg: Double, vDeg: Double) {
-        TakBridgeHolder.setFovBase(hDeg, vDeg)
+    fun saveFov(context: Context, hDeg: Double) {
+        TakBridgeHolder.setHFovBase(hDeg)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putFloat(KEY_HFOV, TakBridgeHolder.currentHFovBase.toFloat())
-            .putFloat(KEY_VFOV, TakBridgeHolder.currentVFovBase.toFloat())
             .apply()
-        AppLog.i(TAG, "AR FOV calibrated to %.1f x %.1f deg"
+        AppLog.i(TAG, "AR FOV calibrated to %.1f deg horizontal (vertical derives to %.1f)"
             .format(TakBridgeHolder.currentHFovBase, TakBridgeHolder.currentVFovBase))
     }
 
-    fun resetFov(context: Context) =
-        saveFov(context, TakBridgeHolder.DEFAULT_HFOV, TakBridgeHolder.DEFAULT_VFOV)
+    fun resetFov(context: Context) = saveFov(context, TakBridgeHolder.DEFAULT_HFOV)
 
     private const val KEY_PITCH_OFFSET = "aim_pitch_offset_deg"
     private const val KEY_BEARING_OFFSET = "aim_bearing_offset_deg"

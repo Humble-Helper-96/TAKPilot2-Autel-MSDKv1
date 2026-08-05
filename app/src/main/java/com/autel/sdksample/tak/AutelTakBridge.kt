@@ -464,17 +464,35 @@ class AutelTakBridge(
         sensorElevation = pitchAdj
         sensorRange = gp.rangeMeters
         val headingPlusYaw = CameraSlantPoint.norm360(aircraftHeading + yaw)
+        // The SOLVED GROUND POINT is logged to 7 decimals because it is the aim-calibration
+        // instrument: aim the crosshair at a feature whose true coordinates are known, and the
+        // offset between this point and those coordinates IS the aim error, in metres on the
+        // ground. That is measurable; judging an icon's position in oblique video is not.
+        // Cross-track offset -> bearing error, along-track -> pitch error.
         AppLog.d(TAG, "SPI: lens=$activeLens pitch=$pitch yaw=$yaw heading=${"%.0f".format(aircraftHeading)} " +
-            "az=${"%.0f".format(bearing)} headingPlusYaw=${"%.0f".format(headingPlusYaw)} " +
-            "agl=${"%.0f".format(aglMeters)} zoom=$zoom fov=${"%.1f".format(sensorFov)} range=${Math.round(gp.rangeMeters)}m")
+            "az=${"%.2f".format(bearing)} headingPlusYaw=${"%.0f".format(headingPlusYaw)} " +
+            "agl=${"%.0f".format(aglMeters)} zoom=$zoom fov=${"%.1f".format(sensorFov)} range=${Math.round(gp.rangeMeters)}m " +
+            "spi=${"%.7f".format(gp.lat)},${"%.7f".format(gp.lon)} " +
+            "from=${"%.7f".format(lat)},${"%.7f".format(lon)} " +
+            "aim=[pitch${"%+.2f".format(TakBridgeHolder.currentPitchOffset)} " +
+            "brg${"%+.2f".format(TakBridgeHolder.currentBearingOffset)}]")
     }
 
-    /** Base horizontal/vertical FOV (deg) for the active 640T camera, before zoom. The EO base
-     *  comes from [TakBridgeHolder]'s calibratable values (AR FOV calibration adjusts them);
-     *  IR keeps its spec constants until it gets its own calibration in Phase 3. */
-    private fun baseFov(): Pair<Double, Double> = when (activeLens) {
-        Lens.IR -> IR_HFOV to IR_VFOV
-        else -> TakBridgeHolder.currentHFovBase to TakBridgeHolder.currentVFovBase
+    /**
+     * Base horizontal/vertical FOV (deg) for the active 640T camera, before zoom.
+     *
+     * Only the horizontal is chosen per-lens; the vertical is derived from it and the LIVE video
+     * aspect, so switching to the thermal lens (640x512, 5:4) re-derives it from the same identity
+     * rather than needing its own constant. The EO horizontal comes from [TakBridgeHolder]'s
+     * calibratable value; IR keeps its spec constant until it gets its own calibration.
+     */
+    private fun baseFov(): Pair<Double, Double> {
+        // The camera reports the field for whatever lens is actually live — thermal included —
+        // so when it is talking, [activeLens] is not consulted at all. The per-lens constants are
+        // only the fallback for a camera that has not reported yet.
+        val h = TakBridgeHolder.currentHFovBase.takeIf { TakBridgeHolder.hasLiveCameraFov }
+            ?: if (activeLens == Lens.IR) IR_HFOV else TakBridgeHolder.currentHFovBase
+        return h to TakBridgeHolder.vFovFor(h)
     }
 
     private fun isValidLat(v: Double) = v.isFinite() && v != 0.0 && v >= -90.0 && v <= 90.0
@@ -592,15 +610,35 @@ class AutelTakBridge(
         /** Slant-range fine-tune, added to pitch after sign correction. */
         // MOVED to TakBridgeHolder.currentPitchOffset — see above.
 
-        // EVO II Dual 640T V3 per-camera FOV (deg) at 1x — CALIBRATION CONSTANTS.
-        // Start values from published specs; confirm against the live cone in ATAK. The EO pair
-        // seeds TakBridgeHolder.DEFAULT_HFOV/VFOV and is calibratable from the AR options
-        // dialog; IR stays a plain constant until Phase 3.
-        const val EO_HFOV = 79.0; const val EO_VFOV = 62.0
-        private const val IR_HFOV = 42.0; private const val IR_VFOV = 34.0
+        // EVO II Dual 640T V3 per-camera HORIZONTAL FOV (deg) at 1x — CALIBRATION CONSTANTS.
+        // Only the horizontal is a constant; the vertical is derived from it and the live video
+        // aspect (TakBridgeHolder.currentVFovBase). The EO value seeds
+        // TakBridgeHolder.DEFAULT_HFOV and is calibratable from the AR options dialog.
+        //
+        // WHERE 66.8 COMES FROM, and why it is not the 79 the spec sheet prints. Autel publishes
+        // 79° for the EO camera, and that is the DIAGONAL. This code previously used it as the
+        // horizontal, which is a category error worth ~12°. Converting properly: the sensor is
+        // 4:3, so diagonal/width = 5/4, giving
+        //     tan(H/2) = tan(79/2) / 1.25 = 0.6594  ->  H = 66.8°
+        // and the 16:9 video mode is the same width with less height (1280x960 photo vs 1280x720
+        // video — same width), so the horizontal carries over unchanged.
+        //
+        // ⚠ STILL A STARTING VALUE, NOT A MEASUREMENT. Field calibration landed near 64.5, and
+        // deriving from the (more reliably measurable) vertical suggests ~60.8 — the spread hints
+        // the 720p downlink is itself a crop of the sensor, which spec arithmetic cannot settle.
+        // AutelProductHolder.liveHFovDeg now logs what the camera itself reports; prefer that
+        // measurement over this constant once it has been confirmed sane on hardware.
+        // FALLBACK ONLY as of the camera-reported FOV wiring — used until the camera's first
+        // status push, and if it ever reports something outside sane bounds.
+        const val EO_HFOV = 66.8
+        // Measured off the camera 2026-08-04 during an IR toggle: fov=33.0x26.0, implied aspect
+        // 1.283 (the 640x512 thermal sensor is 5:4). The previous 42.0 here was a spec-sheet guess
+        // and was wrong by 9 degrees.
+        private const val IR_HFOV = 33.0
 
-        /** Effective FOV at [zoom], from the calibrated EO base — what both the published
-         *  <sensor> cone and the AR projection read, so they cannot disagree. */
+        /** Effective FOV at [zoom] — what both the published <sensor> cone and the AR projection
+         *  read, so they cannot disagree. Zoom narrows both axes in tangent space by the same
+         *  factor, which preserves the aspect coupling the vertical is derived from. */
         fun hFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentHFovBase, zoom)
         fun vFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentVFovBase, zoom)
 
@@ -616,7 +654,6 @@ class AutelTakBridge(
 /** Process-wide holder so the bridge survives screen navigation (1:1 with TAKPilot2). */
 object TakBridgeHolder {
     const val DEFAULT_HFOV = AutelTakBridge.EO_HFOV
-    const val DEFAULT_VFOV = AutelTakBridge.EO_VFOV
     const val MIN_FOV = 5.0
     const val MAX_FOV = 170.0
 
@@ -631,14 +668,46 @@ object TakBridgeHolder {
     private var bridge: AutelTakBridge? = null
     private var videoUrl: String? = null
     private var cameraPointEnabled = false
-    // Remembered so it survives bridge restarts (reconnect) and a start-before-connect order.
+    // Remembered so they survive bridge restarts (reconnect) and a start-before-connect order.
     private var zoomFactor: Double = 1.0
+    private var activeLens: AutelTakBridge.Lens = AutelTakBridge.Lens.EO
 
-    // Calibrated EO field of view (degrees at 1x). Defaults are the published 640T specs; the
-    // real lens is whatever it is, which is what the AR FOV calibration measures. Held here so
-    // the published FOV cone and the AR projection always read the same numbers.
+    // Calibrated EO field of view (degrees at 1x). Held here so the published FOV cone and the
+    // AR projection always read the same numbers.
+    //
+    // ONLY THE HORIZONTAL IS STORED. The vertical is DERIVED from it and the live video aspect —
+    // see [currentVFovBase]. It used to be a second independent knob, and that was the bug: for a
+    // rectilinear lens the pair is rigidly coupled, so two free knobs can be tuned into a
+    // combination no real camera can have. The shipped default (79 x 62) implied an aspect of
+    // 1.372 against a 1.778 stream — 23% out — and the field-calibrated 64.5 x 36.5 implied 1.913,
+    // still 7.6% out. Vertical error was unfixable by horizontal calibration and vice versa, which
+    // is why edge calibration never converged.
     private var hFovBase: Double = DEFAULT_HFOV
-    private var vFovBase: Double = DEFAULT_VFOV
+
+    /**
+     * Aspect ratio (w/h) of the live video frame, pushed from the flight screen's render-size
+     * callback. 0 until the first frame arrives.
+     *
+     * This is the frame's OWN aspect, not the view's — the video is cropped to fill a 4:3 screen,
+     * so those differ, and it is the frame that [ArOverlayView]'s videoRect represents.
+     */
+    @Volatile private var videoAspect: Double = 0.0
+
+    /** Default used before any frame has arrived: the 640T's video mode is 1280x720. */
+    private const val FALLBACK_ASPECT = 16.0 / 9.0
+
+    /**
+     * Tells the FOV model the shape of the live video frame. Called from the flight screen on
+     * every render-size change, so a camera mode switch (16:9 video -> 4:3 photo -> 5:4 IR)
+     * re-derives the vertical FOV automatically instead of needing a recalibration per mode.
+     */
+    fun setVideoAspect(aspect: Double) {
+        if (!aspect.isFinite() || aspect <= 0.0) return
+        if (Math.abs(aspect - videoAspect) < 0.001) return
+        videoAspect = aspect
+        AppLog.i("TakBridgeHolder", "video aspect %.3f -> vFov %.1f (hFov %.1f)"
+            .format(aspect, currentVFovBase, hFovBase))
+    }
 
     // ---- SPI aim calibration (pitch / bearing offsets) ----
     //
@@ -672,15 +741,80 @@ object TakBridgeHolder {
     val currentPitchOffset: Double get() = pitchOffset
     val currentBearingOffset: Double get() = bearingOffset
 
-    /** Set the calibrated 1x field of view. Clamped to sane bounds so a mis-tap can't drive
-     *  the projection somewhere absurd — an FOV near zero sends every marker to infinity. */
-    fun setFovBase(hDeg: Double, vDeg: Double) {
+    /** Set the calibrated 1x HORIZONTAL field of view. Clamped to sane bounds so a mis-tap can't
+     *  drive the projection somewhere absurd — an FOV near zero sends every marker to infinity.
+     *  The vertical follows automatically; see [currentVFovBase]. */
+    fun setHFovBase(hDeg: Double) {
         hFovBase = hDeg.coerceIn(MIN_FOV, MAX_FOV)
-        vFovBase = vDeg.coerceIn(MIN_FOV, MAX_FOV)
     }
 
-    val currentHFovBase: Double get() = hFovBase
-    val currentVFovBase: Double get() = vFovBase
+    /**
+     * Horizontal FOV as reported by the camera itself (degrees at 1x, for whichever lens is live),
+     * or null if the camera has never sent a usable value.
+     *
+     * Preferred over [hFovBase] — see [currentHFovBase]. Held separately rather than overwriting
+     * the calibrated value so that losing the camera falls back cleanly instead of leaving a stale
+     * measurement behind, and so the calibration dialog still shows what the PILOT set.
+     */
+    @Volatile private var liveCameraHFov: Double? = null
+
+    /** True once the camera has reported a usable FOV — callers use it to decide whether their
+     *  own per-lens fallback constants are still relevant. */
+    val hasLiveCameraFov: Boolean get() = liveCameraHFov != null
+
+    /** Fed from the camera's status push. Sanity-gated: a booting camera reports 0, and an FOV
+     *  near zero sends every marker to infinity. */
+    fun setLiveCameraFov(hDeg: Double) {
+        val ok = hDeg.isFinite() && hDeg >= MIN_FOV && hDeg <= MAX_FOV
+        val next = if (ok) hDeg else null
+        if (next != liveCameraHFov) {
+            liveCameraHFov = next
+            AppLog.i("TakBridgeHolder", if (ok)
+                "camera-reported hFov %.1f (vFov derives to %.1f) — using it over the calibrated %.1f"
+                    .format(hDeg, vFovFor(hDeg), hFovBase)
+            else
+                "camera-reported hFov %.1f rejected (outside %.0f..%.0f) — falling back to %.1f"
+                    .format(hDeg, MIN_FOV, MAX_FOV, hFovBase))
+        }
+    }
+
+    /**
+     * The horizontal FOV everything reads: the CAMERA'S OWN value when it has given us one,
+     * otherwise the pilot-calibrated constant.
+     *
+     * Measured 2026-08-04 the camera reports 65.8 for the EO lens, against a diagonal-derived
+     * constant of 66.8 and a hand-calibrated 64.5 — and its implied aspect (1.782) matches the
+     * live stream (1.778) to 0.2%, so it is describing the actual video, not the raw sensor. It
+     * also follows a lens change on its own (thermal reports 33.0), which hand calibration never
+     * could. Trust it; the constant is the safety net for a camera that has not spoken yet.
+     */
+    val currentHFovBase: Double get() = liveCameraHFov ?: hFovBase
+
+    /** What the PILOT set, ignoring the camera. The calibration dialog edits this — showing the
+     *  camera's value in a stepper would imply the taps do something they don't. */
+    val calibratedHFovBase: Double get() = hFovBase
+
+    /**
+     * Vertical FOV, DERIVED — never stored.
+     *
+     * [ArOverlayView.project] maps angles onto the video rect in tangent space
+     * (`nx = tan(dBearing)/tan(hFov/2)` scaled by the rect's width, `ny` likewise by its height),
+     * which is self-consistent for a rectilinear lens only when
+     *
+     *     tan(hFov/2) / tan(vFov/2) == frameWidth / frameHeight
+     *
+     * So the vertical is whatever that identity says it is. Deriving it means the two axes cannot
+     * drift apart, and a camera mode change re-derives it for free.
+     */
+    val currentVFovBase: Double get() = vFovFor(hFovBase)
+
+    /** The vertical that pairs with [hDeg] under the live video aspect. Shared so the published
+     *  <sensor> cone, the AR projection and the IR lens all derive it exactly one way. */
+    fun vFovFor(hDeg: Double): Double {
+        val aspect = videoAspect.takeIf { it > 0.0 } ?: FALLBACK_ASPECT
+        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(hDeg / 2.0)) / aspect))
+    }
+
     val currentZoomFactor: Double get() = zoomFactor
 
     /** The aircraft's TAK callsign, or null before the bridge has ever been started. Read by
@@ -695,6 +829,7 @@ object TakBridgeHolder {
             it.videoUrl = videoUrl
             it.cameraPointEnabled = cameraPointEnabled
             it.liveZoom = zoomFactor
+            it.activeLens = activeLens
             it.start()
         }
     }
@@ -723,6 +858,25 @@ object TakBridgeHolder {
     fun setLiveZoom(ratio: Double) {
         zoomFactor = ratio
         bridge?.liveZoom = ratio
+    }
+
+    /**
+     * Which spectrum is on screen. Selects the base FOV, so the published <sensor> cone and the AR
+     * projection both narrow when the thermal lens goes live.
+     *
+     * Remembered here rather than only on the bridge so it survives a bridge restart (reconnect)
+     * and a set-before-start ordering — same reason [zoomFactor] is held here.
+     *
+     * ⚠ This used to be unwired: `AutelTakBridge.activeLens` was declared and read by `baseFov()`
+     * but never assigned from anywhere, and the IR toggle flipped only a local flag on the flight
+     * screen. Thermal therefore published and projected at the EO field of view — a ~25° cone
+     * error that no amount of FOV calibration would have explained.
+     */
+    fun setActiveLens(lens: AutelTakBridge.Lens) {
+        if (activeLens == lens) return
+        activeLens = lens
+        bridge?.activeLens = lens
+        AppLog.i("TakBridgeHolder", "active lens -> $lens")
     }
 
     val isCameraPointEnabled: Boolean get() = cameraPointEnabled

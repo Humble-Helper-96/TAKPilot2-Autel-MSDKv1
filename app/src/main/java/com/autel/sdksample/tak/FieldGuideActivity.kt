@@ -89,6 +89,34 @@ class FieldGuideActivity : AppCompatActivity() {
         body("If this guide does not agree with the aircraft, obey the aircraft. Then tell " +
             "the person who maintains the app.")
         spacer(24)
+
+        scrollToAnchor(intent?.getStringExtra(EXTRA_SCROLL_TO))
+    }
+
+    /**
+     * Jumps to the entry tagged [anchor], for a deep link from elsewhere in the app.
+     *
+     * Posted rather than called directly: the guide is built in onCreate and nothing has been
+     * measured or laid out yet, so the card's y position is still 0 and an immediate scroll
+     * would silently do nothing. Runs after the first layout pass instead.
+     *
+     * Fails OPEN — an absent or unrecognised anchor simply leaves the guide at the top, which
+     * is what a reader wants if a link ever goes stale.
+     */
+    private fun scrollToAnchor(anchor: String?) {
+        if (anchor.isNullOrEmpty()) return
+        val scroll = findViewById<android.widget.ScrollView>(R.id.fieldGuideScroll) ?: return
+        val target = content.findViewWithTag<View>(anchor)
+        if (target == null) {
+            AppLog.w(TAG, "field guide anchor '$anchor' not found — opening at the top")
+            return
+        }
+        scroll.post {
+            // Offset up by the section heading's worth so the reader lands with the entry's
+            // title in view, not with the card's top edge flush against the action bar.
+            scroll.scrollTo(0, (target.top - dp(12)).coerceAtLeast(0))
+            AppLog.v(TAG, "field guide opened at '$anchor'")
+        }
     }
 
     // ---------------------------------------------------------------- Section 1
@@ -348,9 +376,11 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             listOf(arPill(on = false) to "Off", arPill(on = true) to "On"),
             "AR: markers on the video",
-            "This function draws the markers on the live image at their true positions. You " +
-                "can then see which building, vehicle or hill a marker identifies. The button " +
-                "becomes green when the function is on.\n\n" +
+            "This function draws the markers on the live image near their positions. You " +
+                "can then see which general area a marker is in. The button becomes green " +
+                "when the function is on.\n\n" +
+                "USE THIS FOR GENERAL AWARENESS OF AN AREA. Do not use it for an exact " +
+                "point. See the first note below.\n\n" +
                 "A marker outside the camera image shows as a small arrow at the edge of the " +
                 "image. The arrow shows the direction to turn the camera.\n\n" +
                 "Touch and hold the button to select what the app draws:\n" +
@@ -363,21 +393,32 @@ class FieldGuideActivity : AppCompatActivity() {
                 "set an item to off, the app removes it from the image immediately. The app " +
                 "always shows ground markers to 5 miles.",
             listOf(
+                "THE AR VIEW IS NOT ACCURATE FOR A POINT. It shows you the general area of " +
+                    "a marker. It does not show an exact object.\n\n" +
+                    "Do not use it to choose between objects that are close together, such " +
+                    "as one house in a row of houses, or one vehicle in a parking area. Use " +
+                    "it to know where to look.\n\n" +
+                    "For an exact position, put the crosshair on the object and put a " +
+                    "marker. Fly nearer to the object.",
+                "THE ERROR CHANGES WITH THE DIRECTION THE AIRCRAFT FACES. This is the " +
+                    "compass of the aircraft. It is not the app.\n\n" +
+                    "A flight test on 4 August 2026 aimed at the same target from three " +
+                    "directions. The direction error was between 1 and 6 degrees. At 350 m " +
+                    "this moved a marker up to 27 m to the side.\n\n" +
+                    "A compass calibration of the aircraft makes this smaller. The Aim " +
+                    "Offsets control cannot remove it, because one fixed number cannot " +
+                    "correct an error that changes with direction.",
                 "If you move the camera quickly, the markers move on the image. They become " +
                     "correct when you stop. This is normal, because the position data and the " +
                     "video do not arrive at the same time.",
-                "This function shows which object a marker identifies. It does not give an " +
-                    "accurate position. For an accurate position, put the crosshair on the " +
-                    "object and put a marker.",
-                "No person measured the camera direction and the field of view of the EVO II " +
-                    "in flight. The markers can show away from their targets. The " +
-                    "touch-and-hold menu has two controls to correct this. They correct " +
-                    "different errors:\n" +
+                "The touch-and-hold menu has two controls. They correct different errors:\n" +
                     "- Calibrate FOV: use it if the markers are correct in the center of " +
-                    "the image but not correct near the edges.\n" +
+                    "the image but not correct near the edges. The app now reads the field " +
+                    "of view from the camera, so you do not usually need this.\n" +
                     "- Aim Offsets: use it if the markers are not correct in the CENTER. " +
                     "This also moves the position of a marker that you put.",
             ),
+            anchor = ANCHOR_AR,
         )
 
         entry(
@@ -809,12 +850,17 @@ class FieldGuideActivity : AppCompatActivity() {
         name: String,
         what: String,
         caveats: List<String> = emptyList(),
+        anchor: String? = null,
     ) {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#202024"))
             setPadding(dp(14), dp(12), dp(14), dp(12))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+            // Deep-link target — see EXTRA_SCROLL_TO. A tag rather than a generated view id
+            // because the whole guide is built in code and ids would have to be kept unique
+            // by hand against a resource file that has no other reason to exist.
+            if (anchor != null) tag = anchor
         }
 
         if (icons.isNotEmpty()) {
@@ -967,6 +1013,24 @@ class FieldGuideActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "TP2Guide"
+
+        /**
+         * Optional intent extra: open the guide scrolled to one entry rather than at the top.
+         * Value is one of the ANCHOR_* constants, matched against the tag [entry] puts on its
+         * card. An unknown or absent value opens at the top, which is the safe default — a
+         * deep link that stops matching must not open a blank-looking screen.
+         */
+        const val EXTRA_SCROLL_TO = "scrollTo"
+
+        /** The AR overlay entry, reached from the flight screen's AR menu. */
+        const val ANCHOR_AR = "ar"
+
+        /** Opens the guide at [anchor] (or the top if null). */
+        @JvmStatic
+        fun intent(context: android.content.Context, anchor: String? = null) =
+            android.content.Intent(context, FieldGuideActivity::class.java).apply {
+                if (anchor != null) putExtra(EXTRA_SCROLL_TO, anchor)
+            }
         private const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         private const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
 

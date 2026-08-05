@@ -100,16 +100,98 @@ object AutelProductHolder {
     }
 
     /**
-     * The digital-zoom value the camera reported AT CONNECT, in the SDK's raw int units —
-     * which are undocumented (could be a plain multiplier, could be x100). Everything zoom
-     * does is relative to this ("2X" = baseline*2), so the unknown units cancel out.
+     * The digital-zoom value the camera reported AT CONNECT, in the SDK's raw int units.
      *
-     * ⚠ Assumption to verify on hardware (QC list): the camera connects at 1x. If the app
-     * restarts while the camera is still zoomed, this captures the zoomed value as "1X".
-     * The connect-time value is logged loudly for exactly that check.
+     * ⚠ DIAGNOSTIC ONLY — nothing computes with this any more. It used to be the baseline that
+     * every zoom level multiplied ("2X" = baseline*2), which was necessary while the raw units
+     * were undocumented, and which carried the assumption that the camera always connects at 1x.
+     * That assumption failed exactly as its old warning predicted: reconnect while zoomed and the
+     * zoomed value gets banked as "1X", after which no level is what it says. Observed 2026-08-04
+     * at a true 4x.
+     *
+     * The units are now known — HUNDREDTHS, 100 = 1.0x, established from focalLength tracking
+     * zoomScale linearly (100/0.47, 400/1.90, 800/3.79, 1600/7.58) — so [FlightActivity.applyZoom]
+     * sets an absolute value and the live ratio comes from the camera's own status push. Kept
+     * because the connect-time value is still worth having in the log when zoom misbehaves.
      */
     @Volatile var zoomBaseRaw: Int? = null
         private set
+
+    /**
+     * Live camera FOV as REPORTED BY THE CAMERA, degrees at the current zoom/lens — or null until
+     * the camera has pushed a status packet (or if this firmware never populates it).
+     *
+     * Verified in the aar, not assumed: `XT706CameraInfo.getHorizontalFOV()` is backed by
+     * `CameraSystemStatus.FovH` (an int in TENTHS of a degree) and `getFovH()` compiles to
+     * `i2f; ldc 10.0f; fdiv` — so the SDK already divides and these arrive as degrees. The field is
+     * Gson-populated from the camera's pushed `SystemStatus` JSON; nothing in the SDK ever calls
+     * `setFovH`, so it is real telemetry rather than a stub.
+     *
+     * ⚠ OBSERVATION ONLY for now. Nothing reads these into the AR projection yet — the point of
+     * this pass is to find out what the firmware actually reports on THIS airframe before the
+     * hand-calibrated constants are retired in favour of it. Two things to learn from the log:
+     * whether the values are sane and non-zero, and whether they already track digital zoom (if
+     * they do, the zoom narrowing in [AutelTakBridge.zoomedFov] must not be applied on top).
+     */
+    @Volatile var liveHFovDeg: Float? = null
+        private set
+    @Volatile var liveVFovDeg: Float? = null
+        private set
+
+    /** Last camera-info values we logged, so the ~2Hz push feed does not flood the log. */
+    private var lastLoggedCamInfo: String? = null
+
+    private val cameraInfoListener = object : com.autel.common.CallbackWithOneParam<
+        com.autel.common.camera.XT706.XT706CameraInfo> {
+        override fun onSuccess(info: com.autel.common.camera.XT706.XT706CameraInfo?) {
+            info ?: return
+            val h = info.horizontalFOV
+            val v = info.verticalFOV
+            liveHFovDeg = h.takeIf { it.isFinite() && it > 0f }
+            liveVFovDeg = v.takeIf { it.isFinite() && it > 0f }
+
+            // Hand the camera's own numbers to the FOV model. Sanity-gated inside — a camera that
+            // has not finished booting reports 0, and an FOV of 0 sends every marker to infinity.
+            //
+            // The FOV reported here is the LENS's field at 1x and does NOT include digital zoom
+            // (verified 2026-08-04: fov held at 65.8x39.9 while zoomScaleRaw ran 100/400/800/1600),
+            // so the zoom narrowing still has to be applied on top of it.
+            //
+            // It DOES change with the lens — the thermal reports 33.0x26.0 at aspect 1.283 (5:4).
+            // That makes the EO/IR constants and the activeLens plumbing redundant: the camera
+            // says which field it is actually showing, whatever is on screen.
+            TakBridgeHolder.setLiveCameraFov(h.toDouble())
+
+            // ZOOM, FROM AN ABSOLUTE SOURCE. zoomScale is in HUNDREDTHS (100 = 1.0x) — established
+            // from focalLength tracking it linearly: 100/0.47, 400/1.90, 800/3.79, 1600/7.58.
+            //
+            // This replaces learning a baseline at connect (see zoomBaseRaw), which was only ever
+            // necessary because the units were undocumented, and which BREAKS whenever the app
+            // restarts while the camera is still zoomed: it captures the zoomed value as "1X" and
+            // every label is then off by that factor. Hit for real 2026-08-04 — the app reconnected
+            // at a true 4x, called it 1X, and could no longer zoom out. An absolute ratio has no
+            // baseline to get wrong.
+            val ratio = info.zoomScale / 100.0
+            if (ratio.isFinite() && ratio >= 1.0) TakBridgeHolder.setLiveZoom(ratio)
+
+            // Aspect implied by the reported pair, in TANGENT space — the only comparison that
+            // means anything for a rectilinear lens. If this matches the live video aspect the
+            // camera is describing the STREAM; if it does not, it is describing the SENSOR and
+            // the vertical has to be re-derived from the horizontal on our side.
+            val implied = if (h > 0f && v > 0f)
+                Math.tan(Math.toRadians(h / 2.0)) / Math.tan(Math.toRadians(v / 2.0)) else Double.NaN
+
+            val line = "cam info: fov=%.1fx%.1f (implied aspect %.3f) zoomScaleRaw=%d focal=%.2f px=%.2f mode=%s"
+                .format(h, v, implied, info.zoomScale, info.focalLength, info.pixelSize, info.mediaMode)
+            if (line != lastLoggedCamInfo) {
+                lastLoggedCamInfo = line
+                AppLog.i(TAG, line)
+            }
+        }
+        override fun onFailure(error: AutelError?) {
+            AppLog.w(TAG, "camera info listener error: ${error?.description}")
+        }
+    }
 
     private val cameraChangeListener = object : CallbackWithTwoParams<CameraProduct, AutelBaseCamera> {
         override fun onSuccess(type: CameraProduct?, cam: AutelBaseCamera?) {
@@ -117,7 +199,12 @@ object AutelProductHolder {
             camera = cam
             isRecording = false   // new camera session — state re-learned from its events
             zoomBaseRaw = null
+            liveHFovDeg = null; liveVFovDeg = null; lastLoggedCamInfo = null
             cam?.setMediaStateListener(mediaStateListener)
+            // Real FOV straight from the camera — see [liveHFovDeg]. Registered here rather than
+            // from the flight screen so the numbers are in the log for a bench check, with no
+            // aircraft flown and no UI open.
+            (cam as? AutelXT706)?.setInfoListener(cameraInfoListener)
             // Learn the zoom units by READING before anything ever writes — see zoomBaseRaw.
             (cam as? AutelXT706)?.getDigitalZoomScale(
                 object : com.autel.common.CallbackWithOneParam<Int> {

@@ -110,6 +110,25 @@ class ObstacleEdgeView @JvmOverloads constructor(
         return best?.toInt() ?: if (sawClear) CLEAR else null
     }
 
+    /**
+     * Height of the toolbar covering the top of the video, in pixels.
+     *
+     * This view is full-screen behind the app's chrome, so its top edge is NOT the top of what
+     * the pilot can see. Fed from the toolbar's real measured height after layout (see
+     * FlightActivity) rather than a hardcoded dp, so a toolbar change cannot silently push the
+     * top-face warning back out of sight.
+     *
+     * Only the TOP face needs this: left, right and bottom are clear of the toolbar, and the HUD
+     * column on the right sits above this view's right arc without covering it.
+     */
+    private var topInset = 0f
+
+    fun setTopInset(px: Float) {
+        if (topInset == px) return
+        topInset = px
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
@@ -152,10 +171,15 @@ class ObstacleEdgeView @JvmOverloads constructor(
                 cx = w - inset - bow - dp(20f); cy = h / 2f
             }
             Side.TOP -> {
+                // Pushed below the toolbar by [topInset]. Without it the arc and its distance
+                // label drew from the view's top edge and sat underneath the toolbar, so the one
+                // face whose warning means "you are about to hit something above you" was the
+                // one the pilot could not read.
                 val len = w * span
-                rect.set((w - len) / 2f, inset - bow, (w + len) / 2f, inset + bow)
+                val top = topInset + inset
+                rect.set((w - len) / 2f, top - bow, (w + len) / 2f, top + bow)
                 canvas.drawArc(rect, 20f, 140f, false, arcPaint)
-                cx = w / 2f; cy = inset + bow + dp(22f)
+                cx = w / 2f; cy = top + bow + dp(22f)
             }
             Side.BOTTOM -> {
                 val len = w * span

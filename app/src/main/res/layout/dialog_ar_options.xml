@@ -21,6 +21,20 @@
         android:paddingEnd="20dp"
         android:paddingBottom="4dp">
 
+        <!-- ACCURACY LIMIT, STATED WHERE THE FEATURE IS TURNED ON.
+             Measured in flight 2026-08-04: aiming at one target from three headings gave bearing
+             errors of 1-6 degrees, up to 27 m of miss at 350 m. The cause is heading-dependent
+             magnetometer error on the aircraft, which no fixed offset in this app can remove. A
+             pilot must not read a marker's drawn position as an identification of one object, so
+             the limit is stated here rather than only in the guide two screens away. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="For general awareness of an AREA. Not accurate for a point — do not use it to pick one building or vehicle from its neighbours. For an exact position, put the crosshair on the object and drop a marker."
+            android:textColor="@color/tp_state_caution"
+            android:textSize="12sp"
+            android:paddingBottom="10dp" />
+
         <!-- Populated in code from ArSettings.Category so the menu and the enum cannot drift. -->
         <LinearLayout
             android:id="@+id/arCategoryContainer"
@@ -69,6 +83,37 @@
                 android:text="15 mi" />
 
         </RadioGroup>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="10dp"
+            android:background="@color/tp_divider" />
+
+        <!-- Opens the Field Guide at the AR entry. A row in the body rather than a dialog button
+             because all three button slots are already taken (Done / Calibrate FOV / Aim Offsets),
+             and a row can carry the LIVE warning that a button caption could not. -->
+        <TextView
+            android:id="@+id/arFieldGuideLink"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:text="Field Guide: AR accuracy →"
+            android:textColor="@color/tp_accent"
+            android:textSize="14sp"
+            android:paddingTop="8dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Leaves the flight screen. The LIVE video to your team stops until you come back."
+            android:textColor="@color/tp_text_muted"
+            android:textSize="11sp"
+            android:paddingBottom="4dp" />
 
     </LinearLayout>
 

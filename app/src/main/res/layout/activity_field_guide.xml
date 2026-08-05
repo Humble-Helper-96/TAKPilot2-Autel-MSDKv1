@@ -5,6 +5,7 @@
      states being described, rather than hand-drawn mock-ups that would quietly go stale the
      next time an icon changes. Styling matches the Pre-Flight Setup screen. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/fieldGuideScroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#1A1A1A"

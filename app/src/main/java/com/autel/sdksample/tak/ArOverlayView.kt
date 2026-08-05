@@ -138,13 +138,18 @@ class ArOverlayView @JvmOverloads constructor(
 
     private val d get() = resources.displayMetrics.density
 
-    private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        alpha = OVERLAY_ALPHA
+    }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.CENTER
+        alpha = OVERLAY_ALPHA
     }
-    private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(150, 0, 0, 0) }
+    private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(150 * OVERLAY_ALPHA / 255, 0, 0, 0)
+    }
 
     /** PLI contacts draw as a team-coloured dot with a dark ring, matching the mini-map. */
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -152,6 +157,21 @@ class ArOverlayView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         color = Color.BLACK
         strokeWidth = 1.5f * Resources.getSystem().displayMetrics.density
+        alpha = OVERLAY_ALPHA
+    }
+
+    /**
+     * Sets [dotPaint]'s fill colour and restores the overlay alpha.
+     *
+     * Paint.color carries its own alpha byte, so assigning a fully-opaque colour silently resets
+     * whatever alpha was set at construction. Every dynamic colour therefore goes through here
+     * rather than touching `dotPaint.color` directly — otherwise the dots would be opaque while
+     * the icons and labels around them were not, which is the kind of inconsistency nobody
+     * notices in code review and everybody notices in the air.
+     */
+    private fun dotFill(color: Int) {
+        dotPaint.color = color
+        dotPaint.alpha = OVERLAY_ALPHA
     }
 
     /** Reused across edge arrows so the draw loop doesn't allocate a Path per frame. */
@@ -347,11 +367,40 @@ class ArOverlayView @JvmOverloads constructor(
             // entire point of drawing it.
             val dzAirBallpark = if (category == ArSettings.Category.AIRCRAFT &&
                 isUsableAltitude(reported)) reported - hud.relAlt else null
-            val dz = dzReported ?: dzAirBallpark ?: dzTerrain
-            // Only the fully DTED-backed computation is trustworthy enough to LABEL with a
-            // number — see drawAircraft. The ballpark above and the flat-terrain fallback both
-            // still drive where the icon is drawn; they just don't get printed as text.
-            val dzIsTrusted = dzReported != null
+            // GROUND CONTACTS USE TERRAIN, NOT THEIR OWN REPORTED ALTITUDE.
+            //
+            // Measured against a real contact 2026-08-04, aircraft at 390ft AGL, target 253m out:
+            //     dzReported = -95.8m   elevReported = -20.8 deg
+            //     dzTerrain  = -108.0m  elevTerrain  = -23.1 deg
+            // a 12.2m disagreement, which is exactly the geoid separation the note above predicts
+            // (Anchorage is ~12m). It put the icon 2.3 deg high — visibly up and to the right of
+            // the crosshair while the camera was aimed dead at the contact's map position.
+            //
+            // The datum mix is the whole cause: the contact publishes `hae` (height above the
+            // WGS84 ELLIPSOID) and aircraftMsl is MSL, so subtracting one from the other carries
+            // the separation. For anything whose CoT type says GROUND the question is moot — it is
+            // standing on the terrain, and DTED is self-consistent in MSL with no datum to mix.
+            // That is also what the V5 reference settled on.
+            //
+            // ⚠ WHY THIS IS NOT JUST "TRUST TERRAIN ALWAYS": reported altitude remains the only
+            // source that can be right for something NOT on the ground — an upper floor, a bridge,
+            // aircraft. Those keep reported. The cost here is a ground contact genuinely on a
+            // structure, which renders at street level; that is the better failure than every
+            // ground contact floating a geoid's worth into the air.
+            //
+            // ⚠ AND DO NOT "FIX" THE RESIDUAL WITH THE PITCH OFFSET. The offset also feeds
+            // lookPoint()/the SPI, so tuning it until an icon sits under the crosshair would trade
+            // a cosmetic overlay error for wrong marker DROPS — which nobody downstream could see
+            // was wrong. Pitch is calibrated against terrain the camera is aimed at, not against
+            // where a contact icon lands.
+            val preferTerrain = ArSettings.isGroundAffiliation(u.type)
+            val dz = if (preferTerrain) dzTerrain else (dzReported ?: dzAirBallpark ?: dzTerrain)
+            // Only a fully DTED-backed computation is trustworthy enough to LABEL with a number —
+            // see drawAircraft. The air ballpark and the flat-terrain fallback both still drive
+            // where the icon is drawn; they just don't get printed as text. When we prefer terrain
+            // that means real DTED under the contact, not dzTerrain's flat-plane else-branch.
+            val dzIsTrusted = if (preferTerrain) (targetGroundMsl != null && aircraftMsl != null)
+                              else dzReported != null
 
             if (kotlin.math.hypot(groundDist, dz) < MIN_RANGE_M) { skipped++; continue }
 
@@ -379,7 +428,8 @@ class ArOverlayView @JvmOverloads constructor(
                             dzTerrain,
                             elevRep?.let { "%.1f".format(it) } ?: "none",
                             elevTer,
-                            if (dzReported != null) "reported" else "terrain",
+                            if (preferTerrain) "terrain(ground)"
+                            else if (dzReported != null) "reported" else "terrain",
                             if (xy == null) "OFF-FRAME" else "drawn at %.0f,%.0f".format(xy.first, xy.second),
                         ),
                 )
@@ -437,7 +487,7 @@ class ArOverlayView @JvmOverloads constructor(
         arrowPath.lineTo(x, y + r)
         arrowPath.lineTo(x - r, y)
         arrowPath.close()
-        dotPaint.color = if (u.isStale) Color.GRAY else AIRCRAFT_COLOR
+        dotFill(if (u.isStale) Color.GRAY else AIRCRAFT_COLOR)
         canvas.drawPath(arrowPath, dotPaint)
         canvas.drawPath(arrowPath, dotRing)
         if (!withLabel) return
@@ -493,7 +543,7 @@ class ArOverlayView @JvmOverloads constructor(
             if (withLabel) drawLabel(canvas, x, y + size / 2f, label)
         } else {
             val r = 7f * d
-            dotPaint.color = if (u.isStale) Color.GRAY else TakMapMarkers.teamColor(u.team)
+            dotFill(if (u.isStale) Color.GRAY else TakMapMarkers.teamColor(u.team))
             canvas.drawCircle(x, y, r, dotPaint)
             canvas.drawCircle(x, y, r, dotRing)
             if (withLabel) drawLabel(canvas, x, y + r, label)
@@ -570,12 +620,33 @@ class ArOverlayView @JvmOverloads constructor(
      * outside the image, and drawn as a triangle pointing outward along the direction to the
      * target rather than a plain dot, so the direction is readable at a glance.
      */
+    /**
+     * Screen-space offset for [angleDeg] within [fovDeg], normalised to ±1 at the frame edge and
+     * clamped past it — the same tangent mapping [project] uses, so an edge arrow and the marker
+     * it represents always agree on direction.
+     *
+     * At or beyond ±90° the target is behind the camera: tan is unusable there (it diverges, then
+     * changes sign), so the result is pinned to the correct side by the angle's sign instead.
+     */
+    private fun tanNorm(angleDeg: Double, fovDeg: Double): Double {
+        if (abs(angleDeg) >= 90.0) return if (angleDeg > 0) 1.0 else -1.0
+        val half = tan(Math.toRadians(fovDeg / 2.0))
+        if (half <= 0.0 || !half.isFinite()) return 0.0
+        return (tan(Math.toRadians(angleDeg)) / half).coerceIn(-1.0, 1.0)
+    }
+
     private fun drawEdgeArrow(canvas: Canvas, dBearingDeg: Double, dElevDeg: Double, color: Int) {
         // Normalised direction; clamped because a target directly behind produces a huge value
         // that would otherwise dominate the angle.
+        //
+        // TANGENT-NORMALISED, MATCHING [project]. This used to divide the raw angles linearly
+        // while project() worked in tangent space, so an arrow pointed somewhere slightly other
+        // than the marker it stood for — and the two diverge fastest near the frame edge, which
+        // is precisely where arrows live. Beyond ±90° the target is behind the camera and tan
+        // flips sign, so those are clamped by direction rather than by value.
         val zoom = TakBridgeHolder.currentZoomFactor
-        val nx = (dBearingDeg / (AutelTakBridge.hFovDeg(zoom) / 2.0)).coerceIn(-1.0, 1.0)
-        val ny = (-dElevDeg / (AutelTakBridge.vFovDeg(zoom) / 2.0)).coerceIn(-1.0, 1.0)
+        val nx = tanNorm(dBearingDeg, AutelTakBridge.hFovDeg(zoom))
+        val ny = tanNorm(-dElevDeg, AutelTakBridge.vFovDeg(zoom))
         val margin = 16f * d
         val cx = videoRect.centerX()
         val cy = videoRect.centerY()
@@ -607,7 +678,7 @@ class ArOverlayView @JvmOverloads constructor(
             y + (r * kotlin.math.sin(angle - spread)).toFloat(),
         )
         arrowPath.close()
-        dotPaint.color = color
+        dotFill(color)
         canvas.drawPath(arrowPath, dotPaint)
         canvas.drawPath(arrowPath, dotRing)
     }
@@ -718,6 +789,20 @@ class ArOverlayView @JvmOverloads constructor(
         private const val CONTACT_DETAIL_LIMIT = 3
         /** On-screen contacts that get a name+range plate; the rest keep just their icon. */
         private const val MAX_LABELS = 6
+
+        /**
+         * Opacity of everything this overlay draws, 0-255 (operator, 2026-08-04).
+         *
+         * The overlay composites on top of live video the pilot is flying from, and a screen with
+         * several contacts on it was hiding real ground. Semi-transparent keeps the markers
+         * readable while leaving the picture underneath visible — the same trade the HUD panels
+         * make (see bg_hud_panel.xml).
+         *
+         * Applied at every paint rather than via canvas.saveLayerAlpha: a full-screen offscreen
+         * layer allocated ten times a second is real GPU cost on this hardware, and the FPV
+         * pipeline is the one thing that must not regress.
+         */
+        private const val OVERLAY_ALPHA = 190
         /** Edge arrows for our own pins use the app's marker-drop accent, not a team colour. */
         private val ARROW_COLOR_PIN = 0xFF9AC4FF.toInt()
     }

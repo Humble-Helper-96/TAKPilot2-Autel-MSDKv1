@@ -49,6 +49,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvClock: TextView
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
+    private lateinit var fpvHomeDistance: TextView
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
     private lateinit var lightsButton: ImageButton
@@ -69,7 +70,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /** Thermal state. Both are re-read from the camera on connect rather than assumed — see
      *  syncIrStateFromCamera(). The buttons must never claim a mode the camera is not in. */
+    /**
+     * Thermal live. Setting this also tells the FOV model which lens is on screen, so the
+     * published <sensor> cone and the AR projection narrow to the IR lens with it — routed
+     * through the setter so every assignment site is covered, including the connect-time
+     * resync in [syncIrStateFromCamera].
+     */
     private var irOn = false
+        set(value) {
+            field = value
+            TakBridgeHolder.setActiveLens(
+                if (value) AutelTakBridge.Lens.IR else AutelTakBridge.Lens.EO)
+        }
     private var irBlackHot = false
     private lateinit var map: LockedMapView
     private lateinit var mapZoomButton: TextView
@@ -155,6 +167,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvClock = findViewById(R.id.fpvClock)
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
+        fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
@@ -180,6 +193,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 top = toolbarView.height.toFloat(),
                 right = hudColumn.width.toFloat(),
             )
+            // The obstacle radar needs the TOP inset for the same reason and did not have it:
+            // its top-face arc and distance label drew from the view's top edge, which put them
+            // under the toolbar. A proximity warning the pilot cannot see is worse than none,
+            // because the display implies it would have told them.
+            obstacleEdges.setTopInset(toolbarView.height.toFloat())
         }
         streamToggle = findViewById(R.id.flightStreamButton)
         recordToggle = findViewById(R.id.flightRecordButton)
@@ -733,7 +751,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         updateFaaCeiling(hud, aglReading)
         updateRthAltitude()
 
-        // Same five-line readout as the DJI blueprint, imperial throughout (see Units).
+        fpvHomeDistance.text = if (hud != null && hud.hasFix && homeSet) {
+            val dist = CameraSlantPoint.distanceMeters(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
+            val bearing = CameraSlantPoint.initialBearingDeg(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
+            "HOME %s  %03.0f°T".format(Units.feet(dist), bearing)
+        } else {
+            "HOME — ft  —°T"
+        }
+
+        // Same readout as the DJI blueprint, imperial throughout (see Units).
         fpvOverlayText.text = buildString {
             // LINE ORDER IS DELIBERATE (operator, 2026-08-02), most-glanced-at first:
             //   1 callsign + speed   2 AGL/MSL   3 lat/lon   4 home
@@ -756,7 +782,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             } else {
                 append("— ft AGL")
             }
-            append("  ·  ")
+            // AGL AND MSL GET THEIR OWN LINES, never "AGL · MSL" on one.
+            //
+            // They shared a line until the HUD readouts moved onto a fixed, map-width panel
+            // (2026-08-04). At that width the pair no longer fits, and the wrap fell between a
+            // number and its unit — "988 ft" on one line, "MSL" on the next, which reads as a
+            // different quantity at a glance. Two lines cannot wrap that way, and stay safe at
+            // five-digit altitudes where even a wider panel would break.
+            append('\n')
             val msl = aglReading.mslMeters
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
             append('\n')
@@ -765,14 +798,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             } else {
                 append("—, —")
             }
-            append('\n')
-            if (hud != null && hud.hasFix && homeSet) {
-                val dist = CameraSlantPoint.distanceMeters(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
-                val bearing = CameraSlantPoint.initialBearingDeg(hud.homeLat, hud.homeLon, hud.lat, hud.lon)
-                append("HOME %s  %03.0f°T".format(Units.feet(dist), bearing))
-            } else {
-                append("HOME — ft  —°T")
-            }
+            // HOME used to be a fourth line here. It moved to its own view in the BOTTOM block,
+            // between RTH and the FAA ceiling (operator, 2026-08-04) — it reads as return-to-home
+            // information, which is what the rest of that group is.
             // AC and TAK state used to be appended here and were removed (operator, 2026-07-31)
             // as redundant: the toolbar already carries both — the TAK badge's green/red dot,
             // and the aircraft through the battery gauge, GPS count and signal bars, which all
@@ -1239,13 +1267,22 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             }
         }
 
-        AlertDialog.Builder(this, R.style.TakDialogTheme)
+        val dialog = AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("AR Overlay")
             .setView(view)
             .setPositiveButton("Done", null)
             .setNeutralButton("Calibrate FOV…") { _, _ -> onArCalibrateTapped() }
             .setNegativeButton("Aim Offsets…") { _, _ -> onAimOffsetsTapped() }
             .show()
+
+        // Straight to the AR entry, not the top of the guide — the pilot asked this question
+        // from the AR menu and should not have to scroll a five-section document to find the
+        // answer. Dismiss first so the dialog is not left behind the guide.
+        view.findViewById<TextView>(R.id.arFieldGuideLink).setOnClickListener {
+            dialog.dismiss()
+            AppLog.v(TAG, "AR menu: opening field guide at the AR section")
+            startActivity(FieldGuideActivity.intent(this, FieldGuideActivity.ANCHOR_AR))
+        }
     }
 
     /**
@@ -1370,31 +1407,36 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val vValue = view.findViewById<TextView>(R.id.arFovVValue)
         val hint = view.findViewById<TextView>(R.id.arFovHint)
 
-        var h = TakBridgeHolder.currentHFovBase
-        var v = TakBridgeHolder.currentVFovBase
+        // One knob. The vertical is derived from this and the live video aspect, and is shown
+        // read-only so the pilot can see it track — see ArSettings.loadFov for why it stopped
+        // being independently adjustable.
+        // Edits the PILOT's value, not the camera's. When the camera is reporting its own FOV
+        // that value wins, and the steppers here only change the fallback — the hint says so
+        // rather than letting the taps look inert.
+        var h = TakBridgeHolder.calibratedHFovBase
 
         fun apply() {
-            ArSettings.saveFov(this, h, v)
-            h = TakBridgeHolder.currentHFovBase
-            v = TakBridgeHolder.currentVFovBase
+            ArSettings.saveFov(this, h)
+            h = TakBridgeHolder.calibratedHFovBase
             hValue.text = "%.1f°".format(h)
-            vValue.text = "%.1f°".format(v)
-            hint.text = if (TakBridgeHolder.currentZoomFactor > 1.0) {
-                "Effective at %.0fx zoom: %.1f° × %.1f°".format(
-                    TakBridgeHolder.currentZoomFactor,
-                    AutelTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
-                    AutelTakBridge.vFovDeg(TakBridgeHolder.currentZoomFactor),
-                )
-            } else {
-                "Marker too far OUT from centre → reduce. Too far IN → increase."
+            vValue.text = "%.1f°".format(TakBridgeHolder.vFovFor(h))
+            hint.text = when {
+                TakBridgeHolder.hasLiveCameraFov ->
+                    "Camera is reporting %.1f° × %.1f° — that is being used. This setting is the fallback."
+                        .format(TakBridgeHolder.currentHFovBase, TakBridgeHolder.currentVFovBase)
+                TakBridgeHolder.currentZoomFactor > 1.0 ->
+                    "Effective at %.1fx zoom: %.1f° × %.1f°".format(
+                        TakBridgeHolder.currentZoomFactor,
+                        AutelTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
+                        AutelTakBridge.vFovDeg(TakBridgeHolder.currentZoomFactor),
+                    )
+                else -> "Marker too far OUT from centre → reduce. Too far IN → increase."
             }
         }
         apply()
 
         view.findViewById<android.widget.Button>(R.id.arFovHMinus).setOnClickListener { h -= FOV_STEP_DEG; apply() }
         view.findViewById<android.widget.Button>(R.id.arFovHPlus).setOnClickListener { h += FOV_STEP_DEG; apply() }
-        view.findViewById<android.widget.Button>(R.id.arFovVMinus).setOnClickListener { v -= FOV_STEP_DEG; apply() }
-        view.findViewById<android.widget.Button>(R.id.arFovVPlus).setOnClickListener { v += FOV_STEP_DEG; apply() }
 
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Calibrate AR field of view")
@@ -1513,6 +1555,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 if (kotlin.math.abs(aspect - videoAspect) < 0.001f) return   // no real change
                 videoAspect = aspect
                 AppLog.i(TAG, "video frame size ${w}x$h (aspect ${"%.3f".format(aspect)}) — refilling")
+                // The FOV model needs the frame's shape too: the vertical FOV is derived from the
+                // horizontal and THIS aspect, so a camera mode change (16:9 video -> 4:3 photo ->
+                // 5:4 IR) re-derives it instead of needing a per-mode recalibration.
+                TakBridgeHolder.setVideoAspect(aspect.toDouble())
                 runOnUiThread { applyVideoFill(view) }
             }
             override fun onRenderFrameTimestamp(ts: Long) { /* not used */ }
@@ -1572,13 +1618,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         AppLog.i(TAG, "video resync: codec view rebuilt")
     }
 
-    /**
-     * Zoom — toggles the camera between 1X and 2X digital zoom. All writes are RELATIVE to the
-     * raw value read at camera connect ([AutelProductHolder.zoomBaseRaw]), because the SDK's
-     * int units are undocumented — baseline*2 means 2X whether the units are a multiplier or
-     * x100. Changes the actual encoded feed, so remote viewers see the zoom too, and feeds
-     * [TakBridgeHolder.setLiveZoom] so the published SPI FOV cone narrows to match.
-     */
     /**
      * Switches the FPV between the visible camera and the 640T's thermal sensor.
      *
@@ -1668,20 +1707,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             toast("The camera is not connected.")
             return
         }
-        val base = AutelProductHolder.zoomBaseRaw
-        if (base == null || base <= 0) {
-            AppLog.w(TAG, "zoom ignored — baseline not learned yet (raw=$base)")
-            toast("The camera is not ready. Try again in a moment.")
-            return
-        }
-        // Everything is RELATIVE to the baseline read at connect, so the SDK's raw units
-        // (measured as x100) cancel out and 4X needs no new assumption about them.
-        val target = base * level
+        // ABSOLUTE, NOT RELATIVE TO A LEARNED BASELINE.
+        //
+        // The raw units are hundredths — 100 = 1.0x. Established 2026-08-04 from the camera's own
+        // status push, where focalLength tracks zoomScale linearly: 100/0.47, 400/1.90, 800/3.79,
+        // 1600/7.58. So "4X" is simply 400 and needs no baseline at all.
+        //
+        // ⚠ WHY THE OLD RELATIVE FORM WAS A BUG, not just a roundabout way to the same answer.
+        // It multiplied a value read once at connect (zoomBaseRaw), on the assumption the camera
+        // always connects at 1x. Reconnect while the camera is still zoomed and that assumption
+        // breaks silently: the app banks the zoomed value as "1X" and every level is then off by
+        // that factor. Observed for real — the app reattached at a true 4x, labelled it 1X, and
+        // could no longer zoom out; "1X" returned to 4x and "4X" drove the camera to 16x. An
+        // absolute scale has no baseline to capture wrong.
+        val target = level * ZOOM_RAW_PER_X
         cam.setDigitalZoomScale(target, camCb("setDigitalZoomScale($target)") {
             zoomLevel = level
             zoomButton.text = "${level}X"
-            // The published FOV cone and the AR projection both narrow with zoom, so
-            // they must be told — otherwise AR markers drift as the pilot zooms.
+            // The published FOV cone and the AR projection both narrow with zoom, so they must be
+            // told — otherwise AR markers drift as the pilot zooms. The camera's status push also
+            // reports zoomScale and corrects this within a tick; setting it here just avoids a
+            // visible lag between the tap and the overlay catching up.
             TakBridgeHolder.setLiveZoom(level.toDouble())
             AppLog.i(TAG, "zoom now ${level}X (raw=$target)")
         })
@@ -2361,6 +2407,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         /** One tap of the AR FOV calibration +/- buttons, degrees. */
         private const val FOV_STEP_DEG = 0.5
+
+    /** Raw digital-zoom units per 1x. The SDK's scale is hundredths; see [applyZoom]. */
+    private const val ZOOM_RAW_PER_X = 100
 
         private const val REQUEST_CODE_LOCATION = 4302
 

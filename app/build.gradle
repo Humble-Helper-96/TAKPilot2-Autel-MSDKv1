@@ -70,8 +70,56 @@ android {
         //        corrected: the app had been writing the EXP stick curve while believing it was
         //        a rate, and the SDK silently clamped it, so Precision yaw was never actually
         //        slower. Precision now also softens the throttle/pitch/roll curves.
-        versionCode 7
-        versionName "1.5.1"
+        // 1.5.2: AR field-of-view model corrected. The vertical FOV is no longer a second
+        //        independent calibration knob -- for a rectilinear lens it is rigidly coupled to
+        //        the horizontal by the video frame's aspect ratio, and two free knobs had been
+        //        tuned into a combination no real camera can have. The shipped default 79x62
+        //        implied an aspect of 1.372 against a 1.778 stream (23% out) because the 79 was
+        //        Autel's DIAGONAL spec used as a horizontal; the field-calibrated 64.5x36.5
+        //        implied 1.913 (7.6% out). Vertical is now derived from the horizontal and the
+        //        LIVE frame aspect, so it is always consistent and a camera mode change (16:9
+        //        video / 4:3 photo / 5:4 IR) re-derives it with no recalibration. EO default
+        //        corrected 79 -> 66.8 (the diagonal converted properly). This changes <sensor
+        //        fov/vfov> on the wire. Also: activeLens is finally wired, so thermal publishes
+        //        and projects at the IR field of view instead of the EO one; AR edge arrows use
+        //        the same tangent normalisation as the marker projection so they stop pointing
+        //        slightly off.
+        //
+        //        THE CAMERA NOW SUPPLIES THE FOV. XT706CameraInfo.getHorizontalFOV/getVerticalFOV
+        //        are real telemetry in degrees, verified against the aircraft at 65.8x39.9 with an
+        //        implied aspect of 1.782 against a 1.778 stream. That value is used in preference
+        //        to any constant, follows a lens change on its own (thermal reports 33.0, so the
+        //        old IR_HFOV=42.0 was 9 degrees out), and retires hand calibration. The constants
+        //        remain only as a fallback until the camera's first status push.
+        //
+        //        ZOOM IS ABSOLUTE, NOT RELATIVE. applyZoom multiplied a baseline read once at
+        //        connect, which assumed the camera always connects at 1x; reconnecting while
+        //        zoomed banked the zoomed value as "1X" and no level was what it claimed
+        //        (observed at a true 4x -- "1X" returned to 4x, "4X" drove to 16x). The raw units
+        //        are hundredths (100 = 1.0x, established from focalLength tracking zoomScale
+        //        linearly), so levels are now set absolutely and the live ratio comes from the
+        //        camera. zoomBaseRaw is diagnostic-only.
+        //
+        //        GROUND CONTACTS USE TERRAIN FOR ALTITUDE. Subtracting the aircraft's MSL from a
+        //        contact's ellipsoidal `hae` carried the geoid separation -- measured at 12.2 m,
+        //        which put icons 2.3 degrees high. Contacts whose CoT type is GROUND now use DTED
+        //        under them; everything else keeps its reported altitude.
+        //
+        //        AR ACCURACY IS NOW STATED WHERE IT IS USED. Aiming at one target from three
+        //        headings gave bearing errors of 1 to 6 degrees (up to 27 m at 350 m), caused by
+        //        heading-dependent magnetometer error on the aircraft that no fixed offset can
+        //        remove. The AR menu and the Field Guide both say the overlay is for general
+        //        awareness of an area and not for an exact point, and the AR menu links straight
+        //        to that section of the guide.
+        //
+        //        FLIGHT SCREEN: HUD readouts sit on translucent panels so they stay legible over
+        //        bright ground; AGL and MSL each get their own line so a wrap cannot separate a
+        //        number from its unit; HOME distance moves to the RTH group; gimbal pitch moves
+        //        under the aircraft position; the clock matches the rest of the HUD. The AR
+        //        overlay draws semi-transparent. The obstacle radar's TOP face was drawing under
+        //        the toolbar and could not be read -- it now clears it.
+        versionCode 8
+        versionName "1.5.2"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
