@@ -1,129 +1,167 @@
-# taklite Security Review — TLS / CoT / cert enrollment — 2026-08-03
+# Security review: TLS, CoT and certificate enrollment — 3 August 2026
 
-Scope: `TakClient` (runtime TLS), `TakCertEnroller` (enrollment + key storage), `CotParser`
-(untrusted-XML parsing). This is the security surface the code review flagged as unopened. The
-code is inherited from the DJI TAKPilot2 app; findings apply to both.
+**Written in Simplified Technical English (ASD-STE100).**
 
-Ranked most-severe first. Nothing here was changed — TLS/trust changes can break the working
-connection to the operator's server, so they are for triage, not silent edits.
+> **This is a record of one date.** It gives the findings of 3 August 2026 and what was decided
+> about each one. Section 8 gives the disposition. Do not change the findings. Add a new record if
+> you do a new review.
 
----
+**Scope:** `TakClient` (TLS when the application operates), `TakCertEnroller` (enrollment and key
+storage) and `CotParser` (parsing of XML that the application does not control).
 
-## 1. Enrollment is MITM-able — credentials + trust bootstrap over an unauthenticated channel  (HIGH)
+The code comes from the DJI TAKPilot2 application. The findings apply to both applications.
 
-**Where:** `TakCertEnroller.createEnrollmentSSLContext()` (`:405-442`) and the hostname verifier
-duplicated in `httpsGet`/`httpsGetBytes`/`httpsPost` (`:247`, `:276`, `:306`).
+The findings are in order. The most severe finding is first. **No code was changed for this review.**
+A change to the TLS behaviour or the trust behaviour can stop the connection to the server of the
+operator.
 
-**What:** The enrollment `X509TrustManager.checkServerTrusted` only calls `cert.checkValidity()`
-(expiry) and a *best-effort* chain check that is swallowed on failure (`:429-436`) — it accepts any
-self-signed server certificate. The hostname verifier returns `true` for any session that presented
-a certificate (`session.getPeerCertificates()` is non-empty ⇒ accept). Over this connection the app
-sends the operator's TAK **username:password** as HTTP Basic (`:47`) and downloads the **truststore**
-(`:90-98`).
+## 1. A person can intercept the enrollment (HIGH)
 
-**Failure scenario:** On a hostile/eavesdropped network during first enrollment, an on-path attacker
-presents any self-signed cert. The app accepts it, sends the operator's TAK credentials (harvested),
-and the attacker returns an attacker-controlled truststore — which the runtime client then trusts,
-extending the compromise to every later session. This is the classic TAK auto-enrollment
-trust-on-first-use gap; the code closes none of it (no fingerprint confirmation, no
-out-of-band truststore path).
+**Where:** `TakCertEnroller.createEnrollmentSSLContext()` and the hostname verifier in `httpsGet`,
+`httpsGetBytes` and `httpsPost`.
 
-**Mitigations (any one closes most of it):** show the server cert SHA-256 fingerprint to the operator
-to confirm out-of-band before credentials are sent; support importing a truststore / data package
-OOB and pin to it; at minimum, document that enrollment must run on a trusted network. Full
-public-CA validation is not appropriate (TAK servers are typically self-signed), so fingerprint
-confirmation is the realistic fix.
+**What:** The `X509TrustManager` for the enrollment only calls `cert.checkValidity()`, which tests
+the expiry date. It also does a chain test, but it discards the result if the test fails. Therefore
+it accepts any self-signed server certificate.
 
-## 2. Runtime TLS performs no hostname verification  (MEDIUM)
+The hostname verifier returns true for each session that gave a certificate. It does not compare the
+name.
 
-**Where:** `TakClient.connect()` (`:147-184`).
+The application sends the TAK username and password of the operator on this connection as HTTP
+Basic. It also receives the truststore on this connection.
 
-**What:** The runtime socket is a raw `SSLSocket` from `factory.createSocket(addr, port)` — and it is
-handed an `InetAddress` (`:148`, `:178`), which also means no SNI hostname is sent. The code never
-sets `SSLParameters.setEndpointIdentificationAlgorithm("HTTPS")`, so the peer certificate's
-identity is **not** checked against `serverAddress`. Unlike enrollment, the cert IS validated against
-the *enrolled truststore* (chain + expiry via the real `TrustManager`, `:168-169`), so this is much
-less severe.
+**How it fails:** A person is on the network during the first enrollment. That person gives any
+self-signed certificate. The application accepts it. The application then sends the credentials of
+the operator, and that person collects them. That person then returns a truststore that they
+control. The application trusts that truststore in each later session. Therefore the compromise
+continues.
 
-**Failure scenario:** If the enrolled CA ever signs more than one host (a shared TAK CA), a holder of
-any cert from that CA can impersonate the intended server; with a single-server-specific CA the
-practical risk is low. **Caveat:** many TAK deployments intentionally skip hostname checks
-(IP-addressed / self-signed servers), so this may be deliberate ecosystem parity — confirm against
-the target servers before tightening, or it will break connections whose cert CN ≠ address.
+This is the trust-on-first-use gap of TAK automatic enrollment. The code does not close any part of
+it. There is no fingerprint confirmation and no path to supply a truststore by a different method.
 
-**Mitigation:** pass the hostname *String* to `createSocket` (restores SNI) and set endpoint
-identification to `"HTTPS"`; or make it a toggle defaulting to on.
+**How to correct it.** Any one of these closes most of the gap:
 
-## 3. Private key at rest protected only by the well-known "atakatak" password  (MEDIUM, already documented)
+- Show the SHA-256 fingerprint of the server certificate to the operator. The operator confirms it
+  by a different method before the application sends the credentials.
+- Let a person import a truststore or a data package by a different method, and use only that.
+- As a minimum, write in the instructions that the enrollment must operate on a trusted network.
 
-**Where:** `TakCertEnroller.DEFAULT_P12_PASSWORD = "atakatak"` (`:36`), `buildClientP12` (`:354-367`).
+Full validation against a public CA is not correct here. TAK servers usually have self-signed
+certificates. Therefore the fingerprint confirmation is the practical correction.
 
-**What:** The client key + truststore `.p12` files live in app-private `filesDir` under a public,
-hard-coded password, so the passphrase adds no secrecy — the only real protection is the app sandbox.
-`allowBackup="false"` (manifest) does close the `adb backup` extraction vector, so exposure is
-root / physical / a future backup-rule change. A recovered key lets an attacker impersonate the
-operator on the TAK network.
+## 2. The TLS connection does not verify the hostname (MEDIUM)
 
-**Mitigation:** Android Keystore for the private key (hardware-backed if the controller supports it),
-or derive the p12 password from a device-bound secret. Already listed as the Keystore divergence in
-PORT-STATUS; recorded here for completeness.
+**Where:** `TakClient.connect()`.
 
-## 4. Unbounded receive buffer  (LOW)
+**What:** The socket is a raw `SSLSocket` from `factory.createSocket(addr, port)`. The code gives it
+an `InetAddress`. Therefore the application sends no SNI hostname.
 
-**Where:** `TakClient.run()` `recvBuffer` (`:98-127`).
+The code never calls `SSLParameters.setEndpointIdentificationAlgorithm("HTTPS")`. Therefore it does
+not compare the identity in the certificate of the server with `serverAddress`.
 
-**What:** Bytes accumulate in a `StringBuilder` until `</event>` appears, with no size cap. A buggy or
-compromised (but TLS-authenticated) server that streams without a closing `</event>` grows the buffer
-without bound → OOM on this memory-constrained controller (intersects the mid-flight OOM blocker).
+This is much less severe than finding 1. The certificate IS validated against the enrolled
+truststore. The real `TrustManager` tests the chain and the expiry.
 
-**Mitigation:** cap the pending buffer (e.g. a few MB); on overflow, drop the partial and/or drop the
-connection. Pure hardening — no protocol/behaviour change for well-formed servers.
+**How it fails:** The enrolled CA signs more than one host. This occurs with a shared TAK CA. A
+person who holds any certificate from that CA can then be the server. If the CA is specific to one
+server, the risk is low.
 
-## 5. Signed cert not verified against the generated key pair  (LOW, robustness)
+**Important:** Many TAK installations do not verify the hostname. Their servers use an IP address or
+a self-signed certificate. Therefore this behaviour can be correct for the ecosystem. Test against
+the target servers before you make this stricter. If you do not, you will stop the connections where
+the name in the certificate is not the address.
 
-**Where:** `TakCertEnroller.enroll()` (`:77-83`).
+**How to correct it:** Give the hostname to `createSocket` as a String. This also gives SNI. Then set
+the endpoint identification to `"HTTPS"`. You can also make this a control that is on by default.
 
-**What:** The server-returned `signedCert` is bundled with the locally generated private key into the
-`.p12` without checking `signedCert.getPublicKey()` matches `keyPair.getPublic()`. Fails closed (a
-mismatch just makes later TLS fail), so it is robustness, not a hole — but the failure would surface
-far from its cause.
+## 3. The private key has only the well-known password "atakatak" (MEDIUM)
 
-**Mitigation:** one equality check before `buildClientP12`, erroring early with a clear message.
+**Where:** `TakCertEnroller.DEFAULT_P12_PASSWORD` and `buildClientP12`.
 
----
+**What:** The client key and the truststore are `.p12` files in the application-private `filesDir`.
+The password is public and is in the code. Therefore the password gives no protection. The only real
+protection is the application sandbox.
 
-## Confirmed SOUND (recorded so they are not re-flagged)
+The manifest has `allowBackup="false"`. This stops extraction with `adb backup`. Therefore the
+exposure needs root access, physical access, or a change to the backup rules.
 
-- **CoT parsing is not vulnerable to XXE or entity-expansion DoS.** `CotParser` uses `XmlPullParser`
-  (Android KXmlParser) with `FEATURE_PROCESS_DOCDECL` off by default: DOCTYPE is not processed, no
-  internal entities are defined, external entities are never fetched, and undefined entity refs throw
-  (caught → returns null). Using a pull parser instead of a DOM/SAX `DocumentBuilder` is the right
-  call for untrusted server XML. Parsed fields are read into typed values, not evaluated.
-- **Runtime refuses plaintext.** `TakClient.connect()` throws if no client cert / truststore is
-  present — no silent downgrade to an unencrypted socket (`:152-155`).
-- **No credential logging.** Enrollment logs URLs and the username/CN but never the password or the
-  Basic-auth header.
-- **`allowBackup="false"`** in the manifest blocks `adb backup` extraction of the stored `.p12`s.
+A person who gets the key can be the operator on the TAK network.
 
-## Summary
+**How to correct it:** Put the private key in the Android Keystore. Use hardware protection if the
+controller has it. As an alternative, make the password from a secret that is specific to the device.
 
-**High:** 1 (enrollment MITM / credential exposure).
-**Medium:** 2 (no runtime hostname check; key-at-rest password) — #3 already known.
-**Low:** 2 (unbounded buffer; cert/key match).
+`PORT-STATUS.md` also lists this item.
 
-Safe to fix now without connectivity risk: **#4** and **#5** (pure hardening). **#1–#3** change
-trust/storage behaviour and must be decided against the target TAK servers before touching — #1 is
-the one that actually protects the operator's credentials and deserves a decision.
+## 4. The receive buffer has no limit (LOW)
 
-## Disposition — 2026-08-03
+**Where:** `TakClient.run()`, the `recvBuffer` value.
 
-- **#4 (unbounded buffer) — ✅ FIXED** (commit 481aae0). `TakClient` caps the pending buffer at
-  4 MB and drops the connection past it. Verified on-device: TAK still connects and receives CoT
-  normally.
-- **#5 (cert/key match) — ✅ FIXED** (commit 481aae0). `TakCertEnroller` verifies the signed cert's
-  public key matches the generated key pair before building the `.p12`.
-- **#1, #2, #3 — ACCEPTED as standard TAK behaviour** (operator's call, 2026-08-03). Enrollment
-  TOFU, the absence of hostname pinning, and the conventional `atakatak` p12 password are how the
-  TAK ecosystem operates; kept as notes rather than changed. Revisit #1 (cert-fingerprint
-  confirmation) if enrollment ever needs to run on untrusted networks; revisit #3 (Android Keystore)
-  before a wider fleet rollout. The mitigations above still stand if the risk posture changes.
+**What:** The bytes collect in a `StringBuilder` until `</event>` occurs. There is no limit on the
+size.
+
+A server with a fault, or a server that a person controls but that has correct TLS, can send data
+with no `</event>`. The buffer then increases with no limit. The controller has a small memory.
+Therefore the application stops.
+
+**How to correct it:** Put a limit on the buffer, for example a few MB. If the buffer becomes larger,
+discard the incomplete data or stop the connection. This is protection only. It does not change the
+behaviour for a correct server.
+
+## 5. The signed certificate is not compared with the key pair (LOW)
+
+**Where:** `TakCertEnroller.enroll()`.
+
+**What:** The application puts the `signedCert` from the server and the local private key into the
+`.p12` file. It does not test that `signedCert.getPublicKey()` agrees with `keyPair.getPublic()`.
+
+This fails safely. If the two do not agree, the TLS connection fails later. Therefore this is
+robustness, not a hole. But the failure occurs a long way from its cause.
+
+**How to correct it:** Do one equality test before `buildClientP12`. Give a clear error message.
+
+## 6. Parts that are correct
+
+These parts were examined and are correct. This record stops a second review of them.
+
+- **The CoT parsing is safe from XXE and from entity-expansion attacks.** `CotParser` uses
+  `XmlPullParser` (the Android KXmlParser) with `FEATURE_PROCESS_DOCDECL` off, which is the default.
+  Therefore the parser does not process DOCTYPE, does not define internal entities and never gets
+  external entities. An undefined entity gives an exception, which the code catches. A pull parser is
+  the correct choice for XML from a server that the application does not control. The application
+  reads the fields into typed values. It does not evaluate them.
+- **The application refuses an unencrypted connection.** `TakClient.connect()` gives an exception if
+  there is no client certificate or no truststore. It does not use a plain socket.
+- **The application does not log credentials.** The enrollment logs the URL and the username. It
+  never logs the password or the Basic authentication header.
+- **`allowBackup="false"`** in the manifest stops the extraction of the `.p12` files with
+  `adb backup`.
+
+## 7. Summary
+
+| Severity | Count | Findings |
+|---|---|---|
+| High | 1 | Interception of the enrollment and exposure of the credentials |
+| Medium | 2 | No hostname verification; the password of the key at rest |
+| Low | 2 | The buffer with no limit; the certificate and key comparison |
+
+Findings 4 and 5 are protection only. You can correct them with no risk to the connection.
+
+Findings 1, 2 and 3 change the trust behaviour or the storage behaviour. Decide about them against
+the target TAK servers before you change the code. Finding 1 protects the credentials of the
+operator. It needs a decision.
+
+## 8. Disposition, 3 August 2026
+
+- **Finding 4 (the buffer with no limit): CORRECTED** in commit 481aae0. `TakClient` now has a limit
+  of 4 MB on the buffer. It stops the connection if the data is more than this. Tested on the device:
+  TAK connects and receives CoT correctly.
+- **Finding 5 (the certificate and key comparison): CORRECTED** in commit 481aae0. `TakCertEnroller`
+  now tests that the public key of the signed certificate agrees with the key pair before it makes
+  the `.p12` file.
+- **Findings 1, 2 and 3: ACCEPTED as standard TAK behaviour.** This was the decision of the operator
+  on 3 August 2026. Trust on first use at enrollment, no hostname verification, and the usual
+  `atakatak` password are how the TAK ecosystem operates. They are records, not changes.
+
+  Examine finding 1 again if the enrollment must operate on a network that is not trusted. Examine
+  finding 3 again before a larger fleet deployment. The corrections in this document are still
+  correct if the risk changes.
