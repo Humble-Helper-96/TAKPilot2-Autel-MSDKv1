@@ -30,12 +30,24 @@ object TakMapMarkers {
     /** Air-track course is rounded to this before it reaches the icon cache — see [courseBucket]. */
     private const val COURSE_BUCKET_DEG = 15.0
 
-    /** Air-track symbol size. 18dp, against 32dp for ground MIL markers (operator, tuned on
-     *  hardware 2026-07-31: 32 -> 24 -> 18). Traffic is context, not something the pilot acts
-     *  on directly, and the mini-map is 180dp wide — a 32dp aircraft covered a meaningful
-     *  fraction of the ground it was meant to be seen against. Kept separate from the MIL size
-     *  on purpose so tuning one does not silently move the other. */
-    private const val AIR_ICON_DP = 18f
+    /**
+     * Symbol sizes on the mini-map, in dp.
+     *
+     * **The map is only 180dp wide on the Smart Controller**, so every dp here is a real share of
+     * it. At the previous sizes a 32dp marker plus its label was about 53dp tall — 29% of the map
+     * height — and a few markers in one area merged into a single mass.
+     *
+     * Reduced by the operator on 2026-08-04, after WIDE zoom went 13 -> 15. That change quartered
+     * the ground area on screen, so the same symbols became four times as dense.
+     *
+     * Kept as separate constants on purpose: tuning one must not silently move the others.
+     */
+    private const val MIL_ICON_DP = 14f    // shared markers AND the pilot's own dropped markers
+    private const val AIR_ICON_DP = 12f    // ADS-B traffic — context, not something acted on
+    private const val PLI_DOT_DP = 10f     // team position dots
+    /** Callsign label under a symbol. Small, because a long callsign makes the bitmap wider than
+     *  the icon itself (`w = maxOf(size, labelW)`) and that width is what actually crowds the map. */
+    private const val LABEL_SP = 8f
 
     private var map: MapView? = null
     private val markers = HashMap<String, Marker>()
@@ -274,6 +286,49 @@ object TakMapMarkers {
     /** For the AR overlay / dedupe checks: is this uid locally deleted? */
     fun isHidden(uid: String): Boolean = hidden.contains(uid)
 
+    /** One shared marker, for the flight screen's marker list. */
+    data class SharedInfo(
+        val uid: String, val name: String, val type: String,
+        val lat: Double, val lon: Double, val alt: Double,
+    )
+
+    /** Markers other operators shared, newest first — the same order [TakDropMarkers.listPins]
+     *  uses, so a merged list reads consistently. */
+    fun listShared(): List<SharedInfo> =
+        savedMarkers.values.reversed()
+            .filterNot { hidden.contains(it.uid) }
+            .map { SharedInfo(it.uid, it.callsign, it.type, it.lat, it.lon, it.alt) }
+
+    /** Removes ONE shared marker from this aircraft only. Public entry point for the marker
+     *  list; the map's own tap handler uses the same path. */
+    fun deleteShared(uid: String) = hideInbound(uid)
+
+    /**
+     * Clears every shared marker from this aircraft.
+     *
+     * ⚠ **These are NOT added to the locally-deleted set.** A single deliberate delete adds a uid
+     * to [hidden] and suppresses it for good, which is right for "I do not want to see this one".
+     * Applying that to a bulk clear would silently blind the pilot to every one of those uids for
+     * the life of the install — including any the team shares again later. "Clear my map now" is
+     * the intent here, not "never show me these".
+     *
+     * In practice they stay gone: CloudTAK and TAK Aware send a marker when it is placed, not on
+     * a repeating cycle (measured over 30 minutes, 2026-08-04). A marker that IS shared again
+     * returns, which is the correct outcome.
+     */
+    fun clearAllShared(): Int {
+        val uids = savedMarkers.keys.toList()
+        for (uid in uids) {
+            remove(uid)
+            TakManager.getInstance().forgetUser(uid)
+        }
+        savedMarkers.clear()
+        saveSavedMarkers()
+        map?.invalidate()
+        AppLog.i(TAG, "cleared ${uids.size} shared marker(s) from this aircraft")
+        return uids.size
+    }
+
     /**
      * Tapping an INBOUND marker (from another operator) → offer a LOCAL delete (removes it
      * from THIS map only; stays on the server / other clients).
@@ -294,6 +349,11 @@ object TakMapMarkers {
         markers.remove(uid)?.let { mk -> map?.overlays?.remove(mk) }
         iconKeys.remove(uid)
         savedMarkers.remove(uid)
+        // Also drop it from the live contact map. The `hidden` set stops it being DRAWN, but a
+        // marker is persistent and therefore exempt from the stale sweep — so without this it
+        // would occupy a contact slot for the life of the process, invisible and never released.
+        // Small individually; it is the same accumulate-forever shape as the 2026-08-03 OOM.
+        TakManager.getInstance().forgetUser(uid)
         saveSavedMarkers()
         map?.invalidate()
         TakDropMarkers.ui?.toast("Marker removed from your map")
@@ -566,11 +626,11 @@ object TakMapMarkers {
     fun makeMilIcon(resId: Int, callsign: String): Bitmap {
         val ctx = appContext
         val d = density
-        val size = (32 * d).toInt()
+        val size = (MIL_ICON_DP * d).toInt()
         val icon = ctx?.let { drawableToBitmap(it, resId, size) }
 
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE; textSize = 10 * d; typeface = Typeface.DEFAULT_BOLD
+            color = Color.WHITE; textSize = LABEL_SP * d; typeface = Typeface.DEFAULT_BOLD
         }
         val tw = text.measureText(callsign)
         val fm = text.fontMetrics
@@ -597,12 +657,12 @@ object TakMapMarkers {
     private fun makeIcon(callsign: String, team: String?, isStale: Boolean): Bitmap {
         val color = if (isStale) Color.GRAY else teamColor(team)
         val d = density
-        val iconSize = (14 * d).toInt()
+        val iconSize = (PLI_DOT_DP * d).toInt()
         val r = iconSize / 2f
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = Color.WHITE
-            textSize = 10 * d
+            textSize = LABEL_SP * d
             typeface = Typeface.DEFAULT_BOLD
         }
         val textWidth = textPaint.measureText(callsign)

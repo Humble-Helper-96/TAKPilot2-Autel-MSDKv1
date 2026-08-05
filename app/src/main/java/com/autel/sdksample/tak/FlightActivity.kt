@@ -84,6 +84,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
     private var irBlackHot = false
     private lateinit var map: LockedMapView
+    private lateinit var mapContainer: android.widget.FrameLayout
+    /** Double-tap state of the mini-map. Deliberately NOT persisted — every entry to the flight
+     *  screen starts at the normal size, so a pilot never arrives at a screen with the video
+     *  half covered by a map they expanded on a previous flight. */
+    private var mapExpanded = false
     private lateinit var mapZoomButton: TextView
 
     /** Mini-map zoom mode. Persisted, so a pilot who settles on one keeps it across a battery
@@ -210,6 +215,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         irButton.setOnClickListener { onIrTapped() }
         irPaletteButton.setOnClickListener { onIrPaletteTapped() }
         map = findViewById(R.id.flightMap)
+        mapContainer = findViewById(R.id.flightMapContainer)
+        map.onDoubleTap = { toggleMapSize() }
         // Must be resolved before the map setup below, which calls applyMapZoom() and labels
         // this button.
         mapZoomButton = findViewById(R.id.flightMapZoomButton)
@@ -228,7 +235,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // things that ever move the camera are updateHud()'s recenter and the zoom toggle.
         mapWide = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
             .getBoolean(KEY_MAP_WIDE, true)
-        map.setTileSource(MapStyle.tileSource(this))
+        // OpenStreetMap, fixed. The Map Display section that let a pilot choose a source and
+        // pre-download an area was removed 2026-08-04 (operator's call). Tiles still cache as
+        // they are viewed, and osmdroid trims that store itself — see MapTileCache.configure.
+        map.setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
         map.setMultiTouchControls(false)
         map.setBuiltInZoomControls(false)
         map.setFlingEnabled(false)
@@ -1005,6 +1015,49 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 .edit().putBoolean(KEY_MAP_WIDE, mapWide).apply()
         }
         AppLog.i(TAG, "mini-map zoom = $zoom (${if (mapWide) "WIDE" else "NEAR"})")
+    }
+
+    /**
+     * Double-tap the map to make it twice as wide and twice as tall; double-tap again to restore.
+     * Operator's request, 2026-08-04.
+     *
+     * **It grows OVER the screen, not by pushing things aside.**
+     *  - Width is free: [flightHudColumn] is end-aligned, so a wider child simply extends LEFT
+     *    across the video.
+     *  - Height needs the negative top margin. The column is a vertical LinearLayout, so without
+     *    it the map would shove the readouts above it upward — and 2x here (480dp) plus the two
+     *    HUD blocks exceeds the column's usable height, so something would be squeezed or
+     *    clipped. The negative margin makes it grow upward across the readouts instead, which is
+     *    what the operator asked for.
+     *  - `elevation` puts it above its siblings in the draw order. `bringToFront()` would ALSO
+     *    work visually but reorders the LinearLayout's children, which changes where everything
+     *    else sits — exactly the layout damage this is avoiding.
+     *
+     * The zoom level does not change, so an expanded map shows FOUR TIMES the ground, not a
+     * magnified version of the same ground. That is the useful direction: the reason to expand
+     * is usually to see more of the picture.
+     *
+     * Marker sizes are in dp and do not scale, so they get relatively smaller when expanded —
+     * which is also the right direction.
+     */
+    private fun toggleMapSize() {
+        mapExpanded = !mapExpanded
+        val w = resources.getDimensionPixelSize(R.dimen.flight_map_size)
+        val h = resources.getDimensionPixelSize(R.dimen.flight_map_height)
+        val lp = mapContainer.layoutParams as android.widget.LinearLayout.LayoutParams
+        if (mapExpanded) {
+            lp.width = w * 2
+            lp.height = h * 2
+            lp.topMargin = -h            // absorb the extra height upward, over the readouts
+            mapContainer.elevation = 8f * resources.displayMetrics.density
+        } else {
+            lp.width = w
+            lp.height = h
+            lp.topMargin = 0
+            mapContainer.elevation = 0f
+        }
+        mapContainer.layoutParams = lp
+        AppLog.i(TAG, "mini-map ${if (mapExpanded) "EXPANDED to ${w * 2}x${h * 2}px" else "restored"}")
     }
 
     /** Bucket raw signal % into coarse steps for display (operator's spec): 0-10% shows as
@@ -2111,30 +2164,83 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * delete, and a panel that refuses to open when empty just makes the pilot wonder whether
      * the long-press registered.
      */
-    private fun onMarkersListTapped() {
-        val pins = TakDropMarkers.listPins()
+    /**
+     * One row of the marker list. Markers this pilot dropped and markers the team shared appear
+     * TOGETHER (operator, 2026-08-04) — a pilot looking for "the marker by the north gate" does
+     * not care who placed it, and a list that showed only their own made the shared ones look
+     * absent when they were on the map the whole time.
+     *
+     * The two are not interchangeable, though: only an own marker can be moved, renamed, retyped
+     * or re-sent, because those edit the marker on every other client. A shared one offers a local
+     * delete only. [ownPin] being null is what marks a row as shared.
+     */
+    private data class MarkerRow(
+        val label: String,
+        val iconRes: Int,
+        val ownPin: TakDropMarkers.PinInfo?,
+        val sharedUid: String?,
+    )
+
+    private fun buildMarkerRows(): List<MarkerRow> {
         val hud = TakBridgeHolder.hud()
         // Range/bearing from the AIRCRAFT to each marker, so the list is orderable by "what's
         // near me" in the air rather than just drop order.
-        val labels = pins.map { pin ->
-            val range = if (hud != null && hud.hasFix) {
-                val d = CameraSlantPoint.distanceMeters(hud.lat, hud.lon, pin.lat, pin.lon)
-                val b = CameraSlantPoint.initialBearingDeg(hud.lat, hud.lon, pin.lat, pin.lon)
-                // Units.distance (not .feet): a dropped marker has no geofence bound the way
-                // the aircraft's own position does, so this can run to five digits of feet
-                // where miles read better.
+        fun range(lat: Double, lon: Double): String =
+            if (hud != null && hud.hasFix) {
+                val d = CameraSlantPoint.distanceMeters(hud.lat, hud.lon, lat, lon)
+                val b = CameraSlantPoint.initialBearingDeg(hud.lat, hud.lon, lat, lon)
+                // Units.distance (not .feet): a marker has no geofence bound the way the
+                // aircraft's own position does, so this can run to five digits of feet where
+                // miles read better.
                 "  ·  %s @ %03.0f°".format(Units.distance(d), b)
             } else ""
-            "${pin.affiliation.label}: ${pin.name}$range"
-        }.toTypedArray()
 
-        AlertDialog.Builder(this, R.style.TakDialogTheme)
-            .setTitle(if (pins.isEmpty()) "Dropped Markers (none)" else "Dropped Markers")
-            .setAdapter(iconRowAdapter(pins.zip(labels) { p, l -> p.affiliation.res to l })) { _, i ->
-                onMarkerRowTapped(pins[i])
+        val own = TakDropMarkers.listPins().map {
+            MarkerRow("${it.affiliation.label}: ${it.name}${range(it.lat, it.lon)}",
+                it.affiliation.res, it, null)
+        }
+        val shared = TakMapMarkers.listShared().map {
+            // "Team:" prefix rather than an affiliation word — the useful distinction in this
+            // list is who can edit it, and the affiliation is already carried by the icon.
+            MarkerRow("Team: ${it.name}${range(it.lat, it.lon)}",
+                TakMapMarkers.milMarkerRes(it.type) ?: R.drawable.marker_unknown, null, it.uid)
+        }
+        return own + shared
+    }
+
+    private fun onMarkersListTapped() {
+        val rows = buildMarkerRows()
+
+        val dialog = AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle(if (rows.isEmpty()) "Markers (none)" else "Markers")
+            .setAdapter(iconRowAdapter(rows.map { it.iconRes to it.label })) { _, i ->
+                val row = rows[i]
+                if (row.ownPin != null) onMarkerRowTapped(row.ownPin)
+                else onSharedMarkerRowTapped(row)
             }
             .setNegativeButton("Close", null)
             .setNeutralButton("Clear All") { _, _ -> onClearAllMarkersTapped() }
+            .show()
+
+        // Clear All in red, matching every other destructive control in the app. AlertDialog has
+        // no per-button style, so it is tinted after show() — the button does not exist before.
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+            ?.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.tp_btn_danger_dialog))
+    }
+
+    /** A marker somebody else shared: local delete only. Moving, renaming or re-sending would
+     *  edit THEIR marker on every client, which is not this pilot's to do. */
+    private fun onSharedMarkerRowTapped(row: MarkerRow) {
+        val uid = row.sharedUid ?: return
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle(row.label.substringAfter("Team: ").substringBefore("  ·"))
+            .setMessage("Your team shared this marker. You can remove it from this aircraft. " +
+                "It stays on the screens of your team.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Remove from my map") { _, _ ->
+                TakMapMarkers.deleteShared(uid)
+                onMarkersListTapped()
+            }
             .show()
     }
 
@@ -2215,15 +2321,31 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             .show()
     }
 
+    /**
+     * Clears BOTH sets — the markers this pilot dropped and the markers the team shared
+     * (operator, 2026-08-04). It used to clear only the pilot's own, which left a "cleared" map
+     * still carrying every shared marker.
+     *
+     * The message states both counts before the pilot commits, because the two have different
+     * consequences: an own marker stays on the team's screens until it goes stale, while a shared
+     * one is only being removed from this aircraft.
+     */
     private fun onClearAllMarkersTapped() {
+        val ownCount = TakDropMarkers.listPins().size
+        val sharedCount = TakMapMarkers.listShared().size
         AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Clear All Markers")
-            .setMessage("Remove all dropped markers from your map? This is local-only — each " +
-                "marker stays on the TAK server until it goes stale (about 14 hours) and may " +
-                "reappear on other clients' pictures until then.")
+            .setMessage(
+                "Remove all markers from this map?\n\n" +
+                    "· $ownCount that you dropped\n" +
+                    "· $sharedCount that your team shared\n\n" +
+                    "This changes this aircraft only. Your own markers stay on the screens of " +
+                    "your team until they go stale, about 14 hours. A marker that your team " +
+                    "shares again will come back.")
             .setPositiveButton("Clear All Markers") { _, _ ->
-                AppLog.i(TAG, "markers: clear all confirmed")
+                AppLog.i(TAG, "markers: clear all confirmed ($ownCount own, $sharedCount shared)")
                 TakDropMarkers.clearAll()
+                TakMapMarkers.clearAllShared()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -2366,14 +2488,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          * single compromise level. They serve different jobs and the numbers, on the Smart
          * Controller's 180x240dp map at xhdpi, are why these two:
          *
-         *  - WIDE (13) covers ~3312 x 4416 m (about 2 x 2.7 miles), so the home point stays on
-         *    the map out to ~1656 m laterally — more than three times the 1600 ft (488 m)
-         *    max-distance limit. This is the "where am I relative to home and the team" view,
-         *    and the default for that reason. Was 14 (~1656 x 2208 m) until 2026-07-31; the
-         *    operator wanted more surrounding context, and 14 already cleared the distance
-         *    limit so the extra margin costs nothing operationally. Anything at 15 or tighter
-         *    loses home at full extension and would defeat the point of this mode.
-         *  - NEAR (17) covers ~207 x 276 m: the "what is directly below the aircraft" view.
+         *  - WIDE (15.5) covers ~586 x 781 m, so the home point stays on the map out to ~293 m
+         *    laterally. Set by the operator on 2026-08-04 (13 -> 15 -> 15.5).
+         *
+         *    ⚠ **HOME LEAVES THE MAP BEFORE THE AIRCRAFT REACHES ITS DISTANCE LIMIT.** The
+         *    max-distance limit is 1600 ft (488 m) and this view holds ~293 m. The original 13
+         *    was chosen precisely to avoid that. It is now accepted, because DOUBLE-TAPPING THE
+         *    MAP doubles both dimensions — an expanded WIDE covers ~1172 x 1562 m, so home is
+         *    back on the map to ~586 m, past the limit. That is the trade: the compact view is
+         *    tighter, and the expanded view is the one that answers "where is home".
+         *    The HUD's numeric HOME distance and bearing stay correct at any range regardless.
+         *
+         *    ⚠ **15.5 IS A FRACTIONAL LEVEL, SO IT IS SOFTER THAN 15 OR 16.** Tiles exist only
+         *    at integer zooms; osmdroid renders 15.5 by upscaling z15 tiles ~1.41x, and street
+         *    labels blur. This build carried a 16.5 for the same reason once and the note then
+         *    still applies: there is no fractional level that avoids this. If labels read as too
+         *    soft, the fix is 15 or 16, not a different fraction.
+         *  - NEAR (18) covers ~104 x 138 m: the "what is directly below the aircraft" view.
+         *    Set by the operator on 2026-08-04, replacing 17 (~207 x 276 m). Home leaves this
+         *    view past ~52 m, which is expected — that is what WIDE is for.
          *
          * Both are NATIVE zoom levels, so both render sharp. The single-level 16.5 this
          * replaced had to upscale z16 tiles ~1.41x and softened street labels; there is no
@@ -2387,8 +2520,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          * toggle has no DJI counterpart at all; it is the first place this build is
          * deliberately ahead of the blueprint rather than catching up to it.
          */
-        private const val MAP_ZOOM_WIDE = 13.0
-        private const val MAP_ZOOM_NEAR = 17.0
+        private const val MAP_ZOOM_WIDE = 15.5
+        private const val MAP_ZOOM_NEAR = 18.0
         private const val KEY_MAP_WIDE = "flight_map_wide"
 
         /** Where the mini-map centers before the aircraft has a GPS fix. Town Square Park in

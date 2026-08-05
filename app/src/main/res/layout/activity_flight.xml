@@ -507,7 +507,10 @@
         <!-- The map is wrapped so the zoom toggle can sit ON it. The button is a SIBLING of the
              map, not a child: LockedMapView swallows every touch by design, so anything that
              needs to be tappable has to be layered above it rather than inside it. -->
+        <!-- Has an id so the double-tap size toggle can resize it — see
+             FlightActivity.toggleMapSize. -->
         <FrameLayout
+            android:id="@+id/flightMapContainer"
             android:layout_width="@dimen/flight_map_size"
             android:layout_height="@dimen/flight_map_height">
 

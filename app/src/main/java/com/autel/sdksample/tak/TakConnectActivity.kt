@@ -60,7 +60,6 @@ class TakConnectActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
 
         setupDroneSettingsSection()
-        setupMapDisplaySection()
         setupDtedSection()
         setupUasfmSection()
 
@@ -696,11 +695,6 @@ class TakConnectActivity : AppCompatActivity() {
         status.visibility = android.view.View.GONE
     }
 
-    // ---- 2. Map Display ----
-
-    /** Flight mini-map tile source. Street or a custom XYZ template — see [MapStyle] for why
-     *  there's no Hybrid/satellite option on this airframe. Takes effect next time the flight
-     *  screen opens (it reads [MapStyle.tileSource] in onCreate). */
     // ---- Configuration locks ----
 
     /**
@@ -811,209 +805,7 @@ class TakConnectActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupMapDisplaySection() {
-        val group = findViewById<android.widget.RadioGroup>(R.id.mapStyleGroup)
-        val customUrl = findViewById<EditText>(R.id.mapCustomUrl)
-
-        when (MapStyle.savedStyleChoice(this)) {
-            MapStyle.CUSTOM -> group.check(R.id.mapStyleCustom)
-            else -> group.check(R.id.mapStyleStreet)
-        }
-        customUrl.setText(MapStyle.savedCustomUrl(this))
-
-        findViewById<Button>(R.id.mapDisplaySaveButton).setOnClickListener {
-            val choice = when (group.checkedRadioButtonId) {
-                R.id.mapStyleCustom -> MapStyle.CUSTOM
-                else -> MapStyle.STREET
-            }
-            val url = customUrl.text.toString().trim()
-            // Validate BEFORE saving rather than discovering it in flight: a bad template
-            // silently falls back to street tiles at map-load time, which the pilot would only
-            // notice as "my imagery did not work" with no explanation.
-            if (choice == MapStyle.CUSTOM && !MapStyle.isUsableTemplate(url)) {
-                Toast.makeText(
-                    this,
-                    "Custom URL must be http(s) and contain {z}, {x} and {y}",
-                    Toast.LENGTH_LONG,
-                ).show()
-                return@setOnClickListener
-            }
-            AppLog.v(TAG, "tap: Save Map Display -> $choice")
-            MapStyle.saveStyleChoice(this, choice, url)
-            Toast.makeText(this, "Map display saved — applies next time you enter Flight",
-                Toast.LENGTH_SHORT).show()
-            // Re-render the cache status: the download restriction depends on which source is
-            // selected, so a save can change what that line says.
-            renderMapCacheStatus()
-        }
-
-        setupMapCacheSection()
-    }
-
-    // ---- Offline map tiles ----
-
-    /**
-     * Region download for map tiles, deliberately shaped like the UASFM download below: centre,
-     * radius, check the size, then download. A pilot who has done one already knows this one.
-     *
-     * The automatic caching this sits alongside needs no UI at all — osmdroid keeps every tile
-     * the flight map draws, within the budget [MapTileCache] configures. This section exists
-     * only for ground the aircraft has NOT been over yet.
-     */
-    private fun setupMapCacheSection() {
-        val latField = findViewById<EditText>(R.id.mapCacheLat)
-        val lonField = findViewById<EditText>(R.id.mapCacheLon)
-        val radiusField = findViewById<EditText>(R.id.mapCacheRadius)
-        val checkBtn = findViewById<Button>(R.id.mapCacheCheckButton)
-        val downloadBtn = findViewById<Button>(R.id.mapCacheDownloadButton)
-        val clearBtn = findViewById<Button>(R.id.mapCacheClearButton)
-        val status = findViewById<TextView>(R.id.mapCacheStatus)
-
-        radiusField.setText("10")
-        renderMapCacheStatus()
-
-        /** Reads the three fields, or null (with a toast) if they do not make sense. */
-        fun readArea(): org.osmdroid.util.BoundingBox? {
-            val lat = latField.text.toString().trim().toDoubleOrNull()
-            val lon = lonField.text.toString().trim().toDoubleOrNull()
-            val radius = radiusField.text.toString().trim().toDoubleOrNull()
-            if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
-                Toast.makeText(this, "Enter a valid centre latitude and longitude",
-                    Toast.LENGTH_SHORT).show()
-                return null
-            }
-            if (radius == null || radius <= 0 || radius > 50) {
-                Toast.makeText(this, "Enter a radius between 1 and 50 miles",
-                    Toast.LENGTH_SHORT).show()
-                return null
-            }
-            return MapTileCache.bboxAround(lat, lon, radius)
-        }
-
-        findViewById<Button>(R.id.mapCacheUseLocationButton).setOnClickListener {
-            AppLog.v(TAG, "tap: Map cache Use My Location")
-            useMyLocationFor(R.id.mapCacheLat, R.id.mapCacheLon)
-        }
-
-        checkBtn.setOnClickListener {
-            val bbox = readArea() ?: return@setOnClickListener
-            val (tiles, bytes) = MapTileCache.estimate(bbox)
-            AppLog.v(TAG, "tap: Map cache Check Size -> $tiles tiles, ${MapTileCache.human(bytes)}")
-            status.text = "$tiles tiles, about ${MapTileCache.human(bytes)}." +
-                if (bytes > MapTileCache.MAX_BYTES)
-                    "\nThis is too large. The limit is " +
-                        "${MapTileCache.human(MapTileCache.MAX_BYTES)}. Use a smaller radius."
-                else "\nPress Download Area to keep them."
-        }
-
-        downloadBtn.setOnClickListener {
-            val bbox = readArea() ?: return@setOnClickListener
-            val source = MapStyle.tileSource(this)
-            val (tiles, bytes) = MapTileCache.estimate(bbox)
-            if (bytes > MapTileCache.MAX_BYTES) {
-                status.text = "$tiles tiles is about ${MapTileCache.human(bytes)}. " +
-                    "This is too large. The limit is " +
-                    "${MapTileCache.human(MapTileCache.MAX_BYTES)}. Use a smaller radius."
-                return@setOnClickListener
-            }
-            // The street map needs an explicit go-ahead: OSM's usage policy asks apps not to
-            // bulk-download from their donated servers. The operator's call is that an offline
-            // map is a life-safety item on a public-safety aircraft, so the app allows it —
-            // but as a decision the pilot makes each time, not a silent default, because the
-            // consequence (OSM blocking this address) lands on them and would land mid-job.
-            if (!MapTileCache.allowsBulkDownload(source)) {
-                android.app.AlertDialog.Builder(this, R.style.TakDialogTheme)
-                    .setTitle("Download street map area?")
-                    .setMessage(
-                        "OpenStreetMap asks apps not to download their maps in bulk. Their " +
-                            "servers are donated.\n\n" +
-                            "This will fetch $tiles tiles (about ${MapTileCache.human(bytes)}) " +
-                            "as slowly as the normal map does, two at a time.\n\n" +
-                            "If OpenStreetMap blocks this address, the street map stops " +
-                            "working here until they unblock it. Keep the radius to the area " +
-                            "you will actually fly.")
-                    .setPositiveButton("Download") { _, _ ->
-                        startMapDownload(source, bbox, tiles, downloadBtn, checkBtn, status)
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-                return@setOnClickListener
-            }
-            startMapDownload(source, bbox, tiles, downloadBtn, checkBtn, status)
-        }
-
-        clearBtn.setOnClickListener {
-            AppLog.v(TAG, "tap: Clear map cache")
-            android.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
-                .setTitle("Clear map cache?")
-                .setMessage("Delete all stored map tiles (${MapTileCache.human(
-                    MapTileCache.usedBytes(this))})? The map will need a connection again " +
-                    "until it re-caches.")
-                .setPositiveButton("Clear") { _, _ ->
-                    MapTileCache.clear(this)
-                    renderMapCacheStatus()
-                    Toast.makeText(this, "Map cache cleared", Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-    }
-
-    private fun startMapDownload(
-        source: org.osmdroid.tileprovider.tilesource.ITileSource,
-        bbox: org.osmdroid.util.BoundingBox,
-        tiles: Int,
-        downloadBtn: Button,
-        checkBtn: Button,
-        status: TextView,
-    ) {
-        AppLog.i(TAG, "map region download starting: $tiles tiles")
-        downloadBtn.isEnabled = false
-        checkBtn.isEnabled = false
-        status.text = "Downloading 0 of $tiles  (0%)"
-        MapTileCache.downloadRegion(this, source, bbox, object : MapTileCache.Progress {
-                override fun onProgress(done: Int) {
-                    // Percentage as well as the raw counts: on a several-thousand-tile job the
-                    // counts alone give a pilot no sense of whether this finishes before they
-                    // need to leave.
-                    val pct = if (tiles > 0) (done * 100 / tiles).coerceIn(0, 100) else 0
-                    runOnUiThread { status.text = "Downloading $done of $tiles  ($pct%)" }
-                }
-                override fun onDone(downloaded: Int) {
-                    runOnUiThread {
-                        downloadBtn.isEnabled = true
-                        checkBtn.isEnabled = true
-                        renderMapCacheStatus(extra = "\nDownloaded $downloaded tiles.")
-                        Toast.makeText(this@TakConnectActivity, "Map area downloaded",
-                            Toast.LENGTH_SHORT).show()
-                    }
-                }
-                override fun onFailed(reason: String) {
-                    runOnUiThread {
-                        downloadBtn.isEnabled = true
-                        checkBtn.isEnabled = true
-                        renderMapCacheStatus(extra = "\n$reason")
-                    }
-                }
-            })
-    }
-
-    private fun renderMapCacheStatus(extra: String = "") {
-        val status = findViewById<TextView>(R.id.mapCacheStatus) ?: return
-        val used = MapTileCache.usedBytes(this)
-        val needsOverride = !MapTileCache.allowsBulkDownload(MapStyle.tileSource(this))
-        status.text = buildString {
-            append("Stored: ${MapTileCache.human(used)} of ")
-            append(MapTileCache.human(MapTileCache.MAX_BYTES))
-            append(". The app removes the oldest tiles when the space is full.")
-            if (needsOverride) {
-                append("\n\nThe app asks you to confirm an area download of the Street map.")
-            }
-            append(extra)
-        }
-    }
-
-    // ---- 5. Elevation Data (DTED) ----
+    // ---- 4. Elevation Data (DTED) ----
 
     /** DTED region management — import a region .zip via the system document picker (any file;
      *  DTED extensions are not a registered MIME type so we do not filter), list imported regions
@@ -1122,7 +914,7 @@ class TakConnectActivity : AppCompatActivity() {
         }.getOrNull()
     }
 
-    // ---- 6. FAA Airspace Ceilings (UASFM) ----
+    // ---- 5. FAA Airspace Ceilings (UASFM) ----
 
     /** Download UASFM ceilings for an area. Deliberately a manual, explicit action on wifi
      *  rather than anything automatic in flight: the flight screen must never depend on having

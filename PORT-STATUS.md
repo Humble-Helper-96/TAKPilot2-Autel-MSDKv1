@@ -6,7 +6,7 @@
 Smart Controller V3)
 **Application ID:** `com.tak.uastoollite`
 **Application key:** Set in `TestApplication.java`. Registered in July 2026.
-**Updated:** 4 August 2026 (v1.5.3)
+**Updated:** 4 August 2026 (v1.5.4)
 
 ## 1. Scope
 
@@ -185,7 +185,80 @@ contacts held: 38 total, 3 persistent
 Measured on 4 August 2026 across 30 minutes: `total` moved between 36 and 47, `persistent` stayed
 at 3, and the memory stayed level.
 
-## 9. Calibration items
+### 8.5 The marker list on the flight screen
+
+Touch and hold the marker button to open the list. It gives the markers that the pilot dropped AND
+the markers that the team shared. A shared marker has the prefix "Team:".
+
+A shared marker gives a local delete only. To move it, to change its name or its type, or to send
+it again would change that marker on each other client. That is not for this pilot to do.
+
+**Clear All removes both sets.** It gives the two counts before the pilot confirms, because the
+results are different: a marker that the pilot dropped stays on the screens of the team until it
+goes stale, but a shared marker is removed from this aircraft only.
+
+Clear All does NOT put a shared marker in the permanently-hidden set. A single delete does, which
+is correct for "I do not want to see this one". To do that for a bulk clear would make the pilot
+blind to each of those identities for the life of the installation. A marker that the team shares
+again comes back.
+
+## 9. Map tiles
+
+**The small map is OpenStreetMap only.** The Map Display section of Pre-Flight Setup was removed on
+4 August 2026 (operator's decision). It selected the tile source and downloaded an area before a
+flight.
+
+These are the results:
+
+- A pilot cannot select a different map source. `MapStyle` is deleted.
+- A pilot cannot download an area before a flight. `MapTileCache` keeps only `configure()`.
+- A pilot cannot delete the tile cache from the screen.
+
+**The application still keeps each tile that the map shows.** Therefore an area flown one time with
+a connection is on the controller for the next flight.
+
+⚠ **A first flight into new ground with no connection has no map.** The map shows empty squares.
+The aircraft flies correctly and the position data is correct, but the pilot has no map picture.
+
+osmdroid controls the size of the store: it removes the oldest tiles when the store passes 2 GB.
+Therefore the cache cannot fill the controller, but a person cannot get the space back early.
+
+### 9.1 Zoom levels of the small map
+
+WIDE is 15.5 and NEAR is 18 (operator, 4 August 2026). They were 13 and 17.
+
+**Touch the map two times to make it two times larger. Touch it two times again to make it small.**
+The larger map covers a part of the video and the data at the right side. It is always small when
+the flight screen opens. The zoom does not change, so the larger map shows four times more ground.
+
+⚠ **At WIDE the home point leaves the map before the aircraft is at its distance limit.** WIDE at
+15.5 shows approximately 586 x 781 m, so the home point stays on the map to approximately 293 m to
+the side. The maximum distance limit is 1600 ft (488 m).
+
+The value 13 was selected for that reason. This is now accepted, because the larger map holds
+approximately 586 m to the side, which is past the limit. The compact map is the close view; the
+larger map answers the question "where is home".
+
+The HOME distance and bearing in the HUD stay correct at each range.
+
+⚠ **15.5 is between two tile levels.** Tiles exist at whole numbers only, so osmdroid makes the
+level-15 tiles approximately 1.41 times larger and the street names are softer. If the names are
+too soft, use 15 or 16. No other fraction avoids this.
+
+### 9.2 Symbol sizes on the map
+
+| Symbol | Size |
+|---|---|
+| Markers (shared and dropped) | 14 dp |
+| Team positions | 10 dp |
+| Air traffic | 12 dp |
+| Label text | 8 |
+
+The map is 180 dp wide. At the earlier sizes a 32 dp marker with its label was 53 dp tall, which is
+29 % of the height of the map. The change of WIDE from 13 to 15.5 also made the symbols
+approximately six times more dense.
+
+## 10. Calibration items
 
 The flight-test checklist (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed on 3 August 2026.
 
@@ -198,7 +271,7 @@ The flight-test checklist (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed on 3
 | Field of view | `EO_HFOV`, `IR_HFOV` | Fallback values only. The camera supplies the operational value. Read section 5. |
 | HAE altitude | `AutelTakBridge` | Compare with a known HAE value. |
 
-## 10. Divergences from the project guide
+## 11. Divergences from the project guide
 
 - **Certificate storage.** Enrollment certificates are `.p12` files in the application-private
   `filesDir`. They are not in the Android Keystore. Application-private storage on a controller
@@ -207,7 +280,7 @@ The flight-test checklist (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed on 3
   the saved certificates. A person must do the re-enrollment when the certificates expire. Add
   this function before a fleet deployment if your server issues certificates with a short life.
 
-## 11. Architecture notes
+## 12. Architecture notes
 
 - `AutelProductHolder` controls the one global `Autel.setProductConnectListener` slot. It installs
   the listener again at each `onResume` of the Home screen and the Flight screen. The

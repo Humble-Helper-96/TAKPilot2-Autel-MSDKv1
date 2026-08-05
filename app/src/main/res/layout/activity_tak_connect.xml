@@ -678,170 +678,12 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
-        <!-- 4. Map Display — flight mini-map tile source. Street + Custom only; DJI's third
-             "Hybrid" (satellite) option is deliberately absent here, since providing imagery
-             means choosing a satellite tile provider, which is a licensing decision (operator's
-             call, 2026-07-30). A pilot wanting imagery points Custom at their own provider. -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="4. Map Display"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:paddingTop="16dp"
-            android:paddingBottom="4dp" />
-
-        <RadioGroup
-            android:id="@+id/mapStyleGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/mapStyleStreet"
-                style="@style/takColumnRadio"
-                android:text="Street" />
-
-            <RadioButton
-                android:id="@+id/mapStyleCustom"
-                style="@style/takColumnRadio"
-                android:text="Custom" />
-        </RadioGroup>
-
-        <TextView style="@style/takLabelStyle"
-            android:text="Custom map address" />
-        <EditText
-            android:id="@+id/mapCustomUrl"
-            style="@style/takFieldStyle"
-            android:hint="https://tiles.example.com/{z}/{x}/{y}.png"
-            android:inputType="textUri" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Must contain {z}, {x} and {y}."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
-
-        <Button
-            style="@style/TakButton.Neutral"
-            android:id="@+id/mapDisplaySaveButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Save Map Display" />
-
-        <!-- Offline map tiles. Same shape as the UASFM download below on purpose: centre,
-             radius, check the size, then download. A pilot who has done one already knows
-             how to do the other. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="Offline map area"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="15sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Tiles you view are kept automatically. Download to cover ground you have not flown — check the size first."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingBottom="10dp" />
-
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Centre latitude" />
-                <EditText
-                    android:id="@+id/mapCacheLat"
-                    style="@style/takFieldStyle"
-                    android:hint="61.2170"
-                    android:inputType="numberDecimal|numberSigned" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Centre longitude" />
-                <EditText
-                    android:id="@+id/mapCacheLon"
-                    style="@style/takFieldStyle"
-                    android:hint="-149.8925"
-                    android:inputType="numberDecimal|numberSigned" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Radius (mi)" />
-                <EditText
-                    android:id="@+id/mapCacheRadius"
-                    style="@style/takFieldStyle"
-                    android:hint="10"
-                    android:inputType="number" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow"
-            android:layout_marginTop="10dp">
-
-            <Button
-            style="@style/TakButton.Neutral"
-                android:id="@+id/mapCacheUseLocationButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Use My Location" />
-
-            <Button
-            style="@style/TakButton.Neutral"
-                android:id="@+id/mapCacheCheckButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
-                android:text="Check Size" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow"
-            android:layout_marginTop="8dp">
-
-            <Button
-            style="@style/TakButton.Confirm"
-                android:id="@+id/mapCacheDownloadButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Download Area" />
-
-            <Button
-            style="@style/TakButton.DangerSoft"
-                android:id="@+id/mapCacheClearButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
-                android:text="Clear Cache" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/mapCacheStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/tp_accent"
-            android:textSize="13sp"
-            android:paddingTop="10dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="20dp"
-            android:background="@color/tp_border" />
-
-        <!-- 5. Elevation Data (DTED) — imported terrain regions for the local flight area.
+        <!-- 4. Elevation Data (DTED) — imported terrain regions for the local flight area.
              Feeds TerrainAgl + CameraSlantPoint's terrain-corrected SPoI. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="5. Elevation Data (DTED)"
+            android:text="4. Elevation Data (DTED)"
             android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"
@@ -900,12 +742,12 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
-        <!-- 6. FAA Airspace Ceilings (UASFM) — downloaded once on wifi, read offline in flight.
+        <!-- 5. FAA Airspace Ceilings (UASFM) — downloaded once on wifi, read offline in flight.
              Advisory display only; nothing here is applied to the aircraft's flight limits. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="6. FAA Airspace Ceilings (UASFM)"
+            android:text="5. FAA Airspace Ceilings (UASFM)"
             android:textColor="@color/tp_text_primary"
             android:textSize="22sp"
             android:textStyle="bold"

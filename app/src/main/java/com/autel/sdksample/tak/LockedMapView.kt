@@ -35,6 +35,16 @@ class LockedMapView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : MapView(context, attrs) {
 
+    /**
+     * Double-tap on the map body. Set by [FlightActivity] to grow/shrink the mini-map.
+     *
+     * Free to use because the WIDE/NEAR zoom control is a separate BUTTON layered over the map,
+     * not a tap on the map itself — so nothing else here wants this gesture. The detector below
+     * already distinguishes the two: a double tap raises this and NEVER raises
+     * `onSingleTapConfirmed`, so it cannot also register as a marker tap.
+     */
+    var onDoubleTap: (() -> Unit)? = null
+
     private val tapDetector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
@@ -43,6 +53,12 @@ class LockedMapView @JvmOverloads constructor(
             // keeps a stray double-tap from registering as two separate marker hits.
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean =
                 overlayManager?.onSingleTapConfirmed(e, this@LockedMapView) ?: false
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                val handler = onDoubleTap ?: return false
+                handler()
+                return true
+            }
         },
     )
 

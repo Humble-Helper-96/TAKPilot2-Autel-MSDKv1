@@ -181,30 +181,13 @@ class FieldGuideActivity : AppCompatActivity() {
             "turn it off, and the aircraft keeps that state. The ENTER FLIGHT card on the " +
             "home screen shows the state.")
 
-        sub("2. Map Display")
-        body("This sets the map type for the small map on the flight screen. Select Street, " +
-            "or a custom map of your team. Then touch Save Map Display. The new map shows " +
-            "when you go to the flight screen again.")
-        note("This build has no satellite or hybrid map. For images, set Custom to a map " +
-            "source that your team has a licence to use.")
-
-        body("The app keeps the map images that it shows. Thus the map operates again in the " +
-            "same area without a connection. The app keeps 2 GB of images. When the space is " +
-            "full, the app removes the oldest images first.")
-        body("The lower part of this section downloads an area before you fly. Use it for " +
-            "ground that the aircraft did not fly over. Type a center point and a radius, or " +
-            "touch Use My Location. Touch Check Size, then touch Download Area.")
-        note("Download the area on a wifi connection before you go to the flight area. Check " +
-            "the size first. If you make the radius two times larger, the app downloads four " +
-            "times more data.")
-        note("For the Street map, the app asks you to confirm first. OpenStreetMap gives " +
-            "their maps at no cost and asks apps not to download large areas. If they stop " +
-            "this controller, the Street map does not operate here until they permit it " +
-            "again. Download only the area that you fly. A custom map of your team has no " +
-            "such limit.")
-        warn("Do not fly in a new area with no connection and no downloaded map. The map " +
-            "shows empty squares where it has no images. The aircraft flies correctly, but " +
-            "you do not see your position on a map.")
+        sub("2. Video Streaming")
+        body("This section is optional. If your team has a video server, type its address, " +
+            "its port, the video name for this aircraft, and the login. Then select the " +
+            "quality: Low, Standard or High. A low quality works better on a weak connection. " +
+            "Usually, select Standard. If the connection is weak, select Low.")
+        note("These settings do not start the video. Use the LIVE button in flight to start " +
+            "and stop the video.")
 
         sub("3. TAK Server Connection")
         body("These fields set the address of the TAK server of your team and your identity " +
@@ -215,15 +198,7 @@ class FieldGuideActivity : AppCompatActivity() {
             "The channels you select receive the position of the aircraft and your markers. " +
             "If you select no channel, the server selects the channels.")
 
-        sub("4. Video Streaming")
-        body("This section is optional. If your team has a video server, type its address, " +
-            "its port, the video name for this aircraft, and the login. Then select the " +
-            "quality: Low, Standard or High. A low quality works better on a weak connection. " +
-            "Usually, select Standard. If the connection is weak, select Low.")
-        note("These settings do not start the video. Use the LIVE button in flight to start " +
-            "and stop the video.")
-
-        sub("5. Elevation Data (DTED)")
+        sub("4. Elevation Data (DTED)")
         body("This is the terrain data for your flight area. You import one file for each " +
             "region. The data tells the app the height of the ground below the aircraft.")
         body("The terrain data improves two functions:")
@@ -232,7 +207,7 @@ class FieldGuideActivity : AppCompatActivity() {
         bullet("The altitude shows the true height above the ground. Without the data, it " +
             "shows the height above your takeoff point.")
 
-        sub("6. FAA Airspace Ceilings (UASFM)")
+        sub("5. FAA Airspace Ceilings (UASFM)")
         body("This downloads the FAA UAS Facility Map altitudes for an area. The flight " +
             "screen then shows the ceiling at your position. Type a center point and a " +
             "radius, or touch Use My Location. Check the size, then download the data.")
@@ -632,11 +607,24 @@ class FieldGuideActivity : AppCompatActivity() {
             emptyList(),
             "The map",
             "This is the small map in the bottom right corner. North is always at the top " +
-                "and the aircraft is always in the center. The map does not move and does " +
-                "not zoom. Thus it always shows the same view and you do not adjust it. The " +
-                "red line goes from the home point to the aircraft, and shows your route " +
-                "back. The map also shows the TAK markers of other operators. Touch a marker " +
-                "to remove it from your map only.",
+                "and the aircraft is always in the center. You cannot move the map with your " +
+                "finger. The red line goes from the home point to the aircraft, and shows " +
+                "your route back. The map also shows the TAK markers of other operators. " +
+                "Touch a marker to remove it from your map only.\n\n" +
+                "The button on the map changes between two views. WIDE shows more ground. " +
+                "NEAR shows the ground below the aircraft.\n\n" +
+                "Touch the map two times to make it two times larger. It then covers a part " +
+                "of the video and the data at the right side. Touch it two times again to " +
+                "make it small. It is always small when you go to the flight screen.",
+            listOf(
+                "The larger map shows four times more ground. It does not make the same " +
+                    "ground larger.",
+                "AT THE WIDE VIEW, THE HOME POINT LEAVES THE MAP BEFORE THE AIRCRAFT IS AT " +
+                    "ITS DISTANCE LIMIT. The wide view shows about 828 m across, and the " +
+                    "limit is 488 m from the home point. The HOME distance and direction at " +
+                    "the top right of the screen stay correct at each distance. Use them to " +
+                    "find your way back when the home point is not on the map.",
+            ),
         )
 
         entry(
@@ -761,8 +749,10 @@ class FieldGuideActivity : AppCompatActivity() {
         body("All the controls on the flight screen operate on the EVO II. One function is " +
             "not available:")
 
-        bullet("Satellite and hybrid map images (Pre-Flight Setup, Map Display). You can use " +
-            "the street map or one custom map source.")
+        bullet("A different map. The small map is the street map only. You cannot select a " +
+            "satellite image or a different map source.")
+        bullet("A download of the map before you fly. The app keeps only the map that it has " +
+            "shown you. Fly the area one time with a connection, or keep a connection.")
 
         warn("Examine each control on your first flight with a new aircraft. The controls " +
             "were flown and passed a full flight test on 3 August 2026.")

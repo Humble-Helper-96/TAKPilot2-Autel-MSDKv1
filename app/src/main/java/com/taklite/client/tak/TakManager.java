@@ -158,6 +158,17 @@ public class TakManager implements TakClient.TakClientListener {
         takUsers.putIfAbsent(user.getUid(), user);
     }
 
+    /**
+     * Drops a contact from the live map WITHOUT telling listeners.
+     *
+     * For a caller that is already removing the thing itself — the marker list's Clear All, which
+     * strips the overlay and the saved copy directly. Notifying would send it back through
+     * onTakUserRemoved and re-add the marker from the store it is in the middle of clearing.
+     */
+    public void forgetUser(String uid) {
+        if (uid != null) takUsers.remove(uid);
+    }
+
     public TakUser findUserByUid(String uid) {
         return takUsers.get(uid);
     }

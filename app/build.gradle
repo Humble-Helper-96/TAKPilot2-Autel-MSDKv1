@@ -152,8 +152,48 @@ android {
         //        Also: an explicit delete from the network (`t-x-d-d`) removes a marker from the
         //        disk as well as from the screen. A marker that comes back from the disk is put
         //        into the live contact list, so the AR overlay can see it.
-        versionCode 9
-        versionName "1.5.3"
+        // 1.5.4: The Map Display section of Pre-Flight Setup is removed (operator's decision).
+        //        It selected the tile source and downloaded an area before a flight. The small
+        //        map is now OpenStreetMap only.
+        //
+        //        ⚠ THEREFORE A FIRST FLIGHT INTO NEW GROUND WITH NO CONNECTION HAS NO MAP. The
+        //        application still keeps each tile that it shows, so an area flown one time with
+        //        a connection is on the controller. It cannot get ground that it has not shown.
+        //        A person can no longer delete the tile cache from the screen; osmdroid removes
+        //        the oldest tiles itself when the store passes 2 GB.
+        //
+        //        THE SMALL MAP GETS TWO TIMES LARGER WHEN YOU TOUCH IT TWO TIMES. Touch it two
+        //        times again to make it small. It covers a part of the video and the data at the
+        //        right side. It is always small when the flight screen opens. The zoom does not
+        //        change, so the larger map shows four times more ground.
+        //
+        //        Zoom: WIDE 13 -> 15.5, NEAR 17 -> 18. ⚠ At WIDE the home point leaves the map
+        //        before the aircraft is at its distance limit (the view holds approximately
+        //        293 m; the limit is 488 m). The larger map holds approximately 586 m, which is
+        //        past the limit. The HOME distance and direction in the HUD stay correct at each
+        //        distance. Also note 15.5 is between two tile levels, so it is softer than 15 or
+        //        16 — tiles exist at whole numbers only.
+        //
+        //        Symbols on the map are smaller: markers 32 -> 14 dp, team positions 14 -> 10 dp,
+        //        air traffic 18 -> 12 dp, labels 10 -> 8. The map is 180 dp wide, so a 32 dp
+        //        marker with its label was 29 % of its height. The WIDE change also made the
+        //        symbols four times more dense.
+        //
+        //        MARKERS THAT THE TEAM SHARED ARE NOW IN THE MARKER LIST, with the markers that
+        //        the pilot dropped. A shared marker gives a local delete only: to move, rename or
+        //        send it again would change that marker on each other client.
+        //
+        //        CLEAR ALL IS RED AND REMOVES BOTH SETS. It removed only the pilot's own markers
+        //        before, which left a "cleared" map that still had each shared marker on it. It
+        //        gives the two counts before the pilot confirms. A shared marker is not put in
+        //        the permanently-hidden set: a bulk clear must not make the pilot blind to those
+        //        identities for the life of the installation.
+        //
+        //        Also: a local delete of a shared marker now removes it from the live contact
+        //        map as well. The hidden set stopped it being drawn, but a marker is exempt from
+        //        the stale sweep, so it stayed in memory for the life of the process.
+        versionCode 10
+        versionName "1.5.4"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
