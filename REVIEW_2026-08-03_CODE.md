@@ -1,246 +1,257 @@
-# Code Soundness Review — 2026-08-03
+# Code review — 3 August 2026
 
-Scope: `com/autel/sdksample/tak/` + `com/taklite/`. Inherited sample code excluded (see end).
-Notes only — nothing changed. Triage by number.
+**Written in Simplified Technical English (ASD-STE100).**
 
-**Review depth (be honest about it):**
-- **Close, function by function:** AutelTakBridge, AutelAvoidance, AutelProductHolder (connect
-  path), AutelControlRates, AutelExposureController, AutelLights, AircraftSettingsDump,
-  FlightLimitsController (also reviewed yesterday).
-- **Targeted scan** (risk classes only — handler/lifecycle/listener hygiene, not every line):
-  FlightActivity (2235 ln).
-- **Not reached tonight** (flag for the operator — needs a second session): TAK-side networking
-  (`taklite/` — TakManager 508, TakCertEnroller 443, CotBuilder 432, CotParser, TakClient),
-  TakConnectActivity internals, the video pipeline (AutelVideoStreamer, LowBandwidthTranscoder,
-  ScreenCaptureEncoder), the map/marker files, and the nine custom views' onDraw paths.
+> **This is a record of one date. All seven findings are closed.** Each finding gives its result.
+> Read this document for the reasons and for the rules that came from it. Do not read it as a list
+> of open work.
 
-The organising risk, from this project's history: an SDK `get*(callback)` can be a ~2 Hz
-subscription with **no way to deregister**, and treating one as one-shot flooded the fly-controller
-channel and put an aircraft into a wall (2026-08-02). Findings 1–3 are variations on that theme.
+**Scope:** `com/autel/sdksample/tak/` and `com/taklite/`. The sample code from Autel is not in the
+scope.
 
----
+## 1. The organising risk
 
-## Safety-critical (aircraft-write path)
+This risk comes from the history of the project.
 
-### 1. `productConnected` has no idempotency guard, and one callee arms an uncancellable 2 Hz subscription each time — latent recurrence of the wall-strike flood
-- **Where:** `AutelProductHolder.kt:253-306` (`connectListener.productConnected`) →
-  `AutelAvoidance.onProductConnected()` `AutelAvoidance.kt:60-115`, specifically the
-  `getVisualSettingInfo(...)` call at `:84-102`.
-- **What:** `productConnected` runs its whole arming sequence every time it fires, with no "already
-  armed for this product" guard. `AutelAvoidance.onProductConnected` arms a **continuous**
-  `getVisualSettingInfo` reader that this file's own comments confirm "fires about twice a second
-  forever" and which has no deregister API. If `productConnected` fires more than once on the same
-  product — camera-enumeration churn (observed yesterday), or the SDK replaying the callback when
-  the global product listener is re-registered on `onResume` (Home/Flight both call
-  `AutelProductHolder.install()` every resume — `TakPilotHomeActivity.kt:63,146`,
-  `FlightActivity.kt:438`) — each firing stacks another permanent 2 Hz stream on the fly-controller
-  channel.
-- **Why a pilot cares:** this is the exact shape and the exact channel of the 2026-08-02 flood that
-  destabilised a hover and defeated obstacle avoidance. It was fixed at the `readOnce`/`setSwitch`
-  door; this is a second door to the same room.
-- **Fix:** guard `productConnected` so re-entry on the *same* product is a no-op (compare the
-  `BaseProduct` instance, or an `armedForThisProduct` flag cleared in `productDisconnected`).
-  Separately, see #2.
-- **Severity:** **blocker** (given the history and that it needs no exotic trigger — screen
-  navigation while connected may be enough).
-- **RESOLVED 2026-08-03.** Confirmed real in the wild while fixing: `AutelControlRates.kt:59-64`
-  already documented `productConnected` firing "three times in 17 seconds, observed 2026-08-02" —
-  it had guarded its own apply, but AutelAvoidance's uncancellable `getVisualSettingInfo` had no
-  such guard, which is the flood path. Fixed by (a) `AutelProductHolder.armedForProduct` — arm
-  once per product, re-fire only refreshes observers; (b) eliminating `getVisualSettingInfo`
-  entirely (see #2). `getVisualSettingInfo` is now called ZERO times in the app; the only
-  visual-setting subscription is one self-cleaning `setVisualSettingInfoListener`, armed once per
-  product. Build green.
-- **FUTURE-RELEASE OPTION (noted 2026-08-03, not built).** The `armedForProduct` guard relies on a
-  real link loss always firing `productDisconnected` before the aircraft re-announces. Evidence
-  supports that pairing, but it is not hardware-verified. To close the theoretical gap where the
-  SDK re-delivers `productConnected` for the same object after silently killing listeners with no
-  disconnect in between, add a **telemetry-staleness watchdog**: if the app is "connected" but no
-  fresh telemetry has arrived for ~5s, force a re-arm. Symptom of the uncovered case today is
-  visible (frozen HUD) and recovery is a reconnect/power-cycle, so this is hardening, not a fix.
-  Consider for a future release.
+**An SDK method with the form `get*(callback)` can be a subscription that sends data approximately
+two times each second. There can be no method to stop it.**
 
-### 2. `AutelAvoidance.onProductConnected` arms TWO continuous streams of the same data; the second never stops
-- **Where:** `AutelAvoidance.kt:63-102` — a `setVisualSettingInfoListener` (continuous,
-  single-slot, correctly re-armable) **and** a `getVisualSettingInfo` (continuous 2 Hz,
-  uncancellable) for the same three booleans.
-- **What:** the `get*` exists only to get an initial value "as soon as the product syncs" (its own
-  comment), but it never stops — so even on a single clean connect there are two 2 Hz readers of
-  identical data running for the whole flight.
-- **Why a pilot cares:** needless sustained traffic on the safety channel, and it is the component
-  that #1 multiplies.
-- **Fix:** use the file's own `readOnce` latch (`:137-154`) for the initial value; the standing
-  `setVisualSettingInfoListener` already covers updates. One continuous stream, not two.
-- **Severity:** should-fix (becomes part of #1's fix).
-- **RESOLVED 2026-08-03.** Went further than the proposed fix: removed `getVisualSettingInfo`
-  from the avoidance path entirely (and `readOnce` with it). `AutelAvoidance` now caches the full
-  `VisualSettingInfo` from its single standing listener and exposes it (`latestVisualSetting`);
-  `applyAtConnect` reads that cache; `AircraftSettingsDump` reads it too instead of opening a
-  third copy of the same subscription. One listener, zero query-subscriptions.
+A person used one of these methods and thought that it gave one answer. This filled the
+fly-controller channel with data. The aircraft then hit a wall on 2 August 2026.
 
-### 3. Telemetry cache is never invalidated on disconnect — TAK keeps receiving a frozen "live" track after link loss
-- **Where:** `AutelTakBridge.kt` — `TakBridgeHolder.onProductDisconnected()` is a documented no-op
-  (`:669`), and the bridge's own cache (`lat/lon/relAlt/...`, `:57-77`) is never cleared. `pushOnce`
-  (`:295`) keeps sending the last-known position at 2 Hz as long as TAK is connected.
-- **What:** when the aircraft link drops mid-flight (which yesterday's Explorer contention caused
-  repeatedly), the bridge does not stop or mark the track stale — it republishes the last fix
-  indefinitely.
-- **Why a pilot cares:** the TAK team sees the aircraft parked at its last position, still
-  "connected," with no indication the feed is dead. In a public-safety scenario that is a false
-  picture others will act on — worse than the track disappearing.
-- **Fix:** on `onProductDisconnected`, either stop the tick or stamp the PLI stale (stop sending
-  after N seconds without fresh telemetry, or set a CoT staleTime). Decide with the operator which
-  TAK behaviour is wanted.
-- **Severity:** should-fix (borderline blocker for a public-safety deployment).
-- **RESOLVED — INTENTIONAL (operator, 2026-08-03).** The persistence is by design: it prevents the
-  aircraft dropping off teammates' maps during network instability. Verified the design is sound —
-  `CotBuilder.DRONE_STALE_DURATION_MS = 120000` (2 min) with a matching rationale comment, and
-  `pushOnce` returns early when TAK is disconnected, so a network outage ages the last PLI toward
-  its 2-min stale correctly. One narrow sub-case noted for the operator: an aircraft link loss
-  while TAK stays connected keeps re-pushing the frozen position, refreshing its stale
-  indefinitely, so a *permanently* lost aircraft (not a transient drop) never ages out. **Operator
-  decision 2026-08-03: leave as-is** — the rare case, and visible on the pilot's own screen. No
-  change.
+Findings 1 to 3 are all forms of this risk.
 
-### 4. Re-arming asymmetry is undocumented and load-bearing
-- **Where:** `AutelTakBridge.subscribe()` (`:151`, called from `start()` and `onProductConnected`)
-  uses `set*Listener` — single-slot setters, so re-arming *replaces* and is safe. `AutelAvoidance`
-  mixes a safe `setListener` with an unsafe `get*(callback)`.
-- **What:** the safety of re-arming depends entirely on whether the SDK method is a single-slot
-  setter or an accumulating subscription — and nothing in the code states which is which per call.
-- **Why a pilot cares:** it is exactly this distinction that the next person will get wrong, as it
-  was gotten wrong before.
-- **Fix:** annotate each SDK listener/getter call site with `// single-slot setter, safe to
-  re-arm` or `// SUBSCRIPTION, must latch — never re-arm`, verified against the aar
-  (`javap -p -c`). Cheap insurance.
-- **Severity:** should-fix.
-- **RESOLVED 2026-08-03.** Verified every SDK listener/getter call site against the aar bytecode
-  and annotated the clusters (`AutelTakBridge.subscribe`, `AircraftSettingsDump`,
-  `AutelControlRates.refresh`, `FlightActivity.syncIrStateFromCamera`; `AutelLights`,
-  `FlightLimitsController`, `AutelAvoidance` already documented, corrected where needed). Findings
-  worth keeping:
-  - **The "set…Listener" NAME is not a reliable signal in this SDK.** The XStar impl of
-    `setFlyControllerInfoListener` calls `addIStarLinkLongTimeCallback` and ACCUMULATES; the EVO2
-    impl this app uses is self-cleaning (`Evo2FlyController` does `removeXInfoListener…` then
-    `addXInfoListener…`, and `VisualModelManager` does `remove…; set…`), so re-arming REPLACES and
-    is safe. Verified per-impl, not by name.
-  - **Every `get*(callback)` this app calls is one-shot**, verified: fly-controller getters →
-    `ParamsQueryPacket`/`MAV_CMD_GET_LED` via `sendPacket`; camera getters → `CameraHttpRequest`
-    (HTTP GET); RC getters measured one-shot. The sole subscription-shaped getter,
-    `getVisualSettingInfo`, was eliminated in the #1 fix.
+## 2. Depth of the review
 
-### 5. Torn reads in the telemetry snapshot
-- **Where:** `AutelTakBridge.pushOnce()` `:297-326` snapshots `lat`/`lon` into locals but reads
-  `hae`, `relAlt`, `speedMs`, `headingDeg`, `batteryPct` live; the listener writes them on the
-  SDK's thread.
-- **What:** `@Volatile` makes each field read atomic but gives no snapshot consistency, so one PLI
-  can mix fields from two telemetry frames.
-- **Why a pilot cares:** negligible in practice at 2 Hz (fields drift slowly), but it is a real
-  data-race surface on the most-published data.
-- **Fix:** snapshot all consumed fields at the top of `pushOnce`, or hold a single immutable
-  telemetry record updated atomically.
-- **Severity:** polish.
-- **RESOLVED 2026-08-03.** `pushOnce` now snapshots every consumed field (lat/lon/hae/relAlt/
-  speed/heading/battery/cap/voltage + gimbal) into locals at the top, and passes the gimbal
-  snapshot into `pushCameraPoint` so the published SPI and the PLI describe the same telemetry
-  frame. Build green.
+Be accurate about what was examined.
 
-### 6. Unverified physical units shown to a flying pilot
-- **Where:** `AutelTakBridge.kt:534` `ACC_DIVISOR = 1000.0` ("believed mm — bench-verify"), GNSS
-  accuracy clamped `0.01..500` (`:174-175`); `AutelAvoidance.kt:180-181` radar distances "believed
-  CENTIMETRES, still not confirmed" feeding `ObstacleEdgeView`.
-- **What:** two safety-relevant readouts (GPS accuracy, obstacle distance) rest on unconfirmed unit
-  assumptions. If `ACC_DIVISOR` is wrong the accuracy is off by 1000×.
-- **Why a pilot cares:** obstacle distance especially — the pilot judges clearance from it.
-- **Fix:** the operator field-validated the obstacle display on 2026-08-02 (see project memory), so
-  the radar-cm assumption may already be effectively confirmed — cross-reference and, if so, delete
-  the "unconfirmed" caveat. GNSS accuracy still needs a bench check.
-- **Severity:** should-fix (verification, not code).
-- **RESOLVED 2026-08-03 — no functional change needed, as predicted.**
-  - *Radar cm:* already FIELD-VALIDATED 2026-08-02 (`ObstacleEdgeView.kt:32-36` documents the
-    operator flying the display against real obstacles). The stale "believed / not confirmed"
-    caveat in `AutelAvoidance.logRadar` was corrected to match. Confirmed, not unverified.
-  - *GNSS accuracy:* found `horizAccM`/`vertAccM` are WRITTEN but NEVER READ — no readout, no PLI,
-    no consumer anywhere. So no unverified unit reaches a pilot; it is computed-but-unused
-    scaffolding. Annotated the fields with a ⚠ that `ACC_DIVISOR` must be bench-verified BEFORE
-    anyone wires them, since a wrong divisor would be off by 1000x. Severity was overstated in the
-    original finding — nothing is shown today.
+- **Examined closely, function by function:** `AutelTakBridge`, `AutelAvoidance`,
+  `AutelProductHolder` (the connect path), `AutelControlRates`, `AutelExposureController`,
+  `AutelLights`, `AircraftSettingsDump` and `FlightLimitsController`.
+- **Examined for risk classes only:** `FlightActivity` (2235 lines). The review looked at the
+  handler, the lifecycle and the listener code. It did not look at each line.
+- **Not examined on this date:** the TAK network code, the internal code of `TakConnectActivity`,
+  the video pipeline, the map and marker files, and the `onDraw` code of the nine custom views.
+  Section 5 gives the later reviews of these parts.
 
-### 7. FlightActivity one-shot delayed lambdas are not cleared on destroy
-- **Where:** `FlightActivity.kt` — `onPause` removes the `refresh` runnable (`:455`) but several
-  `handler.postDelayed { … }` one-shots (record-verify `:1606,1639`, `:1685`) capture `cam`/context
-  and are not cleared in `onDestroy` (`:545`).
-- **What:** if the screen is destroyed inside a settle window, these fire against a dead activity.
-- **Why a pilot cares:** low — mostly a stray log or a no-op guarded by `isRecording`, but it is a
-  latent leak/late-callback class.
-- **Fix:** `handler.removeCallbacksAndMessages(null)` in `onDestroy`.
-- **Severity:** polish.
-- **RESOLVED 2026-08-03.** Added `handler.removeCallbacksAndMessages(null)` to
-  `FlightActivity.onDestroy`. Build green.
+## 3. Findings
 
----
+### Finding 1: `productConnected` has no guard against a second call (severity: BLOCKER)
 
-## Things confirmed SOUND (worth recording so they aren't re-flagged)
+**Where:** `AutelProductHolder.connectListener.productConnected`, which calls
+`AutelAvoidance.onProductConnected()`, which calls `getVisualSettingInfo(...)`.
 
-- `AutelAvoidance.readOnce` / `setSwitch` — the wall-strike fix itself is correct: latched with an
-  `AtomicBoolean`, and `setSwitch` deliberately does not spawn a reader on completion.
-- `AutelAvoidance.applyAtConnect` — guarded by `appliedForThisConnect`, refuses to write while
-  `AutelTakBridge.airborne`, and only writes switches that are actually wrong. Good.
-- `FlightLimitsController` — reads the aircraft's accepted range before writing, refuses
-  out-of-range, reads back after Apply. This is the model the other writers should follow.
-- `AutelExposureController.logReadback` — reads back what the camera applied, catching silent
-  reverts. Good pattern.
-- Sign-convention normalisation (relAlt, gimbal pitch) is done once at ingest with thorough
-  reasoning — do not "simplify" it.
+**What:** `productConnected` does its full arming sequence each time that it operates. It has no
+control to test if it is already armed for this product.
 
----
+`AutelAvoidance.onProductConnected` arms a continuous `getVisualSettingInfo` reader. The comments in
+that file confirm that it "fires about twice a second forever". There is no API to stop it.
 
-## Not reviewed tonight — recommend a second code session
+`productConnected` can operate more than one time for the same product. This occurs with camera
+enumeration, and when the SDK sends the callback again after the global listener is registered again
+at each `onResume`. The Home screen and the Flight screen both do this. Each operation then adds
+another permanent stream at 2 Hz to the fly-controller channel.
 
-`taklite/` networking (TLS, CoT build/parse, cert enrollment — the security surface),
-`TakConnectActivity` internals, the video pipeline, and the custom-view `onDraw` allocation paths
-(per-frame allocation is the one efficiency question that actually matters on this screen). None
-were opened; do not assume they are clean.
+**Why a pilot cares:** This is the same shape and the same channel as the flood of 2 August 2026.
+That flood made a hover unstable and defeated the obstacle avoidance. The fault was corrected at one
+door. This is a second door to the same room.
 
-**Update 2026-08-03 — `onDraw` allocation paths reviewed and fixed (commit pending).** Audited all
-eight flight custom views. Most correctly hoist their `Paint`/`RectF` to fields. Three had genuine
-per-frame allocation, now removed:
-- **`ObstacleEdgeView`** (safety display, redraws at the radar push rate): `Color.parseColor` per
-  edge per frame → precomputed `COLOR_DANGER`/`COLOR_WARN` ints; a `Path()` per rear chevron →
-  reused `chevronPath`; `textPaint.fontMetrics` (allocates each read) → a cached `FontMetrics`
-  filled via `getFontMetrics(fm)`.
-- **`LiveToggleView`** (blinks while RECONNECTING): a `RectF` + `Paint` allocated per blink frame
-  → hoisted `sweepRect` + `ringPaint` fields.
-- **`CrosshairView`** (redraws each HUD tick): `arrayOf(outline, line)` per frame → an `armPaints`
-  field.
-Verified on-device with live obstacle radar: the red edge arc (2.2 ft), the REAR chevron
-(1.6 ft) and the crosshair all render pixel-identically. `ArOverlayView`'s `.format()` diag calls
-are throttled to 1 Hz and gated (`logThisPass`), not per-frame — left as-is.
+**Severity: BLOCKER.** It needs no unusual conditions. Movement between screens while connected can
+be sufficient.
 
-**Update 2026-08-03 — video pipeline reviewed (commit 7ba980c).** `AutelVideoStreamer`,
-`ScreenCaptureEncoder`, `ScreenCaptureService` and `VideoStreamerHolder` audited. The shipping
-screen-capture path is sound (FGS-before-projection ordering, drain-thread shutdown gated then
-joined before codec release, projection callback + `onTaskRemoved` teardown, correct H.265 NAL
-classification). Found one real bug in the aircraft-camera path — which nothing calls in production
-— an H.264/H.265 mis-detection in `sniffParameterSets`; that whole dead path was deleted rather
-than patched, which also retired the Phase-4 codec/`AutelCodecView` concurrency question. Verified
-the live path end-to-end on-device after deletion.
+**Result: CLOSED, 3 August 2026.** The fault was confirmed as real during the correction:
+`AutelControlRates.kt` already recorded that `productConnected` operated "three times in 17 seconds,
+observed 2026-08-02". That file had its own guard. `AutelAvoidance` did not.
 
-**Update 2026-08-03 — `taklite/` TLS/CoT/cert enrollment reviewed.** See
-`REVIEW_2026-08-03_SECURITY.md`. CoT parsing is not XXE-vulnerable (XmlPullParser, DOCTYPE off);
-runtime refuses plaintext. Two hardening fixes applied (buffer cap, enrolled-cert key match); the
-enrollment-TOFU / hostname / key-at-rest findings were accepted as standard TAK behaviour. The full
-review surface is now opened.
+The correction has two parts:
+1. `AutelProductHolder.armedForProduct` arms one time for each product. A second call only refreshes
+   the observers.
+2. `getVisualSettingInfo` was removed completely. Read finding 2.
 
----
+The application now calls `getVisualSettingInfo` zero times. The only subscription is one
+`setVisualSettingInfoListener` that cleans itself, armed one time for each product.
 
-## Summary
+**A future improvement, not built.** The `armedForProduct` guard depends on this behaviour: a real
+loss of the link always gives `productDisconnected` before the aircraft announces itself again. The
+evidence supports this, but it is not confirmed on hardware. To close the theoretical gap, add a
+watchdog for stale telemetry: if the application is connected but no new telemetry has arrived for
+approximately 5 seconds, arm the listeners again. The symptom of the gap is visible today (the HUD
+stops) and the recovery is a reconnection. Therefore this is protection, not a correction.
 
-**Blockers:** 1 (#1)
-**Should-fix:** 5 (#2, #3, #4, #6, and #1's guard)
-**Polish:** 3 (#5, #7, plus #4 doc)
+### Finding 2: two continuous streams of the same data (severity: should fix)
 
-Highest priority: **#1** — it is the same failure that crashed an aircraft, reachable through a
-second entry point, with no guard. Fixing #1 and #2 together (guard `productConnected`; latch the
-avoidance initial read) closes the flood class. **#3** (stale TAK track) is the one most likely to
-mislead the team in the field and deserves an explicit operator decision on desired behaviour.
+**Where:** `AutelAvoidance.onProductConnected` armed a `setVisualSettingInfoListener` (continuous,
+one slot, safe to arm again) **and** a `getVisualSettingInfo` (continuous at 2 Hz, cannot be
+stopped). Both gave the same three values.
+
+**What:** The `get*` call existed only to get a first value when the product connects. It never
+stops. Therefore one clean connection gave two readers of the same data for the full flight.
+
+**Why a pilot cares:** This is unnecessary data on the safety channel. It is also the component that
+finding 1 multiplies.
+
+**Result: CLOSED, 3 August 2026.** The correction went further than the review proposed.
+`getVisualSettingInfo` was removed from the avoidance code completely. `AutelAvoidance` now keeps
+the full `VisualSettingInfo` from its one listener and gives it to the other code. `applyAtConnect`
+reads that copy. `AircraftSettingsDump` also reads it, instead of opening a third copy of the same
+subscription. The result is one listener and no query subscriptions.
+
+### Finding 3: the telemetry copy is not cleared at a disconnection (severity: should fix)
+
+**Where:** `AutelTakBridge`. `TakBridgeHolder.onProductDisconnected()` does nothing, and the bridge
+never clears its copy of the position. `pushOnce` continues to send the last known position at 2 Hz
+while TAK is connected.
+
+**What:** When the link to the aircraft stops during a flight, the bridge does not stop and does not
+mark the track as old. It sends the last position with no limit.
+
+**Why a pilot cares:** The TAK team sees the aircraft at its last position and connected. Nothing
+shows that the data is dead. In a public-safety operation this is a false picture that other people
+will act on. This is worse than a track that disappears.
+
+**Result: CLOSED as the intended behaviour.** This was the decision of the operator on 3 August 2026.
+
+The behaviour is deliberate. It stops the aircraft disappearing from the maps of the team during a
+period of poor network.
+
+The design was examined and is correct. `CotBuilder.DRONE_STALE_DURATION_MS` is 120000 (2 minutes),
+and `pushOnce` stops early when TAK is not connected. Therefore a network fault lets the last
+position become old correctly.
+
+One narrow case is recorded for the operator: if the link to the AIRCRAFT stops but TAK stays
+connected, the application continues to send the frozen position. This refreshes the stale time with
+no limit. Therefore an aircraft that is permanently lost never becomes old. **The operator decided to
+leave this as it is.** The case is rare and the pilot sees it on their own screen.
+
+### Finding 4: the rule for arming a listener again is not written down (severity: should fix)
+
+**Where:** `AutelTakBridge.subscribe()` uses `set*Listener` methods. These have one slot, so arming
+again replaces the listener and is safe. `AutelAvoidance` mixed a safe `setListener` with an unsafe
+`get*(callback)`.
+
+**What:** The safety of arming again depends on this: is the SDK method a setter with one slot, or a
+subscription that collects? Nothing in the code said which one each call was.
+
+**Why a pilot cares:** This is the exact difference that the next person will get wrong. A person got
+it wrong before.
+
+**Result: CLOSED, 3 August 2026.** Each SDK listener and getter call was compared with the bytecode
+of the AAR and then annotated.
+
+Two results are important to keep:
+
+- **The name "set…Listener" is not a reliable signal in this SDK.** The XStar version of
+  `setFlyControllerInfoListener` calls `addIStarLinkLongTimeCallback` and COLLECTS listeners. The
+  EVO2 version that this application uses cleans itself: `Evo2FlyController` calls
+  `removeXInfoListener…` and then `addXInfoListener…`. Therefore arming again REPLACES and is safe.
+  **Confirm each implementation. Do not use the name.**
+- **Each `get*(callback)` that this application calls gives one answer.** This was confirmed. The
+  fly-controller getters use `ParamsQueryPacket` and `sendPacket`. The camera getters use
+  `CameraHttpRequest`, which is an HTTP GET. The one getter with the shape of a subscription,
+  `getVisualSettingInfo`, was removed in the correction for finding 1.
+
+### Finding 5: the telemetry values can come from two different frames (severity: polish)
+
+**Where:** `AutelTakBridge.pushOnce()` copied `lat` and `lon` into local values but read `hae`,
+`relAlt`, `speedMs`, `headingDeg` and `batteryPct` directly. The listener writes them on the thread
+of the SDK.
+
+**What:** `@Volatile` makes each read atomic. It does not make a consistent group. Therefore one
+message can contain values from two different telemetry frames.
+
+**Why a pilot cares:** The effect is very small at 2 Hz, because the values change slowly. But it is
+a real data race on the data that the application sends most frequently.
+
+**Result: CLOSED, 3 August 2026.** `pushOnce` now copies each value that it uses into local values at
+the start. It also gives the gimbal copy to `pushCameraPoint`. Therefore the SPI and the position
+message describe the same telemetry frame.
+
+### Finding 6: the physical units were not confirmed (severity: should fix)
+
+**Where:** `AutelTakBridge` `ACC_DIVISOR = 1000.0`, with a comment that said "believed mm". Also
+`AutelAvoidance` radar distances, with a comment that said "believed CENTIMETRES, still not
+confirmed". The radar values go to `ObstacleEdgeView`.
+
+**What:** Two safety values, the GPS accuracy and the obstacle distance, used units that nobody had
+confirmed. If `ACC_DIVISOR` is wrong, the accuracy is wrong by 1000 times.
+
+**Why a pilot cares:** The obstacle distance especially. A pilot judges the clearance from it.
+
+**Result: CLOSED, 3 August 2026. No change to the code was necessary.**
+
+- *The radar units:* These were already confirmed in flight on 2 August 2026. `ObstacleEdgeView`
+  records that the operator flew the display against real obstacles. The comment in
+  `AutelAvoidance.logRadar` that said "not confirmed" was corrected.
+- *The GPS accuracy:* The values `horizAccM` and `vertAccM` are WRITTEN but never READ. There is no
+  display, no message and no other user. Therefore no unconfirmed unit reaches a pilot. The fields
+  now have a warning that a person must confirm `ACC_DIVISOR` on a bench BEFORE anyone uses them.
+  **The severity in the original finding was too high.** Nothing is shown to a pilot today.
+
+### Finding 7: delayed operations are not cancelled when the screen closes (severity: polish)
+
+**Where:** `FlightActivity`. `onPause` removes the refresh operation, but several
+`handler.postDelayed { … }` operations hold the camera and the context and are not removed in
+`onDestroy`.
+
+**What:** If the system destroys the screen inside one of these delay periods, the operations run
+against a dead activity.
+
+**Result: CLOSED, 3 August 2026.** `handler.removeCallbacksAndMessages(null)` was added to
+`FlightActivity.onDestroy`.
+
+## 4. Parts that are correct
+
+These parts were examined and are correct. This record stops a second review of them.
+
+- **`AutelAvoidance.readOnce` and `setSwitch`.** This is the correction for the wall strike. It is
+  correct. It uses an `AtomicBoolean` latch, and `setSwitch` deliberately does not start a reader
+  when it completes.
+- **`AutelAvoidance.applyAtConnect`.** It has a guard, it refuses to write while the aircraft is in
+  the air, and it writes only the switches that are wrong.
+- **`FlightLimitsController`.** It reads the range that the aircraft accepts before it writes. It
+  refuses a value outside that range. It reads the value again after it writes. **The other code
+  that writes to the aircraft must follow this model.**
+- **`AutelExposureController.logReadback`.** It reads what the camera applied. This finds a silent
+  change back to an old value.
+- **The correction of the sign conventions** for `relAlt` and the gimbal pitch. This is done one
+  time, when the data arrives, with full reasoning. **Do not make this simpler.**
+
+## 5. Later reviews of the parts not examined on 3 August
+
+**The `onDraw` code of the custom views: examined and corrected.** All eight flight views were
+examined. Most correctly keep their `Paint` and `RectF` objects as fields. Three made a new object
+for each frame. These were corrected:
+
+- **`ObstacleEdgeView`** (a safety display that draws at the radar rate): `Color.parseColor` for
+  each edge for each frame became two constants. A new `Path()` for each rear chevron became one
+  reused path. A `fontMetrics` read, which makes a new object, became one cached object.
+- **`LiveToggleView`**: a `RectF` and a `Paint` for each frame became fields.
+- **`CrosshairView`**: an array made for each frame became a field.
+
+This was checked on the device with the live obstacle radar. The red arc, the rear chevron and the
+crosshair all draw exactly as before.
+
+**The video pipeline: examined.** `AutelVideoStreamer`, `ScreenCaptureEncoder`,
+`ScreenCaptureService` and `VideoStreamerHolder` were examined. The screen-capture path is correct.
+
+One real fault was found in the aircraft-camera path, which no production code calls: a wrong
+detection of H.264 against H.265 in `sniffParameterSets`. That path was deleted, not corrected. This
+also removed the question about the codec and `AutelCodecView` operating at the same time.
+
+**The TAK network code, TLS and certificate enrollment: examined.** Read
+`REVIEW_2026-08-03_SECURITY.md`. The CoT parsing is safe from XXE. The application refuses an
+unencrypted connection. Two protection corrections were applied. Three findings were accepted as
+standard TAK behaviour.
+
+## 6. Summary
+
+| Severity | Count | Findings |
+|---|---|---|
+| Blocker | 1 | Finding 1 |
+| Should fix | 4 | Findings 2, 3, 4, 6 |
+| Polish | 2 | Findings 5, 7 |
+
+All are closed.
+
+The most important was finding 1. It was the same failure that caused an aircraft to hit a wall,
+through a second entry point, with no guard.
