@@ -1,77 +1,148 @@
-# TAKPilot2 Debug Logging — Dev Notes
+# Debug logging — development notes
 
-**Audience:** whoever maintains the DJI build of TAKPilot2. This describes a feature built for the Autel port and proposes how to bring it over to the DJI app. Not a spec — the Autel implementation is the reference; adapt package names/files to what actually exists on the DJI side.
+**Written in Simplified Technical English (ASD-STE100).**
 
-## 1. Intent
+**Who reads this:** the person who maintains the DJI build of TAKPilot2.
 
-Both apps replace the vendor flight app during TAK operations and run on hardware that isn't tethered to a laptop in the field (Smart Controller V3 for Autel; likely similar for whichever DJI RC this targets). `adb logcat` only works when a laptop is plugged in — exactly the condition that stops being true right when something goes wrong on site. The goals:
+This document describes a function that was built for the Autel port. It also tells you how to move
+the function to the DJI application. It is not a specification. The Autel code is the reference.
+Change the package names and the file names to agree with the DJI tree.
 
-- Capture **only our TAK/bridge code**, not full logcat — low noise, easy to read.
-- **Off by default**, so it costs nothing when not needed, and toggleable to two detail levels once it is needed.
-- **Crash capture**, but only while logging is turned on — not an always-on handler nobody asked for.
-- **Bounded** — the working copy the app itself reads is capped and swept, so it can't slowly fill a constrained device.
-- **Gettable off the device without adb** — a field session should be pullable by plugging in USB and opening Downloads, or emailing it straight from the app.
+## 1. Purpose
+
+Both applications replace the flight application of the manufacturer during TAK operations. They
+operate on hardware that has no connection to a computer in the field.
+
+`adb logcat` operates only when a computer is connected. This is not true at the time when a fault
+occurs on site.
+
+The function has these goals:
+
+- Record only the TAK code and the bridge code. Do not record the full logcat. The log is then
+  short and easy to read.
+- Stay off until a person sets it to on. It then has no cost when it is not necessary.
+- Give two levels of detail.
+- Record a crash, but only when logging is on.
+- Keep the file small. The application reads a working copy that has a limit and a sweep function.
+  The file cannot fill the device.
+- Let a person get the log without adb. A person can connect USB and open Downloads. A person can
+  also send the log by email from the application.
 
 ## 2. Architecture
 
-### 2.1 The `AppLog` facade
+### 2.1 The `AppLog` object
 
-A single object, `com.taklite.util.AppLog`, replaces scattered `android.util.Log` calls. It is **vendor-neutral** — JDK + Android framework only, no DJI/Autel SDK imports — so it lives comfortably next to `com.taklite.client.tak`, the existing vendor-neutral TAK layer, without breaking that package's "no SDK imports" rule. That also means **this exact file can likely be copied into the DJI tree verbatim.**
+One object, `com.taklite.util.AppLog`, replaces the `android.util.Log` calls.
 
-Every call always forwards to `android.util.Log` first (so `adb logcat` behaves identically to today), then conditionally writes to disk:
+`AppLog` uses only the JDK and the Android framework. It has no import from a manufacturer SDK.
+Therefore it can be next to `com.taklite.client.tak`, which has the same rule. **You can copy this
+file into the DJI tree with no change.**
+
+Each call goes to `android.util.Log` first. Therefore `adb logcat` operates as before. The call then
+writes to the disk if the controls permit it.
 
 ```kotlin
-AppLog.i(TAG, "message")   // info — state changes
-AppLog.w(TAG, "message")   // warning
-AppLog.e(TAG, "message", throwable)  // error, optional stack trace
-AppLog.d(TAG, "message")   // debug
-AppLog.v(TAG, "message")   // NEW: verbose/detail tier, see below
+AppLog.i(TAG, "message")             // information: a change of state
+AppLog.w(TAG, "message")             // warning
+AppLog.e(TAG, "message", throwable)  // error, with an optional stack trace
+AppLog.d(TAG, "message")             // debug
+AppLog.v(TAG, "message")             // detail level: read section 2.2
 ```
 
-### 2.2 Two-tier detail level
+### 2.2 Two levels of detail
 
-Two independent, persisted (`SharedPreferences`) booleans:
+Two independent values are kept in `SharedPreferences`.
 
-| Flag | UI label | Meaning |
+| Value | Label on the screen | Function |
 |---|---|---|
-| `AppLog.enabled` | "Logging enabled" | Master on/off. Nothing is written to disk when false. |
-| `AppLog.verbose` | "Detailed (all app functions)" | When true, also captures the `AppLog.v(...)` call sites. |
+| `AppLog.enabled` | "Logging enabled" | The main control. Nothing goes to the disk when this is false. |
+| `AppLog.verbose` | "Detailed (all app functions)" | When true, the application also records the `AppLog.v(...)` calls. |
 
-- **Standard** (`enabled=true`, `verbose=false`): only the log calls that already existed in the bridge/TAK code before this feature — telemetry listener errors, TAK connect/disconnect, cert enrollment, PLI/CoT send confirmations. Mostly state transitions and failures.
-- **Detailed** (`verbose=true`): additionally captures whole-app instrumentation added specifically for this feature — every screen's `onCreate`/`onResume`/`onPause`, every button tap, every toggle flip, marker-placed/sent/deleted events, a telemetry snapshot every ~5s, and a video-throughput summary every ~150 frames. This is what makes it possible to reconstruct "what did the user actually do" during a field session, not just "what broke."
+**Standard level** (`enabled=true`, `verbose=false`). This records only the calls that were in the
+bridge code and the TAK code before this function was built. These are the telemetry listener
+errors, the TAK connect and disconnect events, the certificate enrollment and the CoT send
+confirmations. These are changes of state and failures.
 
-Both flags are checked live on every call — flipping either takes effect immediately, no restart needed.
+**Detailed level** (`verbose=true`). This also records the instrumentation that was added for this
+function. It includes the `onCreate`, `onResume` and `onPause` of each screen, each button touch,
+each toggle change, the marker events, a telemetry record every 5 seconds and a video summary every
+150 frames. This level lets you see what the pilot did. The standard level only shows what failed.
 
-### 2.3 Two destinations, two lifetimes
+The application reads both values at each call. A change operates immediately. You do not start the
+application again.
 
-This is the part most worth preserving carefully when porting — it's not just "write to two places," the two copies serve different purposes:
+### 2.3 Two destinations with two different lifetimes
 
-**Private working copy** — `filesDir/logs/app.log`, size-capped (1MB) with rotation to timestamped files on overflow. This is what the in-app Debug screen reads and what "Clear"/"Delete" act on. It's also swept: any file in that directory older than 2 hours is deleted on app start and on opening the Debug screen. This keeps the live-view file small and keeps the controller from silently filling up with logs nobody's looking at.
+Keep this design when you do the port. The two copies have different purposes.
 
-**Public archive** — `Download/TAKPilot2 Logs/<name>.log`, written via `MediaStore.Downloads` on API 29+ (falls back to a direct `File` under `Environment.DIRECTORY_DOWNLOADS` below that, guarded by `android:requestLegacyExternalStorage="true"` in the manifest for API 29 specifically — Android 11+ ignores that flag and MediaStore is mandatory there anyway). A **new timestamped file per app process/session**, each individually capped at 1MB like the private copy. **Never touched by Clear/Delete** — those only affect the private working copy.
+**Private working copy.** The file is `filesDir/logs/app.log`. Its limit is 1 MB. When it is full,
+the application makes a new file with a time in its name. The Debug screen reads this file. The
+Clear button and the Delete button operate on this file. The application also deletes each file in
+that directory that is more than 2 hours old. It does this when the application starts and when a
+person opens the Debug screen. Therefore the live view stays small and the controller does not fill
+with old logs.
 
-This went through two design iterations worth recording. The first version made the archive permanent (never swept at all), meant to be a durable "look back through history" record. That was wrong: it created an unbounded-growth risk if an inattentive user left Detailed logging on — nothing was ever bounding the *total* folder size. A time-based sweep (matching the private copy's 2h-by-age approach) was considered next and also rejected: **age is a bad proxy for log volume**, since idle stretches produce little or no data — "2 hours" doesn't mean a consistent amount of log content.
+**Public archive.** The files are in `Download/TAKPilot2 Logs/`. The application uses `MediaStore
+.Downloads` on API 29 and higher. Below API 29 it writes a file directly in
+`Environment.DIRECTORY_DOWNLOADS`. The manifest has `android:requestLegacyExternalStorage="true"`
+for API 29. Android 11 and higher ignore that flag, and MediaStore is necessary there.
 
-What it landed on: **a total-size cap on the whole folder — `PUBLIC_ARCHIVE_MAX_BYTES`, currently 10MB —enforced whenever a new session file is created** (`enforcePublicArchiveCapMediaStore()` / `...Legacy()`), deleting the oldest files first (by `DATE_ADDED` on MediaStore, by `lastModified()` legacy) until back under the cap. This bounds disk usage directly regardless of how long logging is left on, without needing to reason about idle time at all. If you want a "nuke everything including the archive" button later, make it a distinct, clearly-labeled action — don't fold it into the existing Delete, which people expect to only affect what they're looking at.
+The application makes a new file with a time in its name for each session. Each file has a limit of
+1 MB. **The Clear button and the Delete button do not touch these files.**
 
-Both writes happen from the same `writeToFile()` call in `AppLog`, so they're always in sync — there's no separate "export" step required for the archive to exist; it's live from the first log line.
+The design of the archive changed two times. Record these steps:
+
+1. The first design kept the archive files for ever. This was not correct. If a person left the
+   detailed level on, the total size of the folder had no limit.
+2. A sweep by age was examined next and refused. **Age is a bad measure of log volume.** A quiet
+   period makes almost no data. Therefore "2 hours" is not a constant quantity of log content.
+3. The final design is **a limit on the total size of the folder**. The constant is
+   `PUBLIC_ARCHIVE_MAX_BYTES` and its value is 10 MB. The application applies the limit when it
+   makes a new session file. It deletes the oldest files first until the total is below the limit.
+   This controls the disk use directly. You do not have to think about quiet periods.
+
+If you add a button that deletes the archive, make it a separate button with a clear label. Do not
+put this function in the Delete button. A person expects Delete to operate only on the file that
+they can see.
+
+The same `writeToFile()` call writes to both destinations. Therefore the two are always in
+agreement. The archive does not need an export step. It exists from the first line.
 
 ### 2.4 Crash handler
 
-Installed in the `Application.onCreate()`, but layered so it doesn't disturb whatever crash handling already exists:
+Install the handler in `Application.onCreate()`. Put it around the handler that is already there.
 
 ```kotlin
 Thread.setDefaultUncaughtExceptionHandler(
     new AppLogCrashHandler(Thread.getDefaultUncaughtExceptionHandler()));
 ```
 
-`AppLogCrashHandler` writes the stack trace via `AppLog.writeCrash(thread, throwable)` **only if `AppLog.enabled` is true at the moment of the crash**, then unconditionally delegates to whatever handler was previously installed. On the Autel side there was already a legacy always-on crash writer (`TestApplication.EHandle`); wrapping around it this way meant zero behavior change to that existing path. **The DJI `DJIApplication.kt` doesn't appear to have a pre-existing crash handler**, which makes this simpler there — just install `AppLogCrashHandler` directly with `Thread.getDefaultUncaughtExceptionHandler()` as the fallback (the system default), no legacy handler to preserve.
+`AppLogCrashHandler` writes the stack trace with `AppLog.writeCrash(thread, throwable)`. It does
+this **only if `AppLog.enabled` is true at the time of the crash.** It then always calls the handler
+that was installed before it.
+
+The Autel application already had a crash writer that was always on (`TestApplication.EHandle`).
+This design does not change that path.
+
+The DJI `DJIApplication.kt` does not appear to have a crash handler. Therefore the DJI side is
+easier. Install `AppLogCrashHandler` with `Thread.getDefaultUncaughtExceptionHandler()` as the
+handler behind it. There is no older handler to keep.
 
 ### 2.5 Debug screen
 
-A single activity (`DebugActivity` on the Autel side), reached from a button on the home screen. Left column: two checkboxes (Logging enabled, Detailed), Export/Clear/Delete buttons, a small "Also archived to Downloads/TAKPilot2 Logs" note. Right side: a scrollable monospace view of the private working log, polling the file every second and re-rendering only when its length actually changed.
+The screen is one activity, `DebugActivity`. A button on the home screen opens it.
 
-Worth calling out because it wasn't obvious in the first pass: **don't force-scroll to the bottom on every poll tick.** The first version did `scrollView.fullScroll(FOCUS_DOWN)` unconditionally on every refresh, which fights anyone trying to scroll back through history — the view yanks itself back down within a second of the user scrolling up. The fix that held up under testing was an explicit touch-driven flag, not a geometry check re-derived each tick:
+The left column has two checkboxes (Logging enabled, Detailed), the Export, Clear and Delete
+buttons, and a note that says "Also archived to Downloads/TAKPilot2 Logs". The right side shows the
+private working log in a monospace view that a person can scroll. The screen reads the file each
+second. It draws the text again only when the length of the file changes.
+
+**Do not move the view to the bottom at each refresh.** The first version called
+`scrollView.fullScroll(FOCUS_DOWN)` at each refresh. This fought against a person who tried to read
+the earlier part of the log: the view moved back to the bottom in one second.
+
+The correct solution uses a value that a touch controls. It does not use a calculation of the
+position.
 
 ```kotlin
 private var pinnedToBottom = true
@@ -79,49 +150,81 @@ private var pinnedToBottom = true
 logScroll.setOnTouchListener { _, event ->
     if (event.action == MotionEvent.ACTION_DOWN) pinnedToBottom = false
     else if (event.action == ACTION_UP || event.action == ACTION_CANCEL) {
-        logScroll.postDelayed({ pinnedToBottom = isScrolledToBottom() }, 300) // let fling settle
+        logScroll.postDelayed({ pinnedToBottom = isScrolledToBottom() }, 300)
     }
-    false // don't consume — let ScrollView still handle the drag
+    false   // Do not consume the event. The ScrollView must still get the drag.
 }
 ```
 
-Auto-scroll only fires when `pinnedToBottom` is true. Touching the log at all clears it; scrolling back to the bottom yourself sets it again. A pure "am I near the bottom right now" geometry check, re-evaluated on every poll, turned out to be timing-sensitive — it worked in a quick test but produced a surprising unprompted snap-to-bottom later in the same session, almost certainly a layout-pass race after the view was fully laid out. The touch-driven flag sidesteps that class of bug entirely by tying the state to an explicit user action instead of inferred geometry.
+The automatic scroll operates only when `pinnedToBottom` is true. A touch on the log makes it false.
+When a person moves the view to the bottom, it becomes true again.
 
-Export uses a `FileProvider` (new `<provider>` entry + `res/xml/file_paths.xml`, since none existed) to hand the active private-copy file to the system share sheet — useful for emailing a log directly without hunting through Downloads.
+A calculation of "is the view near the bottom now" at each refresh does not work correctly. It
+passed a quick test. Later in the same session it moved the view to the bottom with no command from
+the person. The cause is almost certainly a layout race. A value that a touch controls does not have
+this class of fault, because an action of the person sets it.
 
-## 3. Key files (Autel reference implementation)
+Export uses a `FileProvider`. This needs a new `<provider>` entry and `res/xml/file_paths.xml`. It
+gives the active private file to the share function of the system. A person can then send a log by
+email.
 
-| File | Role |
+## 3. Files in the Autel reference code
+
+| File | Function |
 |---|---|
-| `com/taklite/util/AppLog.kt` | The whole facade — logging, both file sinks, rotation, retention, crash write. **Vendor-neutral, portable as-is.** |
-| `com/autel/sdksample/TestApplication.java` | `AppLog.init(this)` + crash handler installation in `onCreate()`. |
-| `com/autel/sdksample/tak/DebugActivity.kt` + `res/layout/activity_debug.xml` | The Debug screen. |
-| `AndroidManifest.xml` | `DebugActivity` registration, `FileProvider` entry, `requestLegacyExternalStorage`. |
-| `res/xml/file_paths.xml` | FileProvider path config for the export share-sheet. |
-| Every other `com.autel.sdksample.tak.*` file + all of `com.taklite.client.tak` | `Log.i/w/e/d` → `AppLog.i/w/e/d` (mechanical), plus new `AppLog.v(...)` calls added at UI action points for Detailed-tier coverage. |
+| `com/taklite/util/AppLog.kt` | The full object: logging, both file destinations, rotation, retention and the crash write. **It has no manufacturer code. You can move it with no change.** |
+| `com/autel/sdksample/TestApplication.java` | `AppLog.init(this)` and the crash handler installation in `onCreate()`. |
+| `com/autel/sdksample/tak/DebugActivity.kt` and `res/layout/activity_debug.xml` | The Debug screen. |
+| `AndroidManifest.xml` | The `DebugActivity` entry, the `FileProvider` entry and `requestLegacyExternalStorage`. |
+| `res/xml/file_paths.xml` | The FileProvider paths for the export function. |
+| The other `com.autel.sdksample.tak.*` files and all of `com.taklite.client.tak` | `Log.i/w/e/d` changed to `AppLog.i/w/e/d`. New `AppLog.v(...)` calls were added at the user-interface actions. |
 
-## 4. Porting to the DJI app — suggested approach
+## 4. How to do the port to the DJI application
 
-The DJI tree (`android-sdk-v5-sample`) already has the same `com.taklite.client.tak` package and an analogous `dji.sampleV5.aircraft.tak` vendor-facing layer (`DroneTakBridge.kt`, `DroneVideoStreamer.kt`, `TakConnectActivity.kt`, `TakDropMarkers.kt`, `TakMapMarkers.kt`, `TakMissionManager.kt`, `TakForegroundService.kt`, `TakAutoConnect.kt`), plus `TAKPilot2HomeActivity.kt`, `DataSyncActivity.kt`, and the flight screen (`DJIAircraftMainActivity.kt`) at the package root. That maps closely enough to the Autel side that this should be a mechanical port, not a redesign:
+The DJI tree already has the `com.taklite.client.tak` package. It also has an equivalent layer in
+`dji.sampleV5.aircraft.tak`. This is close to the Autel structure. Therefore this is a mechanical
+port. It is not a new design.
 
-1. **Copy `AppLog.kt` in as-is**, same package (`com.taklite.util`). No changes needed — it has no Autel-specific code anywhere.
-2. **Wire it into `DJIApplication.kt`**: `AppLog.init(this)` early in `onCreate()`, then install the crash handler. Since there's no pre-existing handler to preserve here, this is simpler than the Autel side — just:
+1. **Copy `AppLog.kt` with no change.** Use the same package, `com.taklite.util`.
+2. **Connect it in `DJIApplication.kt`.** Call `AppLog.init(this)` early in `onCreate()`. Then
+   install the crash handler:
    ```kotlin
    Thread.setDefaultUncaughtExceptionHandler(
        AppLogCrashHandler(Thread.getDefaultUncaughtExceptionHandler()))
    ```
-3. **Migrate existing `Log.*` calls** across `dji.sampleV5.aircraft.tak/*` and `com.taklite.client.tak/*` to `AppLog.*` — this is a pure find-replace (`Log.i(` → `AppLog.i(`, etc.) plus swapping the import, exactly like the Autel migration. This alone gives you the Standard tier.
-4. **Add the Debug screen**: port `DebugActivity.kt` + `activity_debug.xml` with package paths adjusted. Add the manifest `<provider>` entry + `file_paths.xml` for export, and `android:requestLegacyExternalStorage="true"` on `<application>`. Add a Debug button to `TAKPilot2HomeActivity.kt`'s button stack and wire the click listener.
-5. **Add Detailed-tier instrumentation** (`AppLog.v(...)` calls) at the DJI-side equivalents of what got instrumented on Autel:
-   - `TAKPilot2HomeActivity.kt`, `TakConnectActivity.kt`, `DataSyncActivity.kt`, `DJIAircraftMainActivity.kt` (the flight screen equivalent of `FlightActivity`): lifecycle methods + every button tap/toggle change.
-   - `TakDropMarkers.kt` / `TakMapMarkers.kt`: success-path logs for marker placed/sent/deleted (the pre-existing code there likely only logs failures, same as it was on Autel before this change).
-   - `DroneTakBridge.kt`: a periodic (every ~5s, not every tick) telemetry snapshot log — same rate-limiting reasoning as `AutelTakBridge`'s `logHudSnapshot()`, to avoid flooding Detailed mode at the bridge's native tick rate.
-   - `DroneVideoStreamer.kt`: a periodic frame-count/throughput summary (every ~150 frames), not per-frame — DJI's video path re-encodes via `MediaCodec` (per the handoff doc's §3.3), so the natural place to hook this is wherever that encoder emits buffers.
-6. **Verify the manifest `applicationId` vs `package` split** before hardcoding the FileProvider authority — the Autel app has `applicationId "com.tak.uastoollite"` while the manifest `package` is `com.autel.sdksample`, and the authority must use the *applicationId*. Check what the DJI build actually uses; don't assume they match.
-7. **Smoke test**: toggle on/off, toggle Standard vs Detailed and confirm the volume difference, confirm a real file appears in `Downloads/TAKPilot2 Logs` on-device, confirm Export opens the share sheet with a real attachment, confirm Clear/Delete only affect the private copy and the Downloads archive survives them, and confirm the archive folder actually stays capped (write past 10MB total and check oldest files get pruned).
+3. **Change the `Log.*` calls** in `dji.sampleV5.aircraft.tak/*` and `com.taklite.client.tak/*` to
+   `AppLog.*`. This is a find-and-replace operation and an import change. This gives you the
+   standard level.
+4. **Add the Debug screen.** Move `DebugActivity.kt` and `activity_debug.xml`. Change the package
+   paths. Add the `<provider>` entry, `file_paths.xml` and `android:requestLegacyExternalStorage=
+   "true"` on `<application>`. Add a Debug button to the home screen.
+5. **Add the detailed-level instrumentation.** Put `AppLog.v(...)` calls at the DJI equivalents of
+   the Autel positions:
+   - The home screen, the TAK connect screen, the data-sync screen and the flight screen: the
+     lifecycle methods, each button touch and each toggle change.
+   - `TakDropMarkers.kt` and `TakMapMarkers.kt`: logs for a marker that is placed, sent or deleted.
+     The code there probably logs only failures.
+   - `DroneTakBridge.kt`: a telemetry record every 5 seconds. Do not log at each tick. This is the
+     same rate limit that `AutelTakBridge.logHudSnapshot()` uses.
+   - `DroneVideoStreamer.kt`: a frame-count summary every 150 frames. Do not log each frame.
+6. **Examine the `applicationId` and the manifest `package` value** before you set the FileProvider
+   authority. The Autel application has the `applicationId` `com.tak.uastoollite` and the manifest
+   `package` `com.autel.sdksample`. **The authority must use the `applicationId`.** Examine the DJI
+   values. Do not assume that they are the same.
+7. **Do a test.** Set the log to on and to off. Change between the standard level and the detailed
+   level and confirm the difference in volume. Confirm that a file is in `Downloads/TAKPilot2 Logs`
+   on the device. Confirm that Export opens the share function with a real file. Confirm that Clear
+   and Delete operate only on the private copy and that the archive continues to exist. Write more
+   than 10 MB and confirm that the application deletes the oldest files.
 
-## 5. Open items / things to double check on the DJI side
+## 5. Items to examine on the DJI side
 
-- **API level assumptions**: this was built and tested against `minSdk 21` / `targetSdk 29`, with the legacy (`File`-based) Downloads write path present but only exercised in code review, not on a real API <29 device — the actual test hardware was API 29+, where MediaStore is the only path that ran. If the DJI build's `minSdk`/`targetSdk` differ meaningfully, re-check both storage branches.
-- **Archive cap size**: `PUBLIC_ARCHIVE_MAX_BYTES` (10MB) was picked as "comfortably more than a few hours of active Detailed-mode logging." If the DJI RC has meaningfully less free storage than the Autel controller, or Detailed mode there produces more volume per hour (e.g. denser telemetry, more UI instrumentation), reconsider the number — it's a single constant, not a big change.
-- **Naming collisions**: the Downloads subfolder name (`TAKPilot2 Logs`) is hardcoded as a shared constant — if both apps might ever run on the same physical device (unlikely, but worth a thought), consider a DJI/Autel-specific subfolder name instead of colliding into the same one.
+- **API levels.** This code was built and tested with `minSdk 21` and `targetSdk 29`. The test
+  hardware was API 29 or higher. Therefore only the MediaStore path operated. The legacy `File`
+  path was examined in a code review but was not tested on a device. If the DJI values are
+  different, test both paths.
+- **The size of the archive limit.** The value of `PUBLIC_ARCHIVE_MAX_BYTES` is 10 MB. This is more
+  than some hours of logging at the detailed level. If the DJI controller has less free storage, or
+  if its detailed level makes more data, change the value. It is one constant.
+- **The name of the folder.** The name `TAKPilot2 Logs` is one shared constant. If the two
+  applications can operate on the same device, use a different name for each application.
