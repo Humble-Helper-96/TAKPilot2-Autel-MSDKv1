@@ -370,6 +370,15 @@ class FieldGuideActivity : AppCompatActivity() {
                     "same marker on the screens of your team. It does not make a second one.",
                 "If you delete a marker, the app removes it from your screen only. It stays " +
                     "on the screens of your team for about 14 hours. Clear All is the same.",
+                "MARKERS THAT YOUR TEAM SENDS TO YOU STAY ON YOUR MAP. The app keeps them for " +
+                    "72 hours after the last time it receives them, and it keeps them when you " +
+                    "start the app again.\n\n" +
+                    "To remove one, touch it on the small map and select Delete. This removes " +
+                    "it from your aircraft only. It stays on the screens of your team.\n\n" +
+                    "A person who deletes a marker in a Data Sync mission also removes it from " +
+                    "your aircraft. A person who deletes a marker that is NOT in a mission does " +
+                    "not: that marker stays with you until the 72 hours end, or until you " +
+                    "delete it.",
             ),
         )
 
@@ -387,11 +396,13 @@ class FieldGuideActivity : AppCompatActivity() {
                 "- My Markers\n" +
                 "- Team Markers\n" +
                 "- Team Positions\n" +
-                "- Air Traffic\n" +
-                "- Weather\n\n" +
+                "- Air Traffic\n\n" +
                 "You can also set the range for air traffic to 2.5, 5 or 15 miles. If you " +
                 "set an item to off, the app removes it from the image immediately. The app " +
-                "always shows ground markers to 5 miles.",
+                "always shows ground markers to 5 miles.\n\n" +
+                "The app does not show METAR weather stations. Their content is in the " +
+                "remarks, which this app does not show, so a station is only a dot that you " +
+                "cannot read.",
             listOf(
                 "THE AR VIEW IS NOT ACCURATE FOR A POINT. It shows you the general area of " +
                     "a marker. It does not show an exact object.\n\n" +

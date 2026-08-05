@@ -27,7 +27,8 @@ object ArSettings {
     private const val KEY_OTHER_POSITIONS = "show_other_positions"
 
     private const val KEY_AIRCRAFT = "show_aircraft"
-    private const val KEY_WEATHER = "show_weather"
+    // KEY_WEATHER ("show_weather") is retired. METAR is dropped in CotParser now, so there is
+    // nothing for a toggle to hide. Any stored value is simply ignored.
 
     /**
      * What a category toggle refers to. Order here is the order shown in the options dialog.
@@ -41,23 +42,24 @@ object ArSettings {
         OTHER_MARKERS(KEY_OTHER_MARKERS, "Team Markers"),
         OTHER_POSITIONS(KEY_OTHER_POSITIONS, "Team Positions"),
         AIRCRAFT(KEY_AIRCRAFT, "Air Traffic"),
-        WEATHER(KEY_WEATHER, "Weather"),
+        // WEATHER removed (operator, 2026-08-04). METAR stations never reach the app now —
+        // CotParser drops them on the uid prefix — so the toggle controlled nothing. The AR
+        // options dialog builds its rows from this enum, so removing it removes the checkbox.
     }
 
     /**
      * Which category an inbound contact belongs to.
      *
      * Ordering matters — the checks run most-specific first:
-     *  1. **Weather** by uid prefix. METAR markers are `a-u-G`, indistinguishable by type from a
-     *     pilot-placed "unknown" marker, so the gateway's stable `METAR-<ICAO>` uid is the only
-     *     reliable discriminator.
-     *  2. **Aircraft** by the CoT type's third field being `A` (air) rather than `G` (ground) —
+     *  1. **Aircraft** by the CoT type's third field being `A` (air) rather than `G` (ground) —
      *     e.g. `a-f-A-C-F` for a civil fixed-wing from the ADS-B gateway.
-     *  3. Otherwise the existing ground split: a bare `a-{f,h,n,u}-G` is a placed marker,
+     *  2. Otherwise the existing ground split: a bare `a-{f,h,n,u}-G` is a placed marker,
      *     anything longer is an entity reporting its own position.
+     *
+     * METAR used to be checked first, by uid prefix. It no longer reaches this method — CotParser
+     * drops those events entirely.
      */
     fun categoryFor(uid: String?, type: String?): Category {
-        if (uid != null && uid.startsWith(METAR_UID_PREFIX)) return Category.WEATHER
         val parts = type?.split("-").orEmpty()
         if (parts.size >= 3 && parts[0] == "a" && parts[2] == "A") return Category.AIRCRAFT
         return if (TakMapMarkers.milMarkerRes(type) != null) {
@@ -80,8 +82,6 @@ object ArSettings {
         return parts.size >= 3 && parts[0] == "a" && parts[2] == "G"
     }
 
-    /** Set by the operator's METAR gateway as `METAR-<ICAO>`; see its runbook. */
-    private const val METAR_UID_PREFIX = "METAR-"
 
     /**
      * ADS-B ceiling: air traffic reported ABOVE this is not drawn, on the map or in AR.
@@ -127,10 +127,6 @@ object ArSettings {
      */
     private const val GROUND_RANGE_M = 5.0 * METERS_PER_MILE
 
-    /** Airport weather stations are sparse and the nearest one is worth seeing however far it
-     *  is, so METAR keeps the widest fixed horizon rather than following [AirRange]. */
-    private const val WEATHER_RANGE_M = 15.0 * METERS_PER_MILE
-
     private const val KEY_AIR_RANGE = "air_range_mi"
 
     /**
@@ -174,7 +170,6 @@ object ArSettings {
      */
     fun rangeMeters(context: Context, category: Category): Double = when (category) {
         Category.AIRCRAFT -> airRange(context).meters
-        Category.WEATHER -> WEATHER_RANGE_M
         else -> GROUND_RANGE_M
     }
 

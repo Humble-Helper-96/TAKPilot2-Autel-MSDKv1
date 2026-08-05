@@ -6,7 +6,7 @@
 Smart Controller V3)
 **Application ID:** `com.tak.uastoollite`
 **Application key:** Set in `TestApplication.java`. Registered in July 2026.
-**Updated:** 4 August 2026 (v1.5.2)
+**Updated:** 4 August 2026 (v1.5.3)
 
 ## 1. Scope
 
@@ -113,7 +113,79 @@ error on 4 August 2026 was 12.2 m. This put a contact icon 2.3 degrees too high.
 A contact that has a GROUND type is on the terrain. Therefore DTED is the better source. DTED is
 also consistent in MSL. It does not mix two datums.
 
-## 8. Calibration items
+## 8. Markers that other users share
+
+**A shared marker stays. It does not go away on a timeout.**
+
+Before v1.5.3 a shared marker was removed after approximately 10 minutes. CloudTAK sends a marker
+with a `stale` time only **3.6 seconds** after its `start` time. The parser increased that to 5
+minutes, and the stale sweep deleted the marker 5 minutes later. The sweep tested neither the CoT
+type nor the `archived` marker, so it removed shared markers, team positions and ADS-B tracks in
+the same way.
+
+### 8.1 How the application identifies a marker
+
+**It uses the `archived` marker that the sender puts on the wire.** It does not use the CoT type.
+
+A capture of 605 inbound events on the live net on 4 August 2026 gave this:
+
+| Count | Type | archived | What it is |
+|---|---|---|---|
+| 552 | `a-f-A-C-F` | false | ADS-B aircraft |
+| 31 | `a-f-G-E-V-C` | false | CloudTAK users |
+| 10 | `a-f-G-E-V` | false | ADS-B ground vehicles |
+| 2 | `a-f-G-U-C` | false | team positions |
+| 1 | `a-u-G` | **true** | a placed marker |
+| 1 | `a-f-G` | **true** | a placed marker |
+
+Only the two placed markers have the flag, and they come from two different clients.
+
+**A test of the CoT type alone cannot do this work.** CloudTAK sends its own users as
+`a-f-G-E-V-C`, which each type rule reads as a marker. A type rule made 152 of the 155 stored
+entries permanent, which included each user who had connected.
+
+Air tracks, position reports and sensor points (`b-m-p-s-p-*`) are refused BEFORE the `archived`
+test. Therefore a sender cannot make one of them permanent.
+
+**The cost:** a client that does not set `archived` gets no persistence. Its markers go away as
+before. This is the safe direction. The opposite default is retention with no limit, which stopped
+the application in the air on 3 August 2026.
+
+### 8.2 The limits on the store
+
+- A marker goes away after **72 hours** with no update.
+- The application keeps a maximum of **1000** markers. It removes the oldest first.
+- A marker that comes back from the disk does not change its `lastSeen` time. If it did, the 72
+  hours could never end.
+- Entries that a build before v1.5.3 saved are tested again. That build also saved platforms and
+  live clients.
+
+### 8.3 METAR weather stations
+
+**The application removes them when they arrive.** A pilot cannot use them: their content is in
+`<remarks>`, which this application does not show.
+
+They were also kept on the disk. **136 of the 155 saved entries were weather stations.** A control
+that only hides them at the screen does not remove that cost. The Weather control is deleted from
+the AR menu.
+
+### 8.4 How to see a problem
+
+The log gives this line every 30 seconds:
+
+```
+contacts held: 38 total, 3 persistent
+```
+
+- `total` must move up and down with the real picture. It must not increase for the full session.
+  This number was 161 when the application stopped for memory on 3 August 2026.
+- `persistent` must be the number of markers that your team has shared. If it increases with air
+  traffic, the rule has a fault.
+
+Measured on 4 August 2026 across 30 minutes: `total` moved between 36 and 47, `persistent` stayed
+at 3, and the memory stayed level.
+
+## 9. Calibration items
 
 The flight-test checklist (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed on 3 August 2026.
 
@@ -126,7 +198,7 @@ The flight-test checklist (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed on 3
 | Field of view | `EO_HFOV`, `IR_HFOV` | Fallback values only. The camera supplies the operational value. Read section 5. |
 | HAE altitude | `AutelTakBridge` | Compare with a known HAE value. |
 
-## 9. Divergences from the project guide
+## 10. Divergences from the project guide
 
 - **Certificate storage.** Enrollment certificates are `.p12` files in the application-private
   `filesDir`. They are not in the Android Keystore. Application-private storage on a controller
@@ -135,7 +207,7 @@ The flight-test checklist (`FLIGHT-TEST-CHECKLIST.md`) was flown and passed on 3
   the saved certificates. A person must do the re-enrollment when the certificates expire. Add
   this function before a fleet deployment if your server issues certificates with a short life.
 
-## 10. Architecture notes
+## 11. Architecture notes
 
 - `AutelProductHolder` controls the one global `Autel.setProductConnectListener` slot. It installs
   the listener again at each `onResume` of the Home screen and the Flight screen. The

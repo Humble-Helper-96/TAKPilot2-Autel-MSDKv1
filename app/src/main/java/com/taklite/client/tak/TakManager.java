@@ -79,7 +79,20 @@ public class TakManager implements TakClient.TakClientListener {
 
     public interface TakUserListener {
         void onTakUserUpdated(TakUser user);
+        /**
+         * The contact aged out. It may still be held somewhere durable (a saved marker), so a
+         * listener may legitimately keep showing it — see TakMapMarkers.
+         */
         void onTakUserRemoved(String uid);
+        /**
+         * The network EXPLICITLY deleted this item (a `t-x-d-d`), as opposed to it merely ageing
+         * out. Forget it for good, including any persisted copy.
+         *
+         * The distinction is the whole point of the persistent-marker work: a timeout must not
+         * remove a shared marker, but a real delete must — otherwise a marker the team has
+         * retracted lives on this aircraft for ever.
+         */
+        void onTakUserDeleted(String uid);
         void onTakConnectionChanged(boolean connected);
     }
 
@@ -128,6 +141,22 @@ public class TakManager implements TakClient.TakClientListener {
     public String getTrustStorePassword() { return trustStorePassword; }
     public String getClientCertPath() { return clientCertPath; }
     public String getClientCertPassword() { return clientCertPassword; }
+
+    /**
+     * Puts a marker restored from durable storage back into the live contact map, so views that
+     * read {@link #getTakUsers()} can see it.
+     *
+     * Needed because the AR overlay iterates that collection directly, while the map keeps its own
+     * saved-marker store — so a marker restored at map-open was drawn on the map and invisible in
+     * AR. It also matters for deletes: a `t-x-d-d` is matched against this map.
+     *
+     * Does NOT overwrite an existing entry — a live CoT is always better than a saved copy — and
+     * does not notify listeners, because the caller is the thing that restored it.
+     */
+    public void restorePersistentUser(TakUser user) {
+        if (user == null || user.getUid() == null) return;
+        takUsers.putIfAbsent(user.getUid(), user);
+    }
 
     public TakUser findUserByUid(String uid) {
         return takUsers.get(uid);
@@ -415,11 +444,26 @@ public class TakManager implements TakClient.TakClientListener {
             if (disconnectedUid != null) {
                 AppLog.d(TAG, "User disconnected: " + disconnectedUid);
                 TakUser user = takUsers.get(disconnectedUid);
-                if (user != null) {
+                if (user != null && !user.isPersistent()) {
+                    // A client went away. Backdate its stale time and let removeStaleUsers()
+                    // collect it, so it greys before it disappears.
                     user.setStaleTime(System.currentTimeMillis() - 1);
                     mainHandler.post(() -> {
                         synchronized (listeners) {
                             for (TakUserListener l : listeners) l.onTakUserUpdated(user);
+                        }
+                    });
+                } else {
+                    // A `t-x-d-d` is also TAK's DELETE for a map item. Persistent items are exempt
+                    // from the stale sweep, so backdating would never remove them — delete here.
+                    //
+                    // Fired even when the uid is NOT in takUsers: a marker restored from the saved
+                    // store may not be in memory as a contact, and the team deleting it must still
+                    // clear the persisted copy. Listeners treat this as "forget it for good".
+                    takUsers.remove(disconnectedUid);
+                    mainHandler.post(() -> {
+                        synchronized (listeners) {
+                            for (TakUserListener l : listeners) l.onTakUserDeleted(disconnectedUid);
                         }
                     });
                 }
@@ -484,11 +528,47 @@ public class TakManager implements TakClient.TakClientListener {
         });
     }
 
+    /**
+     * Drops contacts whose stale window has passed.
+     *
+     * ⚠ PERSISTENT ITEMS ARE EXEMPT FROM DELETION. A marker somebody shared is not a track: it does
+     * not re-broadcast on a heartbeat, and a sender may declare a stale window that is useless
+     * (CloudTAK sends ~3.6 s). Deleting on a timeout made shared markers vanish within minutes of
+     * arriving. They still go stale — the icon greys — but only an explicit delete, a local delete
+     * or the 72-hour eviction in TakMapMarkers removes them.
+     *
+     * ⚠ THIS EXEMPTION MUST NEVER REACH AIR TRACKS. Unbounded contact retention is what OOM-killed
+     * the flight app in the air on 2026-08-03. {@link CotParser#isPersistentType} is where that is
+     * enforced; read it before widening what counts as persistent.
+     */
     private void removeStaleUsers() {
+        // RETENTION WATCHDOG. This count is the number that mattered on 2026-08-03: the map held
+        // 161 distinct aircraft while the live picture showed a handful, and the process was
+        // OOM-killed in the air. It is cheap (one line per 30 s sweep) and it is the only thing
+        // that makes a slow retention leak visible before it becomes a crash.
+        //
+        // What to look for: `total` should oscillate around the size of the real picture, not
+        // climb steadily over a session. `persistent` should track the number of markers actually
+        // shared with this aircraft — if it grows with air traffic, the persistence rule has
+        // sprung a leak. See CotParser.isPersistentType.
+        int persistentCount = 0;
+        for (TakUser u : takUsers.values()) if (u != null && u.isPersistent()) persistentCount++;
+        AppLog.i(TAG, "contacts held: " + takUsers.size() + " total, "
+                + persistentCount + " persistent");
+
         for (String key : takUsers.keySet()) {
             TakUser user = takUsers.get(key);
             if (user != null) {
-                if (user.isExpired()) {
+                if (user.isPersistent()) {
+                    // Still notify while stale so the icon can grey — just never remove.
+                    if (user.isStale()) {
+                        mainHandler.post(() -> {
+                            synchronized (listeners) {
+                                for (TakUserListener l : listeners) l.onTakUserUpdated(user);
+                            }
+                        });
+                    }
+                } else if (user.isExpired()) {
                     takUsers.remove(key);
                     mainHandler.post(() -> {
                         synchronized (listeners) {

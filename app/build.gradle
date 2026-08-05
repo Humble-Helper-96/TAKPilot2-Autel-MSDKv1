@@ -118,8 +118,42 @@ android {
         //        under the aircraft position; the clock matches the rest of the HUD. The AR
         //        overlay draws semi-transparent. The obstacle radar's TOP face was drawing under
         //        the toolbar and could not be read -- it now clears it.
-        versionCode 8
-        versionName "1.5.2"
+        // 1.5.3: Markers that other users share now stay. Before this, a marker was removed after
+        //        approximately 10 minutes. CloudTAK sends a marker with a stale time only 3.6
+        //        SECONDS after its start time. The parser increased that to 5 minutes, and the
+        //        stale sweep then deleted the marker 5 minutes later. The sweep had no test of the
+        //        CoT type and no test of the `archived` marker, so it removed shared markers, team
+        //        positions and ADS-B tracks in the same way.
+        //
+        //        A MARKER IS NOW IDENTIFIED BY THE `archived` MARKER ON THE WIRE. A capture of 605
+        //        inbound events on the live net gave this: 552 ADS-B aircraft, 31 CloudTAK users,
+        //        10 ADS-B ground vehicles and 2 team positions all had archived=false. Only the 2
+        //        placed markers had archived=true, and they came from two different clients.
+        //        Therefore `archived` is necessary. A test of the CoT type alone cannot do this
+        //        work: CloudTAK sends its own users as `a-f-G-E-V-C`, which each type rule reads as
+        //        a marker. Air tracks, position reports and sensor points are refused before the
+        //        `archived` test, so a sender cannot make one of them permanent.
+        //
+        //        METAR WEATHER STATIONS ARE REMOVED AT THE PARSER. A TAKPilot pilot cannot use
+        //        them: their content is in <remarks>, which this application does not show. They
+        //        were also kept on the disk -- 136 of the 155 saved entries were weather stations.
+        //        The application now removes them when they arrive, removes the entries that
+        //        earlier builds saved, and the Weather control is deleted from the AR menu.
+        //
+        //        THE SAVED-MARKER STORE HAS A LIMIT. It had no limit, no age and no removal. Each
+        //        marker now has a `lastSeen` time. The application removes a marker after 72 hours
+        //        with no update, and it keeps a maximum of 1000. Entries that an earlier build
+        //        saved are tested again, because that build also saved platforms and live clients.
+        //
+        //        A NEW LINE IN THE LOG REPORTS THE NUMBER OF CONTACTS HELD, every 30 seconds. This
+        //        is the number that was 161 when the application was stopped for memory in the air
+        //        on 2026-08-03. A slow increase in it is now visible before it becomes a failure.
+        //
+        //        Also: an explicit delete from the network (`t-x-d-d`) removes a marker from the
+        //        disk as well as from the screen. A marker that comes back from the disk is put
+        //        into the live contact list, so the AR overlay can see it.
+        versionCode 9
+        versionName "1.5.3"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

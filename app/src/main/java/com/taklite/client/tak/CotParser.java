@@ -15,6 +15,15 @@ import java.util.TimeZone;
 public class CotParser {
     private static final String TAG = "CotParser";
     private static final long MIN_STALE_DURATION_MS = 300000; // 5 min minimum stale window
+
+    /**
+     * Uid prefix the operator's METAR gateway stamps on every weather station (`METAR-<ICAO>`).
+     *
+     * The uid is the only reliable discriminator: a station's type is `a-u-G`, which is identical
+     * to a pilot-placed "unknown" marker. Mirrored in {@code ArSettings} for the AR category that
+     * used to hide them; this parser now drops them before anything sees them.
+     */
+    private static final String METAR_UID_PREFIX = "METAR-";
     private static final SimpleDateFormat COT_DATE_FORMAT;
 
     static {
@@ -57,6 +66,9 @@ public class CotParser {
             double sensorFov = -1, sensorAzimuth = -1, sensorRange = -1;
             double course = -1;   // <track course>, degrees true; -1 = not reported
             String operatorUid = null;
+            boolean archived = false;    // <archived/> in detail — see isPersistentType
+            boolean hasTakv = false;     // <takv> = a live TAK CLIENT announcing itself
+            boolean hasEndpoint = false; // <contact endpoint=…> = reachable, i.e. also a client
 
             for (int eventType = parser.getEventType(); eventType != XmlPullParser.END_DOCUMENT; eventType = parser.next()) {
                 if (eventType == XmlPullParser.START_TAG) {
@@ -77,6 +89,18 @@ public class CotParser {
                                 || type.startsWith("b-g-");  // geofence/marker variants
                         if (!positional) return null;
                         uid = parser.getAttributeValue(null, "uid");
+                        // METAR WEATHER STATIONS ARE DROPPED AT THE DOOR (operator, 2026-08-04).
+                        //
+                        // The ADS-B feed carries METAR alongside the aircraft. A TAKPilot pilot
+                        // cannot use them: the content is in <remarks>, which this app does not
+                        // parse or display, so a station is an unreadable dot competing for
+                        // attention with traffic that matters.
+                        //
+                        // Dropping here rather than hiding at draw time is the point. They were
+                        // being stored and PERSISTED: 136 of the 155 entries in the saved-marker
+                        // file were METAR stations, which is most of that file. A view-level
+                        // toggle leaves that cost in place.
+                        if (uid != null && uid.startsWith(METAR_UID_PREFIX)) return null;
                         String staleStr = parser.getAttributeValue(null, "stale");
                         if (staleStr != null) {
                             staleTime = parseTime(staleStr);
@@ -103,8 +127,11 @@ public class CotParser {
                         lat = parseDouble(parser.getAttributeValue(null, "lat"));
                         lon = parseDouble(parser.getAttributeValue(null, "lon"));
                         alt = parseDouble(parser.getAttributeValue(null, "hae"));
+                    } else if ("takv".equals(tag)) {
+                        hasTakv = true;
                     } else if ("contact".equals(tag)) {
                         callsign = parser.getAttributeValue(null, "callsign");
+                        hasEndpoint = parser.getAttributeValue(null, "endpoint") != null;
                     } else if ("__group".equals(tag)) {
                         team = parser.getAttributeValue(null, "name");
                         role = parser.getAttributeValue(null, "role");
@@ -121,6 +148,11 @@ public class CotParser {
                         // lets the map draw an aircraft symbol pointing where the aircraft is
                         // actually going instead of an arbitrary direction.
                         course = parseDouble(parser.getAttributeValue(null, "course"));
+                    } else if ("archived".equals(tag) || "archive".equals(tag)) {
+                        // TAK's "persist this, it is not a transient track" marker. An empty
+                        // element in <detail>. Spelled both ways across clients, so accept both.
+                        // Corroborating signal only — see isPersistentType.
+                        archived = true;
                     } else if ("link".equals(tag)) {
                         String relation = parser.getAttributeValue(null, "relation");
                         if ("p-p".equals(relation)) {
@@ -138,6 +170,18 @@ public class CotParser {
 
             TakUser user = new TakUser(uid, callsign, lat, lon, alt, team, role, staleTime);
             user.setType(type);   // raw CoT type, used to resolve the map symbol/icon
+            user.setPersistent(isPersistentType(type, archived));
+
+            // Retention diagnostic — AIR DOMAIN EXCLUDED ON PURPOSE.
+            //
+            // Logging every event flooded the log: ADS-B alone produced 552 events in one capture
+            // and rotated the 1 MB file every ~4 minutes, which destroyed the very history being
+            // diagnosed. Air tracks can never be persistent, so they tell this line nothing.
+            if (!isAirDomain(type)) {
+                AppLog.v(TAG, "rx type=" + type + " uid=" + uid + " cs=" + callsign
+                        + " archived=" + archived + " takv=" + hasTakv + " endpoint=" + hasEndpoint
+                        + " persistent=" + user.isPersistent());
+            }
 
             // Detect drone: type contains "-A-" (Air domain, e.g. a-f-A-M-H-Q)
             if (isAirDomain(type)) {
@@ -237,6 +281,106 @@ public class CotParser {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * True for a SHARED MARKER — a point somebody placed deliberately, as opposed to a position
+     * report that a client re-broadcasts.
+     *
+     * Two families:
+     *  - `a-{f,h,n,u}-G…` that is NOT the `-G-U-…` unit form. These are MIL-STD-2525 affiliation
+     *    markers. CloudTAK sends its map points this way (observed: `a-n-G`).
+     *  - `b-m-p-*` — the classic ATAK/iTAK map point, waypoint and marker types.
+     *
+     * ⚠ MUST AGREE WITH {@code TakMapMarkers.milMarkerRes}, which maps the first family onto its
+     * 2525 frame drawable. That method is the icon side of the same question; this is the
+     * retention side. If one changes, change both.
+     */
+    public static boolean isMarkerType(String type) {
+        if (type == null) return false;
+        if (isUnitType(type)) return false;
+        if (isTransientPoint(type)) return false;
+        if (type.startsWith("b-m-p-")) return true;
+        String[] parts = type.split("-");
+        if (parts.length < 3 || !"a".equals(parts[0]) || !"G".equals(parts[2])) return false;
+        return "f".equals(parts[1]) || "h".equals(parts[1])
+                || "n".equals(parts[1]) || "u".equals(parts[1]);
+    }
+
+    /**
+     * A unit / position report — `a-?-?-U-…`. A person or vehicle reporting where it is.
+     *
+     * Never persistent, whatever the sender flags. A teammate who goes off the net must fade;
+     * an immortal PLI is a person shown somewhere they are not.
+     */
+    private static boolean isUnitType(String type) {
+        if (type == null) return false;
+        String[] parts = type.split("-");
+        return parts.length >= 4 && "a".equals(parts[0]) && "U".equals(parts[3]);
+    }
+
+    /**
+     * A point that is continuously RE-DERIVED rather than placed — currently the sensor
+     * point-of-interest family `b-m-p-s-p-*`, which is where a camera is looking right now.
+     *
+     * Never persistent. An SPI is republished every couple of seconds with a short stale window
+     * and is meaningless once the aircraft lands; keeping one for 72 hours would leave a camera
+     * cue on the map pointing at nothing. Note `b-m-p-s-m` — a placed spot marker — is a
+     * different thing and IS persistent.
+     */
+    private static boolean isTransientPoint(String type) {
+        return type != null && type.startsWith("b-m-p-s-p-");
+    }
+
+    /**
+     * True when this event should survive the stale sweep — see {@code TakManager.removeStaleUsers}.
+     *
+     * A marker shared to this aircraft is not a track. It does not re-broadcast on a heartbeat, and
+     * a sender may set a stale window that is useless: CloudTAK sends its markers with `stale` only
+     * ~3.6 SECONDS after `start`, so honouring it deleted them within minutes of arriving. Such an
+     * item leaves on an explicit delete, on a local delete, or on the 72-hour eviction in
+     * {@code TakMapMarkers} — never on a timeout.
+     *
+     * ⚠ AIR DOMAIN IS EXCLUDED, AND THAT EXCLUSION IS A SAFETY GUARD, NOT A TIDINESS RULE.
+     * Unbounded contact retention is what OOM-killed the flight app in the air on 2026-08-03: the
+     * known-contacts map held 161 distinct aircraft while the live picture showed a handful. Air
+     * tracks report constantly and declare an honest short stale window; they MUST keep expiring.
+     * Do not relax this to "anything with the archived flag" — an ADS-B gateway that sets that flag
+     * would reproduce the crash.
+     *
+     * @param archived whether the sender marked the event archived (see the parse loop). Treated as
+     *                 a corroborating signal only — the type test carries the decision, because it
+     *                 is not confirmed that every sending client puts the flag on the wire.
+     */
+    public static boolean isPersistentType(String type, boolean archived) {
+        // ARCHIVED IS REQUIRED, AND THE TYPE STRING IS NOT TRUSTED ON ITS OWN.
+        //
+        // Measured on the operator's live net, 2026-08-04 — 605 consecutive inbound events:
+        //
+        //   552  a-f-A-C-F    archived=false   ADS-B aircraft
+        //    31  a-f-G-E-V-C  archived=false   CloudTAK USERS (live clients, re-broadcasting)
+        //    10  a-f-G-E-V    archived=false   ADS-B ground vehicles (ICAO-… uids)
+        //     2  a-f-G-U-C    archived=false   team PLI
+        //     1  a-u-G        archived=TRUE    a placed marker
+        //     1  a-f-G        archived=TRUE    a placed marker
+        //
+        // Only the two placed markers carry the flag, and they came from two different clients.
+        // A type test cannot do this job: `a-f-G-E-V` (an ADS-B ground vehicle) and `a-f-G` (a
+        // marker) differ only by a suffix, and `a-f-G-E-V-C` — CloudTAK's own users — reads as a
+        // marker by every type rule that also accepts `a-f-G`. Trusting the type made 152 of 155
+        // stored entries immortal, including every user who had ever connected.
+        //
+        // ⚠ THE TRADE: a client that does not set `archived` gets no persistence — its markers
+        // expire as they always did. That is the SAFE direction to fail. The opposite default
+        // (persist unless told otherwise) is unbounded retention, which is what OOM-killed the
+        // flight app in the air on 2026-08-03.
+        if (!archived) return false;
+        // Belt and braces: a sender that sets `archived` on a track, a position report or a
+        // sensor point must not be able to make it immortal.
+        if (isAirDomain(type)) return false;
+        if (isUnitType(type)) return false;
+        if (isTransientPoint(type)) return false;
+        return true;
     }
 
     /**

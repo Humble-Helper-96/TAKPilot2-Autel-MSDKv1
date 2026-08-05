@@ -189,6 +189,55 @@ First go to a stable hover at 10 ft to 20 ft. Confirm the basic functions. Then 
       **Pass:** The application starts again at the Home screen. It does not start at a frozen flight
       screen. If you see a flight screen with a dead HUD, keep the log.
 
+## 7A. Markers that other users share
+
+You can do these checks on the ground. The aircraft does not have to fly. You need a second client
+(CloudTAK, ATAK or iTAK) on the same server.
+
+- [ ] **M1 · A shared marker stays.** Send a marker from the second client. Keep the flight screen
+      open for a minimum of 15 minutes.
+      **Pass:** The marker is still on the map. Before v1.5.3 it went away after approximately 10
+      minutes.
+
+- [ ] **M2 · A shared marker comes back.** Stop the application. Start it again. Open the flight
+      screen.
+      **Pass:** The marker is on the map again. The log gives
+      `map ready: restoring N saved marker(s)` and one `restored saved marker:` line for each one.
+
+- [ ] **M3 · A team position still goes away.** Let a team member connect and then disconnect.
+      **Pass:** Their symbol becomes grey and then it goes away. A marker that stays must not make
+      the positions of people stay.
+
+- [ ] **M4 · The number of contacts does not increase.** With ADS-B traffic, keep the application
+      open for a minimum of 30 minutes. Look at this line in the log:
+      ```
+      contacts held: 38 total, 3 persistent
+      ```
+      **Pass:** `total` moves up and down with the real picture. It does not increase for the full
+      time. `persistent` is the number of markers that your team has shared, and it does not
+      increase.
+      **This is the most important check in this section.** This number was 161 when the
+      application was stopped for memory in the air on 3 August 2026.
+
+- [ ] **M5 · METAR does not come.** With the ADS-B feed on, look at the map and the saved-marker
+      file.
+      **Pass:** There is no weather station. The AR menu has no Weather control.
+
+- [ ] **M6 · A delete from the network removes the marker.** Put a marker in a Data Sync mission
+      from the second client, then delete it there.
+      **Pass:** The marker goes away from the aircraft, and it does not come back after you start
+      the application again.
+      **⚠ NOT YET TESTED (4 August 2026).** A delete of a marker that is NOT in a mission does not
+      go on the network — CloudTAK removes it only from itself — so that method cannot test this.
+
+- [ ] **M7 · The 72-hour limit.** You cannot wait 72 hours. Test it in this way instead:
+      1. Stop the application.
+      2. Change the `seen` value of one marker in
+         `shared_prefs/takpilot2_recv_markers.xml` to 73 hours in the past.
+      3. Start the application and open the flight screen.
+      **Pass:** The log gives `evicted 1 marker(s) unseen for 72h`, that marker goes away, and the
+      others stay.
+
 ## 8. After the flight
 
 - [ ] Go to Debug Log. Touch **Export**. The application also puts a copy in
@@ -210,6 +259,9 @@ First go to a stable hover at 10 ft to 20 ft. Confirm the basic functions. Then 
 | The aircraft has a ground symbol | `DRONE_TYPE` (`a-f-A-M-H-Q`) | `CotBuilder.java` | Yes |
 | The RTH altitude will not go below 82 ft | This is the aircraft floor of 25 m. It is not a fault. | — | — |
 | The zoom level is not correct after a reconnect | This is corrected in v1.5.2. The zoom scale is now absolute. | — | — |
+| A marker that your team shared goes away | The sender must set `archived`. Look for `persistent=` in the `rx type=` line of the log. | `CotParser.isPersistentType` | Yes |
+| The number of contacts increases for the full session | A retention fault. Read `contacts held:` in the log. | `CotParser.isPersistentType` | Yes |
+| A METAR weather station is on the map | It must not arrive. Examine the uid prefix test. | `CotParser` | Yes |
 
 ## 10. Items that this checklist does not cover
 
