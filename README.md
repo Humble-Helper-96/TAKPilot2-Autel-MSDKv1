@@ -1,108 +1,155 @@
 # TAKPilot2 — Autel Mobile SDK v1 port
 
-TAKPilot2 for the **Autel EVO II Dual 640T V3 / Smart Controller V3**, built on **Autel Mobile
-SDK v1.x**. The app flies the aircraft, streams live position/attitude/battery to a TAK server as
-CoT, pushes the flight screen to a media server as RTSP, drops and manages TAK markers, and
-projects markers onto the live video as an AR overlay.
+**Written in Simplified Technical English (ASD-STE100).**
 
-This is the Autel-hardware sibling of the [DJI MSDK v4 port](https://github.com/Humble-Helper-96/TAKPilot2-DJI-MSDKv4).
-Rather than a literal port, the SDK-agnostic core (TAK client, CoT build/parse, cert enrollment,
-channel scoping) is reused unchanged, and every aircraft-touching piece was written against Autel
-MSDK v1.x — a **listener-only** SDK with no synchronous polling, which drove a different telemetry,
-camera and video design from the DJI side.
+TAKPilot2 for the Autel EVO II Dual 640T V3 and the Smart Controller V3. It uses Autel Mobile SDK
+v1.x.
 
-**Flight-validated on hardware, 2026-08-03** (see `FLIGHT-TEST-CHECKLIST.md`).
+The application does these functions:
 
-## Where the code is
+- It flies the aircraft.
+- It sends the position, the attitude and the battery state to a TAK server as CoT.
+- It sends the flight screen to a media server as RTSP.
+- It puts TAK markers on the map and controls them.
+- It draws markers on the live video as an augmented-reality (AR) overlay.
 
-This tree is Autel's stock EVO II MSDK sample app with the TAKPilot2 work layered on top.
-Everything outside the two packages below is Autel's sample and largely untouched.
+This application is related to the [DJI MSDK v4 port](https://github.com/Humble-Helper-96/TAKPilot2-DJI-MSDKv4).
+It is not a direct copy. The parts that do not touch the SDK are the same: the TAK client, the CoT
+build and parse functions, the certificate enrollment and the channel control. Each part that
+touches the aircraft was written again for Autel MSDK v1.x. That SDK uses listeners only. It has no
+synchronous polling. This gave a different design for the telemetry, the camera and the video.
 
-| Package | What |
+**Tested in flight on 3 August 2026 and 4 August 2026.** Read `FLIGHT-TEST-CHECKLIST.md`.
+
+## 1. Augmented reality: read this first
+
+**The AR overlay is for general awareness of an area. It is not accurate for a point.**
+
+A flight test measured a bearing error between 1 degree and 6 degrees. At 350 m this moved a marker
+up to 27 m to the side. The cause is the magnetometer of the aircraft. The error changes with the
+direction that the aircraft faces. One fixed offset in the application cannot correct it.
+
+Do not use the AR overlay to select one building from a row of buildings. Use it to know where to
+look. To get an accurate position, put the crosshair on the object and put a marker.
+
+`PORT-STATUS.md` section 4 gives the measurements.
+
+## 2. Where the code is
+
+This tree is the standard Autel EVO II MSDK sample application. The TAKPilot2 work is on top of it.
+The code outside the two packages below is the Autel sample. It has almost no changes.
+
+| Package | Contents |
 |---|---|
-| `com/autel/sdksample/tak/` | The port — flight screen, home screen, custom HUD views (crosshair, AR overlay, obstacle arcs, battery/signal/toggle widgets), the Autel↔TAK bridge, CoT push, DTED terrain, FAA UASFM, markers, screen-capture video, flight-limits / control-rates / avoidance controllers, Explorer watchdog, field guide |
-| `com/taklite/` | SDK-agnostic TAK core — reused from TAKPilot2 essentially unchanged (TLS CoT client, CotBuilder/Parser, cert enrollment, channels) |
+| `com/autel/sdksample/tak/` | The port. This includes the flight screen, the home screen, the HUD views (crosshair, AR overlay, obstacle arcs, battery, signal and toggle widgets), the bridge between Autel and TAK, the CoT push, the DTED terrain data, the FAA UASFM data, the markers, the screen-capture video, the controllers for the flight limits, the control rates and the avoidance function, the Explorer watchdog and the field guide. |
+| `com/taklite/` | The TAK core. It does not depend on the SDK. It is the same as in TAKPilot2: the TLS CoT client, CotBuilder, CotParser, the certificate enrollment and the channels. |
 
-Third-party libraries are pulled as Gradle dependencies, **not** vendored: the RootEncoder RTSP
-client (`com.github.pedroSG94...:rtsp:2.2.6`, Apache-2.0) and osmdroid (`org.osmdroid:osmdroid-android:6.1.14`,
-Apache-2.0). The Autel MSDK itself is the `.aar` under `app/libs/`.
+Gradle supplies the third-party libraries. They are not in this tree. These are the RootEncoder RTSP
+client (`com.github.pedroSG94...:rtsp:2.2.6`, Apache-2.0) and osmdroid
+(`org.osmdroid:osmdroid-android:6.1.14`, Apache-2.0). The Autel MSDK is the `.aar` file in
+`app/libs/`.
 
-## Read the docs first
+## 3. Documents
 
-The Markdown docs carry the full design record — not just what was built but why, including the
-dead ends, the field-measured findings, and the things that look like bugs but aren't.
+The Markdown documents contain the design record. They give the reasons for the design. They also
+give the methods that did not work, the values measured in flight, and the conditions that look like
+faults but are not.
 
-| Doc | Read when |
+| Document | Read it when |
 |---|---|
-| `TAKPILOT2_AUTEL_PORT_PLAN.md` | **Start here.** The full project reference — architecture, phase status, calibration constants, and the release-blocker post-mortems |
-| `PORT-STATUS.md` | The component map (DJI → Autel), what's ported, and the flight-test/calibration knobs |
-| `FLIGHT-TEST-CHECKLIST.md` | Before flying — the ordered ground/air/recovery checklist and the symptom→knob table |
-| `REVIEW_2026-08-03_*.md` | Code-soundness, UI, language and security review records, with dispositions |
-| `TAKPilot2-Autel-HANDOFF.md` | Resuming the work in a new session |
+| `TAKPILOT2_AUTEL_PORT_PLAN.md` | You start work. This is the full project reference. |
+| `PORT-STATUS.md` | You want the component map, the accuracy limits and the calibration items. |
+| `FLIGHT-TEST-CHECKLIST.md` | You prepare to fly. |
+| `REVIEW_2026-08-03_*.md` | You want the review records for the code, the UI, the language and the security. |
+| `TAKPilot2-Autel-HANDOFF.md` | You continue the work in a new session. |
 
-They are snapshots, not a live view. `git log --oneline` is the reliable changelog; re-verify any
-claim against the source before writing code against it.
+These documents are records of one time. They are not a live view of the code. Use
+`git log --oneline` for the list of changes. Examine the source code before you write new code
+against a statement in a document.
 
-## Building
+## 4. How to build
 
-Pinned toolchain — **these versions matter**:
+Use these versions. **The versions are important.**
 
-- Gradle **7.3.3**, AGP **7.2.2**
-- JDK **17**
-- Kotlin **1.7.20**
-- compileSdk **33**, minSdk **21**, targetSdk **29**
+- Gradle 7.3.3 and AGP 7.2.2
+- JDK 17
+- Kotlin 1.7.20
+- compileSdk 33, minSdk 21, targetSdk 29
 
 ```bash
 JAVA_HOME=<your-jdk-17> ./gradlew assembleDebug
 ```
 
-The app is signed with the **public AOSP platform test key** (`platform.keystore`, alias/pass
-`android`/`android`) so it can run with system privileges on the Smart Controller. That key is
-public — it is not a secret, and it is why the build signs cleanly out of the box.
+The application uses the public AOSP platform test key (`platform.keystore`, alias `android`,
+password `android`). The application then operates with system privileges on the Smart Controller.
+This key is public. It is not a secret. This is the reason that the build signs correctly with no
+more steps.
 
-### You need your own map API keys
+### 4.1 You must supply your own map keys
 
-`app/src/main/AndroidManifest.xml` carries an **AMap** key and a **Google Maps** key. They are
-registered to this project and will be rate-limited or rejected for you — register your own and
-replace them. The app does not need Google/AMap services for its core TAK function (osmdroid draws
-the flight-screen map); the keys are only for the stock-sample map screens.
+The file `app/src/main/AndroidManifest.xml` contains an AMap key and a Google Maps key. These keys
+belong to this project. Your build will get a rate limit or a refusal. Register your own keys and
+put them in the file.
 
-## Runtime configuration
+The core TAK functions do not need Google services or AMap services. osmdroid draws the map on the
+flight screen. The keys are only for the map screens of the sample application.
 
-No server details, certificates or credentials are in this repo. TAK enrollment, server host,
-channels, video destination, DTED terrain tiles and FAA airspace data are all configured in-app
-under **Pre-Flight Setup** and stored on the device. A fresh install starts empty.
+## 5. Configuration
 
-## Hardware notes
+This repository contains no server addresses, no certificates and no credentials.
 
-Developed and field-tested against an **EVO II Dual 640T V3 on a Smart Controller V3** (Android 11,
-1024×720dp). Two things differ sharply from the DJI port:
+Configure these items in the application under **Pre-Flight Setup**: the TAK enrollment, the server
+address, the channels, the video destination, the DTED terrain tiles and the FAA airspace data. The
+application keeps them on the device. A new installation starts with no data.
 
-- **Video is a MediaProjection screen capture** of the whole flight screen (FPV + HUD + map + AR),
-  re-encoded to H.265 and pushed over RTSP — so the stream survives a link drop or battery swap and
-  needs no second codec tap. There is no custom per-frame decoder like the DJI build's.
-- **The camera zoom is digital only** (the 640T's visual lens is fixed; the SDK exposes only
-  `setDigitalZoomScale`).
+## 6. Hardware notes
 
-The EVO II does not hold a rock-solid hover — a slow few-degree yaw/drift is aircraft-side GNSS
-velocity noise (multipath near structures), not an app fault; the app reports the aircraft's stable
-position faithfully throughout.
+The application was developed and tested with an EVO II Dual 640T V3 on a Smart Controller V3
+(Android 11, 1024 x 720 dp).
 
-## Status
+Two items are very different from the DJI port:
 
-Phases 0–5 complete and **field-confirmed** (2026-08-03): live PLI/SPI on a second TAK client,
-gimbal bearing resolved to the absolute model, GPS/HAE/FOV/IR/pitch calibration, RTH, link-loss
-failsafe, backgrounding recovery, and the screen-capture video path. Aim offsets are **per-airframe**
-(re-run the calibration in `FLIGHT-TEST-CHECKLIST.md` §A4 for each aircraft).
+- **The video is a MediaProjection screen capture** of the full flight screen. This includes the
+  camera picture, the HUD, the map and the AR overlay. The application encodes it again to H.265 and
+  sends it with RTSP. Therefore the stream continues through a link loss or a battery change. It
+  does not need a second tap on the codec. There is no per-frame decoder.
+- **The camera zoom is digital only.** The visible lens of the 640T is fixed. The SDK gives only
+  `setDigitalZoomScale`. The raw units are hundredths: the value 100 is 1.0x.
 
-Consciously accepted / deferred, documented in the review files: the standard TAK auto-enrollment
-trust model (`REVIEW_2026-08-03_SECURITY.md` #1–#3), Android Keystore migration for the client key,
-cert auto-renewal before expiry, and minor UI polish. `git log --oneline` is the changelog.
+The EVO II does not hold a fully stable hover. It moves slowly by a few degrees. This is GNSS
+velocity noise from the aircraft. Buildings cause multipath. It is not an application fault. The
+application reports the stable position correctly during this time.
 
-## License
+## 7. Status
 
-The TAKPilot2 additions in this tree (`com/autel/sdksample/tak/`, `com/taklite/`, and the docs) are
-the author's work. The surrounding tree is Autel's EVO II MSDK sample app, subject to Autel's
-[developer terms](https://developer.autelrobotics.com); the bundled Autel MSDK `.aar` is Autel's and
-separately licensed. Gradle-resolved third-party libraries (RootEncoder RTSP, osmdroid) are
-Apache-2.0. `README_CN.md` is the original Autel sample readme, kept for reference.
+Phases 0 to 5 are complete and confirmed in flight.
+
+These functions are confirmed: live position and SPI on a second TAK client, the gimbal bearing
+model, the GPS, HAE, field-of-view, IR and pitch calibration, RTH, the link-loss failsafe, recovery
+from background operation, and the screen-capture video.
+
+The camera now supplies the field of view. The application does not need a calibration value for it.
+
+The aim offsets are properties of each airframe. Do the calibration in `FLIGHT-TEST-CHECKLIST.md`
+section A4 for each aircraft. Read section 1 first: a fixed bearing offset cannot correct the
+compass error.
+
+These items are accepted or delayed. The review files give the details:
+
+- The standard TAK automatic-enrollment trust model (`REVIEW_2026-08-03_SECURITY.md`, items 1 to 3).
+- The move of the client key to the Android Keystore.
+- The automatic renewal of certificates before they expire.
+- Small improvements to the user interface.
+
+## 8. License
+
+The TAKPilot2 work in this tree is the work of the author. This is `com/autel/sdksample/tak/`,
+`com/taklite/` and the documents.
+
+The tree around it is the Autel EVO II MSDK sample application. It is subject to the
+[developer terms](https://developer.autelrobotics.com) of Autel. The Autel MSDK `.aar` file belongs
+to Autel and has a separate license.
+
+The third-party libraries that Gradle supplies (RootEncoder RTSP and osmdroid) are Apache-2.0.
+
+`README_CN.md` is the original readme of the Autel sample. It is kept for reference.

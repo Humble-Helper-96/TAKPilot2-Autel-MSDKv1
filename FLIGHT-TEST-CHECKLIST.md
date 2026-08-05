@@ -1,205 +1,224 @@
 # TAKPilot2-Autel — Flight-Test Checklist
 
-Purpose: close the Phase 4/5 items that can only be verified with the **aircraft airborne** — the
-calibration constants (gimbal, bearing, FOV, GPS units, HAE), the second-TAK-client picture (PLI/SPI
-symbol, callsign), and the recovery paths (RTH, link-loss, backgrounding, RC buttons).
+**Written in Simplified Technical English (ASD-STE100).**
 
-Each test says what to **do**, what to **observe**, the **pass** bar, and — if it fails — the exact
-**knob** to change. Most knobs are calibratable in-flight: **long-press (touch and hold) the AR
-button** on the flight screen to open a menu with **"Aim Offsets…"** (bearing + pitch bias) and
-**"Calibrate FOV…"** — both persist, no rebuild. The few knobs that need a rebuild are called out. A
-quick-reference table is at the end.
+## 1. Purpose
 
-**Do the whole thing with logging on.** Debug Log → *Logging enabled* + *Detailed*. Leave *Include
-obstacle radar logs* OFF (it floods the log) unless you are specifically re-checking avoidance. The
-SPI bearing candidates, gimbal angles and GPS accuracy all land in this log for post-flight review.
+This checklist closes the items that you can only test when the aircraft is in the air. These are
+the calibration values (gimbal, bearing, field of view, GPS units, HAE), the picture on a second TAK
+client, and the recovery functions (RTH, link loss, background operation, RC buttons).
 
-**Two things you need running:** the aircraft on the Smart Controller, and a **second TAK client**
-(ATAK on a phone, or a WinTAK) logged into the same server so you can see what the team sees.
+Each test tells you what to do. It tells you what to look at. It tells you the pass condition. If
+the test does not pass, it tells you which control to change.
 
-> Safety first. Fly in open area, VLOS, within the limits set in Pre-Flight. The RTH/link-loss tests
-> put the aircraft into automatic modes — have the sticks ready to retake control. Nothing here
-> overrides your judgement as PIC.
+You can adjust most controls when you fly. Touch and hold the AR button on the flight screen. A menu
+opens. It has "Aim Offsets…" and "Calibrate FOV…". The application keeps these values. You do not
+build the application again.
 
----
+## 2. Before you start
 
-## Results — Flight 1 (2026-08-03)
+**Set the log controls.** Go to Debug Log. Set *Logging enabled*. Set *Detailed*. Set *Include
+obstacle radar logs* to OFF. The radar logs fill the log file. Set them to ON only when you examine
+the avoidance function.
 
-> **FULL CHECKLIST PASSED — operator-verified, 2026-08-03.** Every item below (ground G1–G6,
-> airborne A1–A7, recovery R1–R6) was flown and passed. Phase 4/5 flight validation is complete.
-> The items are kept as the reusable procedure for the next airframe / a re-test after a repair.
+**You must have two items in operation:**
 
-- **G1–G6: all pass.**
-- **G6 (GPS units) validated:** raw `GPSInfo` showed 31 sats, 3D fix, HorizontalAccuracy ≈ 0.7 m
-  → `ACC_DIVISOR=1000` (mm) is correct. Settled.
-- **A4: PASS — absolute model confirmed.** A fixed aim offset stayed correct through a 180° then a
-  further 90° yaw, so the bearing is heading-independent → `BEARING_MODE_RELATIVE=false` is right,
-  **no rebuild**. Calibrated **aim offsets for this airframe: Pitch −1.0°, Bearing −3.75°** (held on
-  the device in prefs; code defaults stay 0.0 because offsets are per-airframe — re-run per aircraft).
-- **A3 (pitch sign) looks correct** in passing (down = negative, SPI in front/below).
-- **Best-found calibration method** (now documented in-app, Field Guide §4): aim the reticle at a
-  known landmark, then adjust Aim Offsets while watching the live **`-SPI`** point converge on the
-  target on a **second TAK client** — faster than drop-marker-and-compare.
-- **Noted, aircraft-side (not the app):** a slow hover yaw/wander of a few degrees. Raw GPS showed
-  good position (sub-metre, 31 sats) but a **noisy velocity solution** (GPSSpeed spiking ~1 m/s while
-  the aircraft barely moved) — classic **multipath** near structures, which unsettles the
-  position-hold loop. The app faithfully reported the stable position throughout (SPI stayed put
-  while the airframe drifted). Retest position hold in the open, clear of buildings.
+1. The aircraft on the Smart Controller.
+2. A second TAK client. Use ATAK on a telephone or WinTAK. It must use the same server. You then
+   see what the team sees.
 
-A5 (FOV), A7 (IR) and the R-series recovery tests were also flown and passed in this session.
+> **Safety.** Fly in an open area. Keep the aircraft in sight. Obey the limits that you set in
+> Pre-Flight. The RTH test and the link-loss test put the aircraft into an automatic mode. Keep your
+> hands at the sticks. You can then take control again. This checklist does not replace your
+> judgement as the pilot in command.
 
----
+## 3. Results of flight 1 (3 August 2026)
 
-## Before you fly — ground checks (aircraft powered, on the ground)
+**The full checklist passed.** All the items passed: ground G1 to G6, airborne A1 to A7, and
+recovery R1 to R6.
 
-- [ ] **G1 · Launch the right way.** Open TAKPilot from the controller **home screen / launcher**, not
-      by any shortcut into the flight screen. (A direct flight-screen entry comes up with a dead
-      link — this is a hard rule.) Confirm the home screen shows **TAK: Connected** and **AIRCRAFT:
-      EVO_2**.
+- **G6 (GPS units).** The raw `GPSInfo` showed 31 satellites, a 3D fix and a horizontal accuracy of
+  approximately 0.7 m. Therefore `ACC_DIVISOR = 1000` is correct.
+- **A4 (bearing).** A fixed aim offset stayed correct through a yaw of 180 degrees and then a
+  further 90 degrees. Therefore the bearing does not change with the heading, and
+  `BEARING_MODE_RELATIVE = false` is correct.
+- **A3 (pitch sign).** Correct. Down gives a negative value. The SPI is in front of the aircraft and
+  below it.
+- **Aircraft-side observation.** The aircraft moved slowly in the hover. The raw GPS position was
+  good, but the velocity data was noisy. `GPSSpeed` went to approximately 1 m/s when the aircraft
+  almost did not move. This is multipath near buildings. It makes the position-hold loop unstable.
+  The application reported the stable position correctly during this time. Test the position hold
+  again in an open area.
 
-- [ ] **G2 · Your callsign, not your username.** On the second TAK client, open the connected-users /
-      contacts list.
-      **Pass:** your **callsign** (the one set in Pre-Flight) appears — not your login username.
-      **If wrong:** callsign source is `TakForegroundService.callsignFor` / the `takpilot2_tak`
-      pref `callsign`; check Pre-Flight saved it.
+## 4. Results of flight 2 (4 August 2026)
 
-- [ ] **G3 · Drone symbol on the map.** Confirm a **drone/air track** marker for the aircraft appears
-      on the second client and is symbolized as an air asset (not a ground dot).
-      **Pass:** it renders as an aircraft symbol. Driven by CoT type `a-f-A-M-H-Q`
-      (`CotBuilder.java:20`, `DRONE_TYPE`). **If it's a ground symbol:** confirm that type is what's
-      being emitted (bench §11.1).
+**The bearing offset is not a constant.** The camera aimed at one target from three headings. These
+are the results:
 
-- [ ] **G4 · Limits applied and read back.** In Pre-Flight, set **RTH altitude** (min is **82 ft /
-      25 m** — the aircraft floor; below that is refused), **max altitude**, **max distance**, then
-      **Apply to Drone**.
-      **Pass:** the read-back values match what you entered, and the flight HUD shows the RTH
-      altitude (`RTH ___ ft`, not amber `RTH --`).
+| Heading | Range | Bearing error |
+|---|---|---|
+| 292 degrees | 225 m | 6.00 degrees |
+| 264 degrees | 349 m | 4.49 degrees |
+| 089 degrees | 358 m | 0.87 degrees |
 
-- [ ] **G5 · Go dark.** Toggle the exterior-lights button off, then on.
-      **Pass:** the aircraft's navigation lights actually extinguish and relight. (Operator-verified
-      already — this is a spot recheck. Note: only nav lights are controllable; an auxiliary LED is
-      read-only.)
+The spread is 5.13 degrees. This is too large for an error of aim by the pilot. The error changes
+with the heading of the aircraft. This is the signature of magnetometer error.
 
-- [ ] **G6 · GPS accuracy sanity (units).** With a good fix, read the GPS accuracy on the HUD.
-      **Pass:** a plausible **metres** value (roughly 0.3–5 m outdoors). **If it reads absurd**
-      (thousands, or ~0.00x): the raw units aren't millimetres — change **`ACC_DIVISOR`**
-      (`AutelTakBridge.kt:574`, currently `1000.0`). Rebuild required.
+**Therefore one fixed bearing offset cannot correct this error.** Do a compass calibration of the
+aircraft. Then do test A4 again.
 
----
+The projection mathematics is correct. The drawn position of three markers was calculated again from
+known coordinates. The result agreed with the application to one pixel.
 
-## Airborne — calibration
+## 5. Ground checks
 
-Take off to a stable **~10–20 ft hover** first and confirm the basics before climbing.
+Do these checks when the aircraft has power and is on the ground.
 
-- [ ] **A1 · Live PLI.** Watch the drone marker on the second client while you reposition.
-      **Pass:** its position tracks the aircraft smoothly at the ~2 s PLI cadence; HUD AGL and the
-      map agree.
+- [ ] **G1 · Start the application correctly.** Open TAKPilot from the home screen of the controller.
+      Do not use a shortcut that goes directly to the flight screen. A direct entry gives a dead
+      link. This is a strict rule.
+      **Pass:** The home screen shows **TAK: Connected** and **AIRCRAFT: EVO_2**.
 
-- [ ] **A2 · HAE altitude spot-check.** At a known/surveyed spot (or against a GPS app reading HAE),
-      compare the drone marker's **`hae`** on the second client to the reference.
-      **Pass:** within a few metres. Source is `EvoGpsInfo.getAltitude()` (`AutelTakBridge.kt:59`).
-      Note HUD **AGL** and logged **relAlt** differ from HAE/MSL by the terrain offset — compare like
-      with like.
+- [ ] **G2 · Callsign.** Open the contacts list on the second TAK client.
+      **Pass:** Your callsign is in the list. Your login name is not.
+      **If this fails:** Examine `TakForegroundService.callsignFor` and the `callsign` value in the
+      `takpilot2_tak` preferences. Make sure that Pre-Flight saved the callsign.
 
-- [ ] **A3 · Gimbal pitch direction.** Tilt the gimbal fully **down (−90°)**, then **level (0°)**.
-      **Pass:** HUD gimbal pitch reads **negative looking down**, ~0 level; and the SPI/AR aim point
-      on the second client sits **out in front of / below** the aircraft (not behind it) as you tilt.
-      **If the SPI is vertically off but the HUD pitch is correct:** open **long-press AR → Aim
-      Offsets…** and nudge the **pitch** value (best judged at ~**25° down**, where a bias shows most).
-      **Do NOT flip `PITCH_SIGN`** (`AutelTakBridge.kt:591`) — it would invert SPI/AR while leaving the
-      HUD right, so the two silently disagree.
+- [ ] **G3 · Aircraft symbol.** Look at the map on the second client.
+      **Pass:** The aircraft has an air-track symbol. It does not have a ground symbol. The CoT type
+      `a-f-A-M-H-Q` controls this.
 
-- [ ] **A4 · Gimbal bearing (the big one).** Put the aircraft on a **known heading** (e.g. nose
-      north) and aim the camera at a **landmark whose bearing you know**, gimbal ~**25° down**.
-      **Pass:** the sensor cone / SPI on the second client points at that landmark. Every SPI push
-      logs **both candidate bearings** in one line — `az=` (the value being published, **absolute**
-      model) and `headingPlusYaw=` (the **body-relative** model). Read which one equals the real
-      landmark bearing:
-        - **`az=` matches** → keep **`BEARING_MODE_RELATIVE=false`** (`AutelTakBridge.kt:581`) and fine-
-          tune bearing via **long-press AR → Aim Offsets…** (no rebuild).
-        - **`headingPlusYaw=` matches** → set **`BEARING_MODE_RELATIVE=true`** (rebuild), then fine-tune
-          the offset the same way.
-      Record the offset that lands it.
+- [ ] **G4 · Limits.** In Pre-Flight, set the RTH altitude, the maximum altitude and the maximum
+      distance. Then touch **Apply to Drone**. The minimum RTH altitude is 82 ft (25 m). This is a
+      limit of the aircraft. The aircraft refuses a smaller value.
+      **Pass:** The values that the aircraft reports agree with the values that you entered. The
+      flight HUD shows the RTH altitude as a number. It does not show amber `RTH --`.
 
-- [ ] **A5 · FOV cone.** Frame two landmarks at the **left and right edges** of the video. Compare the
-      published `<sensor>` cone drawn in ATAK against what's actually at the frame edges.
-      **Pass:** the cone edges line up with the frame edges. **If not:** open **long-press AR →
-      Calibrate FOV…** and adjust (seeds from `EO_HFOV=79 / EO_VFOV=62`, `AutelTakBridge.kt:599`; no
-      rebuild). Then **zoom to 2×/4×** and confirm the cone narrows correctly (it should follow the
-      true-perspective curve, not shrink linearly). Note: Aim Offsets fixes markers wrong in the
-      **centre**; Calibrate FOV fixes markers wrong at the **edges** — don't reach for one to fix the
-      other.
+- [ ] **G5 · Exterior lights.** Set the exterior-lights button to off. Then set it to on.
+      **Pass:** The navigation lights go off and then come on. Only the navigation lights have
+      control. The auxiliary LED is read-only.
 
-- [ ] **A6 · Video in flight.** With the LIVE stream up, confirm on a viewer/media server that the
-      **screen mirror** (FPV + HUD + map) is live and stays up through a few maneuvers and a lens
-      switch. (Bench-verified already; this confirms it survives real flight.)
+- [ ] **G6 · GPS accuracy.** Get a good fix. Read the GPS accuracy on the HUD.
+      **Pass:** The value is in metres and is between approximately 0.3 m and 5 m.
+      **If the value is very large or very small:** The raw units are not millimetres. Change
+      `ACC_DIVISOR` in `AutelTakBridge.kt`. You must build the application again.
 
-- [ ] **A7 · IR lens.** Switch to **IR**. Confirm the feed switches and the cone changes to the IR
-      FOV. **If the IR cone is off:** `IR_HFOV=42 / IR_VFOV=34` (`AutelTakBridge.kt:600`) — a plain
-      constant, rebuild to change (full IR calibration is Phase 3).
+## 6. Airborne checks: calibration
 
----
+First go to a stable hover at 10 ft to 20 ft. Confirm the basic functions. Then climb.
 
-## Airborne — recovery & robustness
+- [ ] **A1 · Live position.** Move the aircraft. Watch its marker on the second client.
+      **Pass:** The marker follows the aircraft smoothly at the 2-second rate. The HUD altitude and
+      the map agree.
 
-- [ ] **R1 · RTH end-to-end.** From a safe distance/altitude, command **Return to Home**.
-      **Pass:** the aircraft returns and climbs to/holds the **commanded RTH altitude** (matches the
-      HUD). Watch for any "process timed out" on the command (the DJI sibling hit a real RTH-ack bug
-      in the field — flag if it recurs).
+- [ ] **A2 · HAE altitude.** Go to a position with a known altitude. Compare the `hae` value of the
+      aircraft marker on the second client with the known value.
+      **Pass:** The difference is a few metres.
+      **Note:** The HUD shows AGL. The log shows `relAlt`. These are different from HAE and MSL by
+      the terrain height. Compare the same type of value.
 
-- [ ] **R2 · Link-loss failsafe.** In open area, briefly induce a controller-link drop.
-      **Pass:** the aircraft runs **its own** failsafe — ~10 s hover, then climb, then return. (The
-      app deliberately can't set/read the emergency action, so the picker is RTH-only; you're
-      verifying the **aircraft's** behaviour, not app control. Sticks stay live — retake anytime.)
+- [ ] **A3 · Gimbal pitch direction.** Move the gimbal fully down (−90 degrees). Then move it level
+      (0 degrees).
+      **Pass:** The HUD gimbal pitch is negative when the camera looks down. It is approximately 0
+      when the camera is level. The SPI point on the second client is in front of the aircraft and
+      below it. It is not behind the aircraft.
+      **If the SPI is wrong vertically but the HUD pitch is correct:** Touch and hold the AR button.
+      Open **Aim Offsets…**. Change the pitch value. Judge this at approximately 25 degrees down.
+      **Do not change `PITCH_SIGN`.** That control inverts the SPI and the AR overlay but leaves the
+      HUD correct. The two then disagree, and nothing shows you this.
 
-- [ ] **R3 · Background / screen-lock recovery.** Mid-hover, lock the screen (or background the app)
-      for ~30 s, then return.
-      **Pass:** TAK stays connected and **PLI keeps flowing** on the second client throughout (the
-      foreground service holds it), video resumes, HUD picks back up.
+- [ ] **A4 · Gimbal bearing.** Put the aircraft on a known heading. Aim the camera at a landmark with
+      a known position. Set the gimbal to approximately 25 degrees down.
+      **Pass:** The SPI point on the second client is on that landmark.
+      **Read section 4 first.** The bearing error changes with the heading of the aircraft. Do this
+      test from a minimum of three headings. Use headings that are far apart. If the results
+      disagree by more than approximately 1 degree, the cause is the compass of the aircraft. Do a
+      compass calibration. One fixed offset cannot correct it.
+      **Best method:** Aim the crosshair at the landmark. Then read the `spi=` position in the log
+      and compare it with the known position of the landmark. This gives you the error in metres. It
+      is more accurate than a comparison of two icons by eye.
 
-- [ ] **R4 · Network blip (if TAK rides a hotspot).** Briefly drop/restore the network carrying TAK.
-      **Pass:** TAK **auto-reconnects** without dropping the aircraft link or needing an app restart.
+- [ ] **A5 · Field of view.** Put two landmarks at the top edge and the bottom edge of the video.
+      Compare the published `<sensor>` cone in ATAK with the picture.
+      **Pass:** The cone agrees with the edges of the picture.
+      **Note:** The camera now supplies the field of view. You do not usually calibrate it. The
+      application logs the reported value as `camera-reported hFov`.
+      **Use the top edge and the bottom edge, not the sides.** The picture is cut at the sides to
+      fill the 4:3 screen. Approximately 25 % of the width is not on the screen. Therefore the side
+      edge of the screen is not the edge of the picture. The top edge and the bottom edge are.
+      Then set the zoom to 2x and 4x. Confirm that the cone becomes narrower correctly.
 
-- [ ] **R5 · RC button keycodes (data-gathering, not a pass/fail).** Press each mappable **Smart
-      Controller V3** button.
-      **Do:** watch the Debug log for `onKeyDown` keycodes. Physical-button mapping is unported —
-      this flight just **records the keycodes** so they can be wired up later. Note which physical
-      button prints which code.
+- [ ] **A6 · Video in flight.** Start the LIVE stream. Look at a viewer or a media server.
+      **Pass:** The screen copy (video, HUD and map) stays in operation through some manoeuvres and a
+      change of lens.
 
-- [ ] **R6 · (Opportunistic) OOM restart.** Not deliberately inducible, but if the app is ever killed
-      for memory in flight: it should **relaunch to the Home screen** (re-arming the link), not a
-      frozen flight screen. If you see a flight screen with a dead/stale HUD after a restart, capture
-      the log.
+- [ ] **A7 · Thermal lens.** Change to IR.
+      **Pass:** The picture changes to thermal. The cone changes to the thermal field of view. The
+      camera reports 33.0 x 26.0 degrees for this lens.
+      **Note:** `IR_HFOV` in `AutelTakBridge.kt` is a fallback value only. The camera supplies the
+      operational value.
 
----
+## 7. Airborne checks: recovery
 
-## After you land
+- [ ] **R1 · Return to home.** Go to a safe distance and altitude. Command **Return to Home**.
+      **Pass:** The aircraft returns. It climbs to the commanded RTH altitude and holds it. The
+      altitude agrees with the HUD. Look for a "process timed out" message on the command. Report
+      this message if it occurs.
 
-- [ ] Debug Log → **Export** (also auto-archived to `Downloads/TAKPilot2 Logs`). Keep it — the SPI
-      bearing candidates (A4), gimbal angles (A3), FOV and GPS accuracy (A5/G6) are all in it, which
-      is what turns "looked about right" into a settled constant.
-- [ ] Record the final values you landed on (bearing offset, pitch offset, EO FOV) so they can be
-      baked in as the new defaults.
+- [ ] **R2 · Link-loss failsafe.** In an open area, cause a short loss of the controller link.
+      **Pass:** The aircraft does its own failsafe. It hovers for approximately 10 seconds. Then it
+      climbs. Then it returns. The application cannot set or read the emergency action. You test the
+      behaviour of the AIRCRAFT. You do not test application control. The sticks stay live. You can
+      take control at any time.
 
----
+- [ ] **R3 · Background operation.** In the hover, lock the screen for approximately 30 seconds. Then
+      go back to the application.
+      **Pass:** TAK stays connected. The position reports continue on the second client during this
+      time. The video starts again. The HUD continues.
 
-## Quick-reference: symptom → knob
+- [ ] **R4 · Network interruption.** If TAK uses a hotspot, stop the network and start it again.
+      **Pass:** TAK connects again without help. The aircraft link stays up. You do not start the
+      application again.
 
-| Symptom in flight | Knob | Where | Rebuild? |
+- [ ] **R5 · RC button codes.** Press each button on the Smart Controller V3 that you can map.
+      **Do:** Look at the Debug log for `onKeyDown` codes. Write down which button gives which code.
+      This test collects data. It does not have a pass condition.
+
+- [ ] **R6 · Recovery after a memory failure.** You cannot cause this condition. If the system stops
+      the application for memory during a flight, look at the result.
+      **Pass:** The application starts again at the Home screen. It does not start at a frozen flight
+      screen. If you see a flight screen with a dead HUD, keep the log.
+
+## 8. After the flight
+
+- [ ] Go to Debug Log. Touch **Export**. The application also puts a copy in
+      `Downloads/TAKPilot2 Logs`. Keep this file. It contains the SPI positions, the gimbal angles,
+      the reported field of view and the GPS accuracy.
+- [ ] Write down the values that you used: the bearing offset and the pitch offset. These are
+      properties of the airframe. Do this test again for each aircraft.
+
+## 9. Quick reference: symptom to control
+
+| Symptom | Control | Location | Build again? |
 |---|---|---|---|
-| SPI/cone points at wrong compass bearing | Aim Offsets bearing (fine) / `BEARING_MODE_RELATIVE` (frame) | long-press AR → Aim Offsets… / `AutelTakBridge.kt:581` | offset no / mode yes |
-| SPI vertically off, HUD pitch OK | Aim Offsets pitch | long-press AR → Aim Offsets… | no |
-| HUD gimbal pitch itself inverted | (ingest normalisation — investigate, **not** `PITCH_SIGN`) | `AutelTakBridge.kt` setAngleListener | — |
-| Cone wider/narrower than the view (EO) | Calibrate FOV | long-press AR → Calibrate FOV… | no |
-| Cone wrong on IR | `IR_HFOV` / `IR_VFOV` | `AutelTakBridge.kt:600` | yes |
-| GPS accuracy reads absurd | `ACC_DIVISOR` | `AutelTakBridge.kt:574` | yes |
-| `hae` off by a constant | verify `EvoGpsInfo.getAltitude()` is HAE | `AutelTakBridge.kt:59` | — |
-| Drone shows as ground symbol | `DRONE_TYPE` (`a-f-A-M-H-Q`) | `CotBuilder.java:20` | yes |
-| RTH altitude won't go below ~82 ft | aircraft floor (25 m), not a bug | — | — |
+| The SPI bearing is wrong, and the error changes with the heading | Compass calibration of the AIRCRAFT | Not in this application | No |
+| The SPI bearing is wrong by the same amount at all headings | Aim Offsets bearing | Touch and hold AR, then Aim Offsets… | No |
+| The SPI is wrong vertically, but the HUD pitch is correct | Aim Offsets pitch | Touch and hold AR, then Aim Offsets… | No |
+| The HUD gimbal pitch is inverted | Examine the ingest code. Do NOT change `PITCH_SIGN`. | `AutelTakBridge.kt`, `setAngleListener` | — |
+| The cone is wider or narrower than the picture | The camera supplies this value. Examine `camera-reported hFov` in the log. | `AutelProductHolder.kt` | No |
+| The GPS accuracy value is not possible | `ACC_DIVISOR` | `AutelTakBridge.kt` | Yes |
+| The aircraft has a ground symbol | `DRONE_TYPE` (`a-f-A-M-H-Q`) | `CotBuilder.java` | Yes |
+| The RTH altitude will not go below 82 ft | This is the aircraft floor of 25 m. It is not a fault. | — | — |
+| The zoom level is not correct after a reconnect | This is corrected in v1.5.2. The zoom scale is now absolute. | — | — |
 
-## What this checklist does NOT need to cover (already settled)
+## 10. Items that this checklist does not cover
 
-Obstacle avoidance braking (flight-verified 2026-08-02), RTH altitude set/read/flown at 200 ft,
-exterior "go dark", the video codec-listener/`AutelCodecView` concurrency question (now N/A — screen
-capture, no second tap), and RF power (a regulatory refusal fixed in Explorer's region settings, not
-the app).
+These items are settled:
+
+- Obstacle avoidance braking. Verified in flight on 2 August 2026.
+- RTH altitude set, read and flown at 200 ft.
+- The exterior "go dark" function.
+- The video codec concurrency question. The stream is a screen capture. There is no second tap on
+  the codec.
+- RF power. A regulatory refusal was corrected in the region settings of Explorer. It is not an
+  application fault.
