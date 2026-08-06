@@ -275,8 +275,12 @@ public class TakManager implements TakClient.TakClientListener {
      * now carries the video url, and that url contains the media-server password. Logging it
      * would write a credential to the log file and to logcat, which the security review of
      * 2026-08-03 explicitly recorded this application as not doing.
+     *
+     * <p>No {@code team} parameter on purpose: the pilot marker is always {@link #PILOT_TEAM}.
+     * The signature used to take one and silently ignore it, which promised callers a choice
+     * the method never offered.
      */
-    public void sendPilotPLI(Location location, String callsign, String team, String role,
+    public void sendPilotPLI(Location location, String callsign, String role,
                              int battery, String videoUrl) {
         if (client != null && connected) {
             lastLat = location.getLatitude();

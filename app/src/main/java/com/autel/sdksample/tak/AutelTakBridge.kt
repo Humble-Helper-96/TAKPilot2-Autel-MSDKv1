@@ -149,6 +149,10 @@ class AutelTakBridge(
         running = false
         handler.removeCallbacks(tick)
         unsubscribe()
+        // The bridge is the only consumer of the controller's position, so the receiver stops
+        // with it. Without this the GPS ran at 2s updates for the LIFE OF THE PROCESS after the
+        // first session — a permanent battery drain on the controller. start() re-arms it.
+        OperatorLocation.stop()
         AppLog.i(TAG, "AutelTakBridge stopped")
     }
 
@@ -525,20 +529,38 @@ class AutelTakBridge(
     private fun pushPilotPli() {
         val fix = OperatorLocation.latest ?: return
         runCatching {
-            tak.sendPilotPLI(fix, droneCallsign, "Cyan", "Team Member",
+            // No team argument — the pilot marker's colour is TakManager's PILOT_TEAM, always.
+            tak.sendPilotPLI(fix, droneCallsign, "Team Member",
                 pilotBatteryPct(), TakBridgeHolder.videoUrlOrNull())
         }.onFailure { AppLog.w(TAG, "pilot PLI failed: ${it.message}") }
     }
 
     /** CONTROLLER battery, not the aircraft's — the aircraft has its own marker and its own
      *  number. A controller about to die is a reason to end the flight, and nothing else on the
-     *  network reports it. */
-    private fun pilotBatteryPct(): Int = runCatching {
-        val ctx = com.autel.sdksample.TestApplication.getInstance() ?: return@runCatching 100
-        val bm = ctx.getSystemService(android.content.Context.BATTERY_SERVICE)
-            as? android.os.BatteryManager ?: return@runCatching 100
-        bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
-    }.getOrDefault(100)
+     *  network reports it.
+     *
+     *  Cached for [BATTERY_CACHE_MS]: getIntProperty is a binder IPC, and paying it on every 2s
+     *  tick bought nothing — the value drifts about a percent a minute. On failure the LAST GOOD
+     *  reading is returned, not 100: a dead BatteryManager must not read as a full battery, which
+     *  would mask exactly the dying-controller condition this number exists to report. 100 as
+     *  the very first value is the one honest exception — before any reading at all there is
+     *  nothing better to say. */
+    private var batteryPctCache = 100
+    private var batteryPctReadAt = 0L
+    private fun pilotBatteryPct(): Int {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - batteryPctReadAt < BATTERY_CACHE_MS && batteryPctReadAt != 0L) return batteryPctCache
+        runCatching {
+            val ctx = com.autel.sdksample.TestApplication.getInstance() ?: return@runCatching
+            val bm = ctx.getSystemService(android.content.Context.BATTERY_SERVICE)
+                as? android.os.BatteryManager ?: return@runCatching
+            val pct = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            // Some devices return 0 or Integer.MIN_VALUE for "property not supported" — either
+            // would be a lie worse than a slightly old truth, so only a plausible value is kept.
+            if (pct in 1..100) { batteryPctCache = pct; batteryPctReadAt = now }
+        }.onFailure { AppLog.w(TAG, "controller battery read failed: ${it.message}") }
+        return batteryPctCache
+    }
 
     private fun isValidLat(v: Double) = v.isFinite() && v != 0.0 && v >= -90.0 && v <= 90.0
     private fun isValidLon(v: Double) = v.isFinite() && v != 0.0 && v >= -180.0 && v <= 180.0
@@ -621,6 +643,9 @@ class AutelTakBridge(
 
     companion object {
         private const val TAG = "AutelTakBridge"
+
+        /** How long one controller-battery reading serves the pilot PLI — see pilotBatteryPct. */
+        private const val BATTERY_CACHE_MS = 30_000L
 
         /** True once the aircraft is off the ground, by the same test the PLI reports.
          *

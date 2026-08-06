@@ -755,18 +755,25 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.videoHost, R.id.videoPort, R.id.videoStreamId,
         R.id.videoUser, R.id.videoPassword,
     )
+    /** The two battery percentages only. The numeric limits and Apply to Aircraft stay live —
+     *  a locked configuration must still be pushable to a freshly connected aircraft. */
+    private val batteryLockedFields = listOf(
+        R.id.limitLowBattery, R.id.limitCriticalBattery,
+    )
 
     /**
-     * "Lock configuration" for the TAK and video server sections: a working server setup should
-     * not be one stray tap away from being edited on a tailgate.
+     * "Lock configuration" for the TAK server, video server and battery-level sections: a
+     * working setup should not be one stray tap away from being edited on a tailgate.
      *
-     * **Locks the TEXT FIELDS only.** Enroll & Connect, Log Out and the video quality/transport
-     * choices stay live: needing to reconnect, or to drop to Low on a marginal link, is exactly
-     * when a pilot must not be fighting a lock. The lock guards what the server IS, not what
-     * you do with it.
+     * **Locks the FIELDS only.** Enroll & Connect, Log Out, the video quality/transport
+     * choices and Apply to Aircraft stay live: needing to reconnect, or to drop to Low on a
+     * marginal link, is exactly when a pilot must not be fighting a lock. The lock guards what
+     * the configuration IS, not what you do with it.
      *
-     * Unlocking asks for confirmation; locking does not. The asymmetry is deliberate — locking
-     * is the safe direction and gating it would just train people to dismiss dialogs.
+     * Unlocking asks for a password (operator, 2026-08-06); locking does not. The asymmetry is
+     * deliberate — locking is the safe direction and gating it would just train people to
+     * dismiss dialogs. The password is a shared, fixed one — see [UNLOCK_PASSWORD] for what it
+     * is and is not protecting against.
      */
     private fun setupConfigLocks() {
         setupOneLock(
@@ -780,6 +787,12 @@ class TakConnectActivity : AppCompatActivity() {
             "Unlock video server settings?",
             "These fields are locked so a working stream configuration is not changed by " +
                 "accident. Editing them can stop your team seeing the video.",
+        )
+        setupOneLock(
+            R.id.limitBatteryLock, KEY_BATTERY_LOCKED, batteryLockedFields,
+            "Unlock battery levels?",
+            "These are the levels at which the aircraft returns and lands on its own. " +
+                "A wrong value can force a landing away from the pilot.",
         )
     }
 
@@ -805,27 +818,62 @@ class TakConnectActivity : AppCompatActivity() {
                 AppLog.v(TAG, "config locked: $prefKey")
                 return@setOnCheckedChangeListener
             }
-            // Unlocking: confirm first, and put the box BACK if they decline. Using
+            // Unlocking: ask for the password, and put the box BACK unless it is right. Using
             // setOnCheckedChangeListener means our own revert would re-enter this listener,
-            // so the listener is detached around it.
+            // so the listener is detached around it (inside revert()).
+            //
+            // A wrong password and Cancel take the same path on purpose: the only way OUT of
+            // this dialog with the fields editable is the correct password.
+            val revert = {
+                box.setOnCheckedChangeListener(null)
+                box.isChecked = true
+                setupConfigLocks()
+            }
+            // Built in code rather than a layout: one field, three call sites, and a layout
+            // file would imply this dialog can grow. It must not — it is a speed bump.
+            // Styled to match the section fields (takFieldStyle), plus a bordered background —
+            // see bg_dialog_field for why the flat fill was not enough here. A programmatic
+            // EditText takes the PLATFORM's colours, not the app theme's, so every colour is
+            // set explicitly.
+            val pw = android.widget.EditText(this).apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                hint = "Password"
+                textSize = 15f
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    this@TakConnectActivity, R.color.tp_text_primary))
+                setHintTextColor(androidx.core.content.ContextCompat.getColor(
+                    this@TakConnectActivity, R.color.tp_text_hint))
+                setBackgroundResource(R.drawable.bg_dialog_field)
+                val pad = (12 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            }
+            val wrap = android.widget.FrameLayout(this).apply {
+                val padH = (16 * resources.displayMetrics.density).toInt()
+                val padV = (8 * resources.displayMetrics.density).toInt()
+                setPadding(padH, padV, padH, padV)
+                addView(pw)
+            }
             android.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
                 .setTitle(confirmTitle)
                 .setMessage(confirmBody)
+                .setView(wrap)
                 .setPositiveButton("Unlock") { _, _ ->
-                    prefs.edit().putBoolean(prefKey, false).apply()
-                    applyLock(fieldIds, false)
-                    AppLog.i(TAG, "config UNLOCKED: $prefKey")
+                    if (pw.text.toString() == UNLOCK_PASSWORD) {
+                        prefs.edit().putBoolean(prefKey, false).apply()
+                        applyLock(fieldIds, false)
+                        // The entered text is never logged, right or wrong — same rule as
+                        // every other credential in this app (security review 2026-08-03).
+                        AppLog.i(TAG, "config UNLOCKED: $prefKey")
+                    } else {
+                        android.widget.Toast.makeText(this, "Wrong password",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                        AppLog.i(TAG, "unlock refused (wrong password): $prefKey")
+                        revert()
+                    }
                 }
-                .setNegativeButton("Cancel") { _, _ ->
-                    box.setOnCheckedChangeListener(null)
-                    box.isChecked = true
-                    setupConfigLocks()
-                }
-                .setOnCancelListener {
-                    box.setOnCheckedChangeListener(null)
-                    box.isChecked = true
-                    setupConfigLocks()
-                }
+                .setNegativeButton("Cancel") { _, _ -> revert() }
+                .setOnCancelListener { revert() }
                 .show()
         }
     }
@@ -1197,6 +1245,22 @@ class TakConnectActivity : AppCompatActivity() {
         /** Per-section configuration locks — see setupConfigLocks(). */
         private const val KEY_TAK_LOCKED = "tak_config_locked"
         private const val KEY_VIDEO_LOCKED = "video_config_locked"
+        private const val KEY_BATTERY_LOCKED = "battery_levels_locked"
+
+        /**
+         * The one password that unlocks any locked section.
+         *
+         * ⚠ **This is a speed bump, not security, and it must not be mistaken for it.** The
+         * string ships in the APK in plain text — anyone with the file and `strings`, or with
+         * adb, reads it in seconds. That is accepted (operator, 2026-08-06): the threat model
+         * is an average user tapping into settings they should not adjust, not an adversary.
+         * Do not "harden" this with hashing or per-device secrets — a stronger lock on the
+         * front door of an unlocked house, and it would cost the field-recoverability that a
+         * shared fixed password exists to provide.
+         *
+         * The entered attempt is never logged, right or wrong.
+         */
+        private const val UNLOCK_PASSWORD = "takpilot"
 
         private const val KEY_HOST = "host"
         private const val KEY_ENROLL_PORT = "enroll_port"

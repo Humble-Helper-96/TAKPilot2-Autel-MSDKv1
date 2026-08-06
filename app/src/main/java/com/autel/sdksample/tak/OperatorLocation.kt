@@ -48,6 +48,18 @@ object OperatorLocation {
     private const val MIN_INTERVAL_MS = 2_000L
     private const val MIN_DISTANCE_M = 2f
 
+    /**
+     * Oldest cached fix the seed below will accept.
+     *
+     * The cache is device-wide and has no expiry: it can hold a fix from days ago, left by any
+     * application at wherever the controller last had a sky view. Publishing that as the pilot's
+     * position is worse than publishing nothing, because the marker REFRESHES — every push
+     * resets its stale time, so a wrong position never ages off the team's map the way a
+     * silence would. Ten minutes keeps the seed's actual purpose (a message before the first
+     * fix of THIS session) and rejects the depot-from-last-Tuesday case.
+     */
+    private const val MAX_SEED_AGE_MS = 10 * 60_000L
+
     @Volatile private var latestFix: Location? = null
     private var manager: LocationManager? = null
     private var listening = false
@@ -105,8 +117,12 @@ object OperatorLocation {
                 lm.requestLocationUpdates(provider, MIN_INTERVAL_MS, MIN_DISTANCE_M, listener,
                     Looper.getMainLooper())
                 // Seed from the cache so the first message does not have to wait for a fix. This
-                // is only useful BECAUSE the request above is now filling that cache.
-                lm.getLastKnownLocation(provider)?.let { if (latestFix == null) latestFix = it }
+                // is only useful BECAUSE the request above is now filling that cache — and only
+                // safe when the cached fix is recent; see MAX_SEED_AGE_MS.
+                lm.getLastKnownLocation(provider)?.let {
+                    if (latestFix == null &&
+                        System.currentTimeMillis() - it.time < MAX_SEED_AGE_MS) latestFix = it
+                }
                 any = true
             } catch (t: Throwable) {
                 AppLog.w(TAG, "requestLocationUpdates($provider) failed: ${t.message}")
@@ -123,6 +139,10 @@ object OperatorLocation {
         runCatching { manager?.removeUpdates(listener) }
             .onFailure { AppLog.w(TAG, "removeUpdates failed: ${it.message}") }
         listening = false
+        // Drop the fix rather than keep it for the next session — a restart hours later must
+        // not republish where the pilot USED to be. The next start() re-seeds from the system
+        // cache, and its age gate decides whether this session's last fix is still usable.
+        latestFix = null
         AppLog.i(TAG, "controller position updates stopped")
     }
 }

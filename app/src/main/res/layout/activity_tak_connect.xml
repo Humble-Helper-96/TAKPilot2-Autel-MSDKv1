@@ -130,6 +130,19 @@
             android:textSize="12sp"
             android:paddingTop="4dp" />
 
+        <!-- After the fields it protects, same as the TAK and video locks. Covers the two
+             battery percentages ONLY — the numeric limits and Apply to Aircraft stay live, so
+             a locked configuration can still be pushed to a freshly connected aircraft. -->
+        <CheckBox
+            android:id="@+id/limitBatteryLock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="@color/tp_accent"
+            android:text="Lock battery levels (fields read-only)"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp" />
+
         <!-- Kept in the tree though setupFailsafe() hides it: the single-option radio has
              nothing to report. Restoring a second option restores its status line. -->
         <TextView
