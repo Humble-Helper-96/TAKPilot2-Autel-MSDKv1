@@ -241,8 +241,17 @@ android {
         //        - The controller battery is read each 30 seconds, not each 2 seconds. When a
         //          read fails, the last good value is sent, not 100 — a failed read must not
         //          show a full battery.
-        versionCode 12
-        versionName "1.5.6"
+        // 1.5.7: THE RC SIGNAL SURVIVES A TAK TOGGLE. A stop and start of the TAK session made
+        //        the RC signal indicator gray for the life of the process. Cause: an asymmetry
+        //        in the Autel SDK — the removal of the last RC info listener detaches the SDK
+        //        from the RC status packets, and a new registration does not attach it again.
+        //        The application no longer removes that listener; see AutelTakBridge.unsubscribe.
+        //
+        //        The video lock now also covers the codec (H.264/H.265) and the TCP transport
+        //        toggle. The quality profile stays live — a pilot must be able to drop to Low
+        //        on a marginal link without a password.
+        versionCode 13
+        versionName "1.5.7"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

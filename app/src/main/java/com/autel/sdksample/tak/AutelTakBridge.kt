@@ -319,7 +319,15 @@ class AutelTakBridge(
         runCatching { evo.battery.setBatteryStateListener(null) }
         runCatching { evo.gimbal.setAngleListener(null) }
         runCatching { evo.dsp.setDspInfoListener(null) }
-        runCatching { evo.remoteController.setInfoDataListener(null) }
+        // ⚠ remoteController.setInfoDataListener(null) is DELIBERATELY ABSENT — calling it kills
+        // RC signal/battery for the LIFE OF THE PROCESS. Verified in the aar (javap -c,
+        // 2026-08-06): RemoteControllerManager2.unRegisteRCInfoDataCallback, on emptying its
+        // listener map, detaches the whole manager from the packet dispatcher
+        // (unRegisterReceiveListener("RemoteController", 1027)), but registeRCInfoDataCallback
+        // is only a map put and NEVER re-attaches — only a full SDK re-init does. So a TAK
+        // stop→start cycle left the toolbar signal bars gray until the app was killed (observed
+        // in flight, 2026-08-06). The listener stays armed instead: it only writes @Volatile
+        // fields, and the next subscribe() replaces it under the SDK's fixed key.
     }
 
     // ---- The 2 s report ----

@@ -751,9 +751,15 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.takUsername, R.id.takPassword, R.id.takCallsign,
         R.id.takDisconnectButton,
     )
+    /** Codec and TCP transport are part of WHAT the stream is — the wrong codec breaks playback
+     *  outright (CloudTAK cannot play H.265), so they lock with the server fields (operator,
+     *  2026-08-06). The quality profile stays live; see [setupConfigLocks]. The two codec
+     *  RadioButtons are listed individually because disabling a RadioGroup does not disable its
+     *  children. */
     private val videoLockedFields = listOf(
         R.id.videoHost, R.id.videoPort, R.id.videoStreamId,
         R.id.videoUser, R.id.videoPassword,
+        R.id.videoCodecH264, R.id.videoCodecH265, R.id.videoTcp,
     )
     /** The two battery percentages only. The numeric limits and Apply to Aircraft stay live —
      *  a locked configuration must still be pushable to a freshly connected aircraft. */
@@ -765,10 +771,12 @@ class TakConnectActivity : AppCompatActivity() {
      * "Lock configuration" for the TAK server, video server and battery-level sections: a
      * working setup should not be one stray tap away from being edited on a tailgate.
      *
-     * **Locks the FIELDS only.** Enroll & Connect, Log Out, the video quality/transport
-     * choices and Apply to Aircraft stay live: needing to reconnect, or to drop to Low on a
-     * marginal link, is exactly when a pilot must not be fighting a lock. The lock guards what
-     * the configuration IS, not what you do with it.
+     * **Locks the FIELDS only.** Enroll & Connect, Log Out, the video QUALITY choice and
+     * Apply to Aircraft stay live: needing to reconnect, or to drop to Low on a marginal
+     * link, is exactly when a pilot must not be fighting a lock. The lock guards what the
+     * configuration IS, not what you do with it. Codec and TCP transport moved INSIDE the
+     * video lock (operator, 2026-08-06): they are part of what the stream is — a codec the
+     * server can't play is a dead stream, not a tuning choice.
      *
      * Unlocking asks for a password (operator, 2026-08-06); locking does not. The asymmetry is
      * deliberate — locking is the safe direction and gating it would just train people to
