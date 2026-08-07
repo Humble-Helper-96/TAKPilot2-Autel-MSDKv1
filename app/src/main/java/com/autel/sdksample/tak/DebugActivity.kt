@@ -258,19 +258,35 @@ class DebugActivity : AppCompatActivity() {
             })
         }
 
-        get("1/5 baseline") {
-            set("2/5", com.autel.common.remotecontroller.RFPower.CE) {
-                get("3/5 after-CE") {
-                    set("4/5", com.autel.common.remotecontroller.RFPower.FCC) {
-                        get("5/5 after-FCC-restore") {
-                            AppLog.i(TAG, "RF probe DONE — export the log for Autel")
-                            android.widget.Toast.makeText(this,
-                                "RF probe done. Use Export Log.",
-                                android.widget.Toast.LENGTH_LONG).show()
+        // Phase 2 (2026-08-07, operator go): the RC refused every public setRFPower —
+        // including CE→CE — while Autel Explorer's own binary drives FCC mode through a
+        // DIFFERENT path: DspRFManager2.enableFCCMode → FCCModePacket to the AIRCRAFT
+        // fly-controller channel (AU_PHONE_CTRL_FCC_MODE_REQ). Same call, same packet,
+        // found by decompiling Explorer. Fire-and-forget (the internal API has no
+        // callback), so the read-backs are the only confirmation. If the region flips,
+        // the sequence deliberately LEAVES it at FCC — the fleet's configured region,
+        // which applyRfPower has been failing to reach.
+        get("1/6 baseline") {
+            AppLog.i(TAG, "RF probe 2/6: enableFCCMode(1) via DspRFManager2 (Explorer's path) — sent")
+            runCatching {
+                com.autel.AutelNet2.dsp.controller.DspRFManager2.getInstance().enableFCCMode(1)
+            }.onFailure { AppLog.w(TAG, "RF probe 2/6: enableFCCMode threw: $it") }
+            h.postDelayed({
+                get("3/6 3s-after-fccMode") {
+                    h.postDelayed({
+                        get("4/6 10s-after-fccMode") {
+                            set("5/6 setRFPower(FCC) retry", com.autel.common.remotecontroller.RFPower.FCC) {
+                                get("6/6 final") {
+                                    AppLog.i(TAG, "RF probe DONE — export the log for Autel")
+                                    android.widget.Toast.makeText(this,
+                                        "RF probe done. Use Export Log.",
+                                        android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            }
                         }
-                    }
+                    }, 7000L)
                 }
-            }
+            }, 3000L)
         }
     }
 
