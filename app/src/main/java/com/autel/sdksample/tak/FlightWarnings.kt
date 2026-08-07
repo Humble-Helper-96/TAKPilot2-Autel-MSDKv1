@@ -28,13 +28,21 @@ import com.taklite.util.AppLog
  */
 object FlightWarnings {
 
-    /** Priority order IS declaration order: worse first. Red = act now, amber = know it. */
-    enum class Warning(val red: Boolean, val label: String) {
+    /** Priority order IS declaration order: worse first. Red = act now, amber = know it.
+     *  `banner = false` keeps a warning in the ACTIVE set — logged with timestamps like every
+     *  other transition — but never on screen. */
+    enum class Warning(val red: Boolean, val label: String, val banner: Boolean = true) {
         COMPASS(true, "COMPASS INTERFERENCE"),
         GPS_LOST(true, "GPS LOST — AIRCRAFT DRIFTS"),
         FC_HOT(true, "FLIGHT CONTROLLER HOT"),
         BATTERY_CRITICAL(true, "BATTERY CRITICAL"),
-        NO_FLY_ZONE(true, "NO-FLY ZONE"),
+        /** Log-only (operator, 2026-08-07): the fleet flies public-safety missions under an
+         *  FAA exception, so "NO-FLY ZONE" on the banner is wrong for the pilot acting
+         *  lawfully inside one — and a red banner that is routinely correct to ignore would
+         *  teach pilots to ignore red. The log line stays: it is the record of WHEN the
+         *  aircraft operated in such a zone, which an exception-holder may need after the
+         *  fact. The aircraft's own geofence behaviour is not changed by this either way. */
+        NO_FLY_ZONE(true, "NO-FLY ZONE", banner = false),
         RTH_BATTERY(false, "RETURNING HOME — LOW BATTERY"),
         RTH_RC_LOST(false, "RETURNING HOME — SIGNAL LOST"),
         RTH_RANGE(false, "RETURNING HOME — RANGE LIMIT"),
@@ -136,7 +144,7 @@ object FlightWarnings {
     fun display(): Display? {
         val now = System.currentTimeMillis()
         synchronized(lock) {
-            val worst = active.minOrNull()
+            val worst = active.filter { it.banner }.minOrNull()
             val cur = shown
             val held = cur != null && now - shownAtMs < HOLD_MS
             // A worse warning takes the banner immediately; otherwise the current one keeps
@@ -150,7 +158,7 @@ object FlightWarnings {
             val show = shown ?: return null
             // "+N" = warnings stacked behind this one, counted from the live set (the shown
             // one may itself already have cleared and just be riding out its hold).
-            val others = active.count { it != show }
+            val others = active.count { it != show && it.banner }
             val text = if (others > 0) "${show.label}  +$others" else show.label
             return Display(text, show.red)
         }
