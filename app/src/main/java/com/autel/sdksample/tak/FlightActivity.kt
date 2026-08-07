@@ -83,7 +83,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             TakBridgeHolder.setActiveLens(
                 if (value) AutelTakBridge.Lens.IR else AutelTakBridge.Lens.EO)
         }
-    private var irBlackHot = false
+    /** The palettes the button cycles through, in tap order. A subset of the XT706's twelve
+     *  on purpose (operator, 2026-08-07: Ironbow joins white/black hot): three is a cycle a
+     *  pilot can predict blind; twelve is a settings menu. The camera may still be IN one of
+     *  the other nine (left there by Explorer) — [refreshIrButtons] shows whatever the
+     *  camera truly holds, and the next tap re-enters the cycle at WHITE HOT. */
+    private val irPaletteCycle = listOf(IrColor.WhiteHot, IrColor.BlackHot, IrColor.IronBow)
+    private var irPalette: IrColor = IrColor.WhiteHot
     private lateinit var map: LockedMapView
     private lateinit var mapContainer: android.widget.FrameLayout
     /** Double-tap state of the mini-map. Deliberately NOT persisted — every entry to the flight
@@ -1739,14 +1745,16 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
-    /** White hot / black hot. Only reachable while [irOn] — the button is hidden otherwise. */
+    /** White hot → black hot → ironbow, then round again. Only reachable while [irOn] — the
+     *  button is hidden otherwise. A palette outside the cycle (Explorer's leftovers) enters
+     *  at WHITE HOT: indexOf returns -1, and -1 + 1 is index 0. */
     private fun onIrPaletteTapped() {
         val cam = AutelProductHolder.xt706 ?: return
-        val target = if (irBlackHot) IrColor.WhiteHot else IrColor.BlackHot
+        val target = irPaletteCycle[(irPaletteCycle.indexOf(irPalette) + 1) % irPaletteCycle.size]
         cam.setIrColor(target, camCb("setIrColor($target)") {
-            irBlackHot = !irBlackHot
+            irPalette = target
             refreshIrButtons()
-            AppLog.i(TAG, "IR palette now ${if (irBlackHot) "BlackHot" else "WhiteHot"}")
+            AppLog.i(TAG, "IR palette now $target")
         })
     }
 
@@ -1759,7 +1767,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         irPaletteButton.visibility = if (irOn) View.VISIBLE else View.GONE
         // Spelled out, not "WHOT"/"BHOT": in the HUD column it has the full column width, and
         // the abbreviations only existed to fit a narrow toolbar pill.
-        irPaletteButton.text = if (irBlackHot) "BLACK HOT" else "WHITE HOT"
+        irPaletteButton.text = when (irPalette) {
+            IrColor.WhiteHot -> "WHITE HOT"
+            IrColor.BlackHot -> "BLACK HOT"
+            IrColor.IronBow -> "IRONBOW"
+            // Not in the cycle (Explorer left the camera in Lava, Arctic, …): show the truth
+            // rather than a wrong cycle label. Next tap moves to WHITE HOT.
+            else -> irPalette.name.uppercase()
+        }
     }
 
     /**
@@ -1787,7 +1802,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
         cam.getIrColor(object : CallbackWithOneParam<IrColor> {
             override fun onSuccess(c: IrColor?) {
-                irBlackHot = c == IrColor.BlackHot
+                irPalette = c ?: IrColor.WhiteHot
                 runOnUiThread { refreshIrButtons() }
             }
             override fun onFailure(error: AutelError?) {

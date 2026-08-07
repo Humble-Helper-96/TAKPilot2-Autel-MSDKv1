@@ -443,10 +443,12 @@ class FieldGuideActivity : AppCompatActivity() {
                 "your team also, because they see the same image.\n\n" +
                 "The thermal camera shows heat, not light. Thus it finds a person or a hot " +
                 "vehicle in the dark, in smoke, or in vegetation.\n\n" +
-                "When the thermal camera is on, a second button shows: WHOT or BHOT. It " +
-                "changes which colour is hot:\n" +
-                "WHOT (white hot) - hot is white, cold is black.\n" +
-                "BHOT (black hot) - hot is black, cold is white.",
+                "When the thermal camera is on, a second button shows under the exposure " +
+                "control. Each press changes the heat colours, in this order:\n" +
+                "WHITE HOT - hot is white, cold is black.\n" +
+                "BLACK HOT - hot is black, cold is white.\n" +
+                "IRONBOW - hot is yellow and white, cold is purple and black. This is the " +
+                "colour view many pilots know from Explorer.",
             listOf(
                 "The buttons show the state of the CAMERA. If you start the app when the " +
                     "camera is already in thermal, the button is green immediately.",
