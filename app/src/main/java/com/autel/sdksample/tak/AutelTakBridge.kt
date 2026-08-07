@@ -148,6 +148,10 @@ class AutelTakBridge(
     fun stop() {
         running = false
         handler.removeCallbacks(tick)
+        // Close out any open flight track first — after unsubscribe() no more telemetry
+        // arrives, so a landing would otherwise never be detected and the session would sit
+        // open until the orphan sweep. A deliberate stop deserves a finished GPX now.
+        FlightPathLogger.endSession("bridge stopped")
         unsubscribe()
         // The bridge is the only consumer of the controller's position, so the receiver stops
         // with it. Without this the GPS ran at 2s updates for the LIFE OF THE PROCESS after the
@@ -241,6 +245,12 @@ class AutelTakBridge(
                 info.attitudeInfo?.let { att ->
                     headingDeg = CameraSlantPoint.norm360(att.yaw)
                 }
+                // Flight path recording (v1.5.9). Fed from HERE, not from pushOnce: pushOnce
+                // returns early when TAK is disconnected, and a flight with no network must
+                // still produce a track — that is this release's whole theme. The call is a
+                // throttle check and a post; the logger's file I/O lives on its own thread.
+                FlightPathLogger.onTelemetry(
+                    lat, lon, mslAlt, relAlt, speedMs, headingDeg, batteryPct, satCount)
             }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "flyController listener error: ${error?.description}")

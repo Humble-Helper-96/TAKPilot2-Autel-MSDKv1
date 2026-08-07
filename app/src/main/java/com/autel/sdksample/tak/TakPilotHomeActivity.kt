@@ -76,6 +76,9 @@ class TakPilotHomeActivity : AppCompatActivity() {
         // saved enrollment so the operator lands here already connected.
         AutelProductHolder.install()
         TakAutoConnect.tryReconnect(applicationContext)
+        // Finish any flight track a crash left without its GPX (v1.5.9). Posts to the
+        // logger's own worker thread; Home is not slowed.
+        FlightPathLogger.sweepOrphans()
 
         aircraft = findViewById(R.id.homeAircraft)
         aircraftImage = findViewById(R.id.homeAircraftImage)

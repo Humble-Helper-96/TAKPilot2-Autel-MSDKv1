@@ -61,6 +61,9 @@ public class TestApplication extends Application {
         // ORDER MATTERS HERE. AppLog first so the suppression result is captured, then Explorer
         // suppression, then the heavier SDK log setup — NOT the other way round.
         AppLog.init(this);
+        // Flight path recording (v1.5.9). Init only arms the worker thread; nothing is
+        // written until the bridge reports the aircraft airborne.
+        com.autel.sdksample.tak.FlightPathLogger.init(this);
 
         // Start the Autel Explorer watchdog. Explorer is a system app that starts ITSELF and
         // seizes the aircraft USB link; it killed a live flight on 2026-08-02 with the pilot never
