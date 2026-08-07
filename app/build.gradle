@@ -264,8 +264,8 @@ android {
         //        watchdog BEFORE the command, thus a failure in the command cannot stop the
         //        watchdog. The Enter Flight card shows where the camera writes and how much
         //        space is free.
-        versionCode 14
-        versionName "1.5.8"
+        versionCode 15
+        versionName "1.5.9"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

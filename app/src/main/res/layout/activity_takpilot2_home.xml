@@ -192,6 +192,33 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
+        <!-- Wifi state, directly under the TAK line it explains (v1.5.9). Field reports had
+             pilots chasing "enrollment failed" when the controller simply had no network; the
+             TAK dot alone can't separate "server down" from "no wifi". Three states, same
+             colour rule as everything else: green = connected with internet CONFIRMED
+             (validated network, not just an association), amber = wifi but no internet,
+             red = no wifi. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+            <View
+                android:id="@+id/homeWifiDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homeWifiStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WIFI: —"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
         <!-- Aircraft info, centered under the title -->
         <LinearLayout
             android:layout_width="wrap_content"

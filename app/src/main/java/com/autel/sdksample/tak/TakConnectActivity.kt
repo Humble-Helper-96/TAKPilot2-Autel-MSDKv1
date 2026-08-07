@@ -123,6 +123,17 @@ class TakConnectActivity : AppCompatActivity() {
                 setStatus("Already connected.", Color.parseColor("#4CAF50"))
                 return@setOnClickListener
             }
+            // Fail here, in words, when the controller has no route out — BEFORE the enroller
+            // turns the same fact into a generic TLS/socket error. Field reports (v1.5.9,
+            // event 1) had pilots reading "enrollment failed" as a server or credential fault
+            // when the controller simply had no network. Guards both paths below: fresh
+            // enrollment and reconnect-from-saved both need the network.
+            if (!NetworkStatus.hasInternet(this)) {
+                AppLog.w(TAG, "Connect blocked: no validated network")
+                setStatus("No network connection. Connect the controller to wifi first — " +
+                    "check the WIFI line on the home screen.", Color.parseColor("#F44336"))
+                return@setOnClickListener
+            }
             prefs.edit()
                 .putString(KEY_HOST, h.ifEmpty { prefs.getString(KEY_HOST, "") })
                 .putInt(KEY_ENROLL_PORT, ep)

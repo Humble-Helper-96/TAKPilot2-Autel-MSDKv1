@@ -48,6 +48,8 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var sdk: TextView
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
+    private lateinit var wifiStatus: TextView
+    private lateinit var wifiDot: android.view.View
 
     /** Camera free space for the storage line. The camera reports MEGABYTES; anything from a
      *  gigabyte up reads as GB, because "122049 MB" is a number a pilot has to stop and convert. */
@@ -86,6 +88,8 @@ class TakPilotHomeActivity : AppCompatActivity() {
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
         takDot = findViewById(R.id.homeTakDot)
+        wifiStatus = findViewById(R.id.homeWifiStatus)
+        wifiDot = findViewById(R.id.homeWifiDot)
         // Fixed at build time, not runtime state — set once, no need to touch it in updateStatus().
         // VERSION_NAME is real semver (see build.gradle); VERSION_CODE is Android's own internal
         // update-ordering integer and has no semver meaning, so it is deliberately not shown here
@@ -318,6 +322,28 @@ class TakPilotHomeActivity : AppCompatActivity() {
         takStatus.setTextColor(color)
         (takDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(color)
             ?: takDot.background?.setTint(color)
+
+        // Wifi, directly under the TAK line it explains — the network state IS the diagnosis
+        // for most "enrollment failed" reports (v1.5.9). Green only on a VALIDATED network:
+        // an SSID with no upstream shows amber and says so, which is the case the TAK dot
+        // alone cannot separate from "server down". SSID included when the OS shares it, so
+        // a pilot on the wrong hotspot sees the wrong NAME, not just a weak signal.
+        val net = NetworkStatus.read(this)
+        wifiStatus.text = when (net.state) {
+            NetworkStatus.State.CONNECTED ->
+                "WIFI: ${net.ssid ?: "connected"}  ${net.bars()}"
+            NetworkStatus.State.NO_INTERNET ->
+                "WIFI: ${net.ssid ?: "connected"} — NO INTERNET"
+            NetworkStatus.State.OFF -> "WIFI: NOT CONNECTED"
+        }
+        val wifiColor = when (net.state) {
+            NetworkStatus.State.CONNECTED -> Color.parseColor("#4CAF50")
+            NetworkStatus.State.NO_INTERNET -> Color.parseColor("#FFB300")
+            NetworkStatus.State.OFF -> Color.parseColor("#F44336")
+        }
+        wifiStatus.setTextColor(wifiColor)
+        (wifiDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(wifiColor)
+            ?: wifiDot.background?.setTint(wifiColor)
     }
 
     companion object {
