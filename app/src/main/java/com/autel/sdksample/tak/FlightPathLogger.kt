@@ -30,9 +30,9 @@ import java.util.TimeZone
  * **Fed, never subscribing.** Data arrives via [onTelemetry] from AutelTakBridge's existing
  * fly-controller callback (standing rules 1 and 2: this SDK's listener slots are single-client
  * — a second setFlyControllerInfoListener would silently REPLACE the bridge's). The feed runs
- * whenever the bridge runs, which is whenever a saved enrollment exists — TAKBridgeHolder is
- * started on the connect ATTEMPT, not on success, so flights with no network still get logged.
- * The one uncovered case is a controller that has never enrolled at all: no bridge, no log.
+ * whenever the bridge runs, and the bridge always runs: on the connect ATTEMPT when an
+ * enrollment exists (not on success — no network still logs), and in telemetry-only mode when
+ * none does (see TakAutoConnect.startTelemetryOnlyBridge). TAK is never a precondition.
  *
  * **The callback thread is never blocked.** File and MediaStore work happens on a dedicated
  * worker thread; [onTelemetry] does nothing but throttle and post. The 2Hz safety channel this

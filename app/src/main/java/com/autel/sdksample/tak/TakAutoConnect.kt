@@ -32,13 +32,37 @@ object TakAutoConnect {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY_LOGGED_OUT, false)) {
             Log.i(TAG, "User logged out — skipping auto-connect")
+            startTelemetryOnlyBridge(prefs)
             return
         }
         if (!hasSavedCerts(prefs)) {
             Log.i(TAG, "No saved enrollment — skipping auto-connect")
+            startTelemetryOnlyBridge(prefs)
             return
         }
         reconnect(context)
+    }
+
+    /**
+     * Arm the telemetry side of the bridge with no TAK connection (v1.5.9). The flight path
+     * logger feeds off the bridge's fly-controller callback, and before this the two paths
+     * above left the bridge stopped — so a never-enrolled or logged-out controller recorded no
+     * flights. The bridge is safe to run dry: its CoT push no-ops while TAK is disconnected,
+     * and everything else it does (subscribe, cache telemetry) is exactly what the logger
+     * needs. Uid/callsign fall back to defaults; they only ever reach the wire after a real
+     * connect, which restarts the bridge with enrolled identity anyway.
+     *
+     * That restart is also this path's one cost: enrolling MID-FLIGHT stops this bridge, which
+     * closes the open flight track and starts a new one — two files for that flight. Accepted:
+     * enrolling while airborne is not a case worth complicating the session logic for.
+     */
+    private fun startTelemetryOnlyBridge(prefs: android.content.SharedPreferences) {
+        if (TakBridgeHolder.isRunning) return
+        val callsign = prefs.getString(KEY_CALLSIGN, "TAKPilot2-EVO2") ?: "TAKPilot2-EVO2"
+        val uid = prefs.getString(KEY_UID, "") ?: ""
+        TakBridgeHolder.start(
+            (uid.ifEmpty { "TAKPilot2-local" }) + "-DRONE", callsign)
+        Log.i(TAG, "Telemetry-only bridge started (flight logging without TAK)")
     }
 
     /**
