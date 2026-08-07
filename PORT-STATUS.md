@@ -6,7 +6,7 @@
 Smart Controller V3)
 **Application ID:** `com.tak.uastoollite`
 **Application key:** Set in `TestApplication.java`. Registered in July 2026.
-**Updated:** 4 August 2026 (v1.5.4)
+**Updated:** 7 August 2026 (v1.5.9)
 
 ## 1. Scope
 
@@ -19,10 +19,24 @@ These are the results of that decision:
 - The sticks and the RTH button continue to operate. Stick data goes on the Skylink radio link.
   It does not go through the application.
 - This application does not have the other Explorer functions. It has no camera settings screen,
-  no mission planning, no firmware update and no warnings screen.
+  no mission planning and no firmware update. Since v1.5.9 it shows the important aircraft
+  warnings on the flight screen (see `FlightWarnings.kt`).
 
 Keep Explorer installed. Use Explorer for pre-flight configuration. Use TAKPilot2 for TAK
 missions.
+
+## 1a. Changes after v1.5.4 (added 7 August 2026)
+
+One line for each release. Read the git tags and the release notes in `signedReleases/` for
+the details.
+
+- **v1.5.5** — video streaming updates (VBR; see `VIDEO-STREAM-VBR-FIX.md`).
+- **v1.5.6** — password-protected settings; small corrections.
+- **v1.5.7** — RC signal stays alive across a TAK toggle; codec and transport locked.
+- **v1.5.8** — zoom on the right scroll wheel; recording failures report their cause.
+- **v1.5.9** — wifi status on the home card; warnings on the flight screen; flight path
+  records in Downloads/TAKPilotFlights; Ironbow thermal palette; configuration locks at the
+  bottom of each section. See `V1_5_9_PLAN.md` (history) and the release notes.
 
 ## 2. Component map
 

@@ -2,6 +2,22 @@
 
 **Written in Simplified Technical English (ASD-STE100).**
 
+> ## THIS DOCUMENT IS HISTORY
+>
+> v1.5.9 was released on 7 August 2026 (tag `v1.5.9`, versionCode 15). All bench checks
+> passed. Real compass interference confirmed the warning banner in the field.
+>
+> The released build differs from this plan in three points:
+>
+> 1. The NO-FLY ZONE warning is log-only, not on the banner. The fleet operates under an
+>    FAA exception (operator, 2026-08-07).
+> 2. The Ironbow thermal palette was added late as a fifth feature (operator request).
+> 3. Flight logging also operates with no TAK enrollment, through a telemetry-only bridge
+>    start. The plan assumed the bridge always operates; that was not true until this change.
+>
+> For the current design, read the class documentation in the source. Do not use this
+> document as a description of the application.
+
 **Status:** planned, 7 August 2026. v1.5.8 operates on 6 controllers in the fleet.
 
 ## 1. What this release contains

@@ -44,15 +44,16 @@ object TakAutoConnect {
     }
 
     /**
-     * Arm the telemetry side of the bridge with no TAK connection (v1.5.9). The flight path
-     * logger feeds off the bridge's fly-controller callback, and before this the two paths
-     * above left the bridge stopped — so a never-enrolled or logged-out controller recorded no
-     * flights. The bridge is safe to run dry: its CoT push no-ops while TAK is disconnected,
-     * and everything else it does (subscribe, cache telemetry) is exactly what the logger
-     * needs. Uid/callsign fall back to defaults; they only ever reach the wire after a real
-     * connect, which restarts the bridge with enrolled identity anyway — and that restart is a
-     * swap, not a teardown (stop(finalizeFlight = false) in TakBridgeHolder.start), so an
-     * enroll mid-flight continues the same track file.
+     * Arms the telemetry side of the bridge with no TAK connection (v1.5.9). The flight path
+     * logger feeds from the bridge's fly-controller callback. Before this function existed,
+     * the two paths above left the bridge stopped, so a controller with no enrollment (or a
+     * logged-out one) recorded no flights. The bridge operates safely without TAK: its CoT
+     * push does nothing while TAK is disconnected, and its other work (subscribe, cache
+     * telemetry) is exactly what the logger needs. The uid and callsign fall back to
+     * defaults. They reach the network only after a real connect, and a real connect
+     * restarts the bridge with the enrolled identity. That restart is a swap, not a
+     * teardown (stop(finalizeFlight = false) in TakBridgeHolder.start), so an enrollment
+     * during a flight continues the same track file.
      */
     private fun startTelemetryOnlyBridge(prefs: android.content.SharedPreferences) {
         if (TakBridgeHolder.isRunning) return

@@ -199,25 +199,25 @@ class DebugActivity : AppCompatActivity() {
     }
 
     /**
-     * RF transmit-power probe (2026-08-07), built because Autel support asked for logs on
-     * whether the RC's transmit power can be changed from this SDK.
+     * RF transmit-power probe (2026-08-07). Autel support asked for logs that show whether
+     * this SDK can change the RC transmit power.
      *
-     * What the SDK offers — established by sweeping the WHOLE aar surface (RC, DSP,
-     * fly-controller, legacy sdk10), not one subsystem: exactly ONE power control exists,
-     * `setRFPower(FCC | CE)` on the remote controller — a regulatory REGION toggle, not a
-     * dBm value. The DSP's RFData get/set is the frequency-CHANNEL table (its second
-     * parameter is dropped in Dsp20 bytecode), and SignalInfo's meanPower/gain are telemetry
-     * readouts. There is no dBm-granular transmit-power API in this SDK.
+     * What the SDK offers, found by a sweep of the FULL aar surface (RC, DSP,
+     * fly-controller, legacy sdk10), not one subsystem: one power control exists,
+     * `setRFPower(FCC | CE)` on the remote controller. It selects a regulatory REGION, not
+     * a dBm value. The DSP's RFData get/set is the frequency-CHANNEL table (Dsp20 bytecode
+     * drops its second parameter). SignalInfo's meanPower and gain are telemetry readouts.
+     * This SDK has no API that sets a dBm value.
      *
-     * The probe exercises that one control with read-backs and logs each step under this
-     * activity's tag: current region → set CE → read back → set FCC (the fleet's configured
-     * region, so the sequence ENDS in the state applyRfPower pushes anyway) → read back.
-     * If the read-back follows the set, the region knob works and any dBm lock is inside
-     * the radio's own region tables; if it snaps back, the log shows the firmware refusing —
-     * either way this file is the evidence Autel asked for.
+     * The probe operates that one control with read-backs and logs each step under this
+     * activity's tag. If the read-back follows the set, the region control works, and any
+     * dBm limit lives in the radio's own region tables. If the value does not change, the
+     * log shows the refusal from the firmware. In both cases the log file is the evidence
+     * that Autel asked for. The sequence ends at FCC, the region the fleet configuration
+     * pushes at each connect.
      *
-     * Uses only the request/response packet path (RemoteControllerManager2.sendPacket) — no
-     * single-slot listeners touched, so the bridge's channels are safe (standing rule 2).
+     * The probe uses only the request/response packet path. It touches no single-client
+     * listener slots, so the bridge's channels are safe (standing rule 2).
      */
     private fun runRfPowerProbe() {
         val rc = AutelProductHolder.evo2?.remoteController
@@ -258,14 +258,13 @@ class DebugActivity : AppCompatActivity() {
             })
         }
 
-        // Phase 2 (2026-08-07, operator go): the RC refused every public setRFPower —
-        // including CE→CE — while Autel Explorer's own binary drives FCC mode through a
-        // DIFFERENT path: DspRFManager2.enableFCCMode → FCCModePacket to the AIRCRAFT
-        // fly-controller channel (AU_PHONE_CTRL_FCC_MODE_REQ). Same call, same packet,
-        // found by decompiling Explorer. Fire-and-forget (the internal API has no
-        // callback), so the read-backs are the only confirmation. If the region flips,
-        // the sequence deliberately LEAVES it at FCC — the fleet's configured region,
-        // which applyRfPower has been failing to reach.
+        // Phase 2 (2026-08-07, operator approved): the RC refused each public setRFPower,
+        // including CE to CE. Autel Explorer's own binary uses a DIFFERENT path:
+        // DspRFManager2.enableFCCMode sends FCCModePacket to the AIRCRAFT fly-controller
+        // channel (AU_PHONE_CTRL_FCC_MODE_REQ). We found this path when we decompiled
+        // Explorer. The internal API has no callback, so the read-backs are the only
+        // confirmation. If the region changes, the sequence keeps it at FCC — the region
+        // that the fleet configuration pushes, and that applyRfPower could not reach.
         get("1/6 baseline") {
             AppLog.i(TAG, "RF probe 2/6: enableFCCMode(1) via DspRFManager2 (Explorer's path) — sent")
             runCatching {

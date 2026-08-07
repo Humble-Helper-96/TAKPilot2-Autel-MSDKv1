@@ -5,7 +5,9 @@
 **Purpose:** give the intent, the decisions and the knowledge from the previous sessions to a new
 session. This is the internal working document.
 
-**Version:** v1.5.2
+**Version:** v1.5.2. **This document was not updated after v1.5.2.** For the current state,
+read `PORT-STATUS.md` (updated at each release) and the class documentation in the source.
+The decisions and the lessons in this document stay valid.
 **Status:** Tested in flight on the EVO II Dual 640T V3 and the Smart Controller V3 on 3 August 2026
 and 4 August 2026. Phases 0 to 5 are complete.
 

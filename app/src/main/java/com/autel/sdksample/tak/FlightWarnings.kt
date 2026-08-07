@@ -7,24 +7,24 @@ import com.autel.common.flycontroller.MainFlyState
 import com.taklite.util.AppLog
 
 /**
- * Aircraft warnings for the flight screen (v1.5.9, plan §4) — the messages Explorer showed
- * and TAKPilot2 did not, which left a pilot hearing the controller's compass-interference
- * beeps with nothing on screen to explain them (field event 2).
+ * Aircraft warnings for the flight screen (v1.5.9, plan §4). These are the messages that
+ * Explorer showed and TAKPilot2 did not. In field event 2 the controller made warning sounds
+ * for compass interference, and the screen showed nothing to explain them.
  *
- * **Fed, never subscribing** — same contract as [FlightPathLogger]: [onStatus] is called from
- * AutelTakBridge's existing fly-controller callback with the `FlyControllerStatus` that
- * callback already receives and previously ignored. No new SDK listeners (standing rules 1
- * and 2). The call is cheap by design: recompute a small set, log only the CHANGES.
+ * **This object is fed. It does not subscribe.** The same contract as [FlightPathLogger]:
+ * the bridge's fly-controller callback calls [onStatus] with the `FlyControllerStatus` that
+ * it already receives. No new SDK listeners (standing rules 1 and 2). The call is cheap:
+ * compute a small set, log only the changes.
  *
- * **Curated, in one place.** [compute] is the whole display policy — one ordered `when`-style
- * block, red before amber, worst first. Field feedback changes it by editing that one
- * function. Everything else the status carries still reaches the log via the transition
- * lines, so "should X be on screen?" can be answered from a flight log before it is code.
+ * **The display policy lives in one place.** [compute] is the full policy — one ordered
+ * block, red before amber, worst first. To change the policy after field feedback, edit that
+ * one function. Each signal that is not displayed still reaches the log through the
+ * transition lines. Thus a flight log can answer "must X be on screen?" before it is code.
  *
- * The flight screen polls [display] from its existing 500 ms HUD tick. The source repeats at
- * 2 Hz, so display is EDGE-triggered with a minimum hold ([HOLD_MS]): a warning that appears
- * stays readable even if the state flickers, and a worse warning preempts immediately. One
- * warning shows at a time — the worst — with a "+N" count when more are stacked.
+ * The flight screen polls [display] from its 500 ms HUD tick. The source repeats at 2 Hz, so
+ * the display reacts to CHANGES and holds each warning for [HOLD_MS]: a warning stays
+ * readable when the state flickers, and a worse warning takes the banner immediately. One
+ * warning shows at a time — the worst — with a "+N" count when more are active.
  */
 object FlightWarnings {
 

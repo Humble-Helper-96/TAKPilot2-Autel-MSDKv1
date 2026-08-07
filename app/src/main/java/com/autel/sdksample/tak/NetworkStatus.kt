@@ -6,20 +6,20 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 
 /**
- * One answer to "does this controller have a usable network?", shared by the home screen's
- * wifi line and the Pre-Flight enrollment check so the two can never disagree.
+ * One answer to "does this controller have a usable network?". The home screen's wifi line
+ * and the Pre-Flight enrollment check share it, so the two can never disagree.
  *
- * THREE STATES, NOT TWO — the middle one is the whole point. A controller can hold a wifi
- * association to a hotspot that has no upstream, and that is exactly the state behind the
- * field reports of "TAK enrollment failed" (v1.5.9, event 1): the wifi icon looked fine, the
- * network went nowhere. So CONNECTED means the system CONFIRMED internet access
- * (NET_CAPABILITY_VALIDATED — Android's own captive-portal/reachability probe), not that an
- * SSID is attached. Association without validation is its own state, worded so the pilot
- * reads the network as the problem, not the TAK server.
+ * THREE STATES, NOT TWO. The middle state is the important one. A controller can hold a wifi
+ * association to a hotspot that has no upstream connection. That state caused the field
+ * reports of "TAK enrollment failed" (v1.5.9, event 1): the wifi icon looked correct, but
+ * the network went nowhere. Thus CONNECTED means the system CONFIRMED internet access
+ * (NET_CAPABILITY_VALIDATED — Android's own reachability probe). An attached SSID alone is
+ * not sufficient. Association without validation is its own state. Its text tells the pilot
+ * that the network is the problem, not the TAK server.
  *
- * Polled, not listener-driven: the only consumers are Home's existing 1.5s refresh loop and
- * a one-shot check on Enroll & Connect, so a registered NetworkCallback would just be one
- * more thing to leak. Reading capabilities is cheap.
+ * Polled, not listener-driven. The only consumers are Home's 1.5 s refresh loop and one
+ * check when the pilot presses Enroll & Connect. A registered NetworkCallback would only be
+ * one more object to release. A capability read is cheap.
  */
 object NetworkStatus {
 

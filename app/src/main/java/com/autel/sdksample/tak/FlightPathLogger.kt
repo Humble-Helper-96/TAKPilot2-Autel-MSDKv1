@@ -17,30 +17,31 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Records each flight's path to Downloads/TAKPilotFlights (v1.5.9, plan §5): one CSV appended
- * row-by-row DURING the flight, one GPX written from it at landing.
+ * Records the path of each flight to Downloads/TAKPilotFlights (v1.5.9, plan §5). During the
+ * flight it appends one CSV row each second. At landing it writes one GPX track from the rows.
  *
- * **Crash-safety is the design driver.** An append-only CSV is a valid file at every instant,
- * so a crash or force-kill loses at most the seconds since the last row — never the file. The
- * GPX (the pilot-facing track: imports into ATAK, Google Earth, standard GIS tools) is
- * generated whole at flight end; when the process dies before that, [sweepOrphans] finds the
- * CSV with no GPX partner at the next launch and finishes the conversion. The CSV stays either
- * way — it carries speed, heading, battery and satellite count, which GPX cannot.
+ * **The design protects the record from a crash.** An append-only CSV is a valid file at each
+ * moment. A crash loses only the seconds after the last row. It never loses the file. The GPX
+ * (the track for ATAK, Google Earth and GIS tools) is written complete at flight end. If the
+ * process dies before that, [sweepOrphans] finds the CSV that has no GPX partner at the next
+ * start and completes the conversion. The CSV stays in both cases — it holds speed, heading,
+ * battery and satellite count, which GPX cannot hold.
  *
- * **Fed, never subscribing.** Data arrives via [onTelemetry] from AutelTakBridge's existing
- * fly-controller callback (standing rules 1 and 2: this SDK's listener slots are single-client
- * — a second setFlyControllerInfoListener would silently REPLACE the bridge's). The feed runs
- * whenever the bridge runs, and the bridge always runs: on the connect ATTEMPT when an
- * enrollment exists (not on success — no network still logs), and in telemetry-only mode when
- * none does (see TakAutoConnect.startTelemetryOnlyBridge). TAK is never a precondition.
+ * **This object is fed. It does not subscribe.** Data arrives through [onTelemetry] from the
+ * fly-controller callback that AutelTakBridge already owns. Standing rules 1 and 2 apply: the
+ * SDK listener slots hold one client, and a second setFlyControllerInfoListener would replace
+ * the bridge's listener with no warning. The feed operates whenever the bridge operates, and
+ * the bridge always operates: on the connect attempt when an enrollment exists, and in
+ * telemetry-only mode when none exists (see TakAutoConnect.startTelemetryOnlyBridge). A TAK
+ * connection is never a precondition.
  *
- * **The callback thread is never blocked.** File and MediaStore work happens on a dedicated
- * worker thread; [onTelemetry] does nothing but throttle and post. The 2Hz safety channel this
- * feeds from has been flooded before, with an aircraft in a wall to show for it.
+ * **The callback thread is never blocked.** All file and MediaStore work occurs on a dedicated
+ * worker thread. [onTelemetry] only checks the throttle and posts. This 2Hz safety channel was
+ * flooded one time before, and an aircraft hit a wall.
  *
- * Folder bound: total size, oldest files deleted first — the same reasoning and mechanics as
- * AppLog's public archive (size tracks data volume; wall-clock age does not). 50 MB holds
- * months of flying at ~200 KB per half-hour flight.
+ * The folder has a size limit. The oldest files are deleted first — the same rule as AppLog's
+ * public archive (size measures data volume; age does not). 50 MB holds months of flying at
+ * approximately 200 KB for each 30-minute flight.
  */
 object FlightPathLogger {
 
