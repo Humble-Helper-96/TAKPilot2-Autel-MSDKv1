@@ -145,13 +145,19 @@ class AutelTakBridge(
         AppLog.i(TAG, "AutelTakBridge started ($droneCallsign / $droneUid, every ${intervalMs}ms)")
     }
 
-    fun stop() {
+    /**
+     * @param finalizeFlight false ONLY when the holder is about to start a replacement bridge
+     *   in the same breath (an identity change: enroll, logout-then-reconnect). The flight
+     *   logger's session then stays open and the new bridge's telemetry continues the same
+     *   track — enrolling mid-flight no longer splits the flight into two files. Every real
+     *   teardown keeps the default: after unsubscribe() no more telemetry arrives, so a
+     *   landing would otherwise never be detected and the session would sit open until the
+     *   orphan sweep. A deliberate stop deserves a finished GPX now.
+     */
+    fun stop(finalizeFlight: Boolean = true) {
         running = false
         handler.removeCallbacks(tick)
-        // Close out any open flight track first — after unsubscribe() no more telemetry
-        // arrives, so a landing would otherwise never be detected and the session would sit
-        // open until the orphan sweep. A deliberate stop deserves a finished GPX now.
-        FlightPathLogger.endSession("bridge stopped")
+        if (finalizeFlight) FlightPathLogger.endSession("bridge stopped")
         unsubscribe()
         // The bridge is the only consumer of the controller's position, so the receiver stops
         // with it. Without this the GPS ran at 2s updates for the LIFE OF THE PROCESS after the
@@ -912,7 +918,9 @@ object TakBridgeHolder {
 
     fun start(droneUid: String, droneCallsign: String) {
         this.droneCallsign = droneCallsign
-        bridge?.stop()
+        // A restart, not a teardown: the flight logger's session survives the swap, so an
+        // identity change mid-flight (enroll, reconnect) continues the same track file.
+        bridge?.stop(finalizeFlight = false)
         bridge = AutelTakBridge(droneUid, droneCallsign).also {
             it.videoUrl = videoUrl
             it.cameraPointEnabled = cameraPointEnabled

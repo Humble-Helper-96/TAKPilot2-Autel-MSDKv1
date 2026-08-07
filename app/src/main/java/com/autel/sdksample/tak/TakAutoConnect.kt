@@ -50,11 +50,9 @@ object TakAutoConnect {
      * flights. The bridge is safe to run dry: its CoT push no-ops while TAK is disconnected,
      * and everything else it does (subscribe, cache telemetry) is exactly what the logger
      * needs. Uid/callsign fall back to defaults; they only ever reach the wire after a real
-     * connect, which restarts the bridge with enrolled identity anyway.
-     *
-     * That restart is also this path's one cost: enrolling MID-FLIGHT stops this bridge, which
-     * closes the open flight track and starts a new one — two files for that flight. Accepted:
-     * enrolling while airborne is not a case worth complicating the session logic for.
+     * connect, which restarts the bridge with enrolled identity anyway — and that restart is a
+     * swap, not a teardown (stop(finalizeFlight = false) in TakBridgeHolder.start), so an
+     * enroll mid-flight continues the same track file.
      */
     private fun startTelemetryOnlyBridge(prefs: android.content.SharedPreferences) {
         if (TakBridgeHolder.isRunning) return

@@ -51,9 +51,11 @@ import com.taklite.util.AppLog
  *
  * **Every control the blueprint has is documented, and as of the Phase 2.5 activation pass
  * every one of them now works.** Anything that regresses to a placeholder should get a line in
- * section 5, which exists as a single pre-flight scan rather than making a pilot re-read
- * section 3. Section 5 has no counterpart in the DJI guide — that build has no gaps left to
- * list — so keep it whenever the two files are reconciled.
+ * section 6 ("What this build cannot do"), which exists as a single pre-flight scan rather
+ * than making a pilot re-read section 3. Section 6 has no counterpart in the DJI guide — that
+ * build has no gaps left to list — so keep it whenever the two files are reconciled. Section 5
+ * (flight path records, v1.5.9) is also this build's own; port it TO the DJI guide if that
+ * app ever gets the logger.
  *
  * Section 4 is a PROCEDURE, not a control reference: the aim calibration is periodic
  * maintenance the pilot performs, like a compass calibration, so it gets steps in order
@@ -83,7 +85,8 @@ class FieldGuideActivity : AppCompatActivity() {
         sectionTwo()
         sectionThree()
         sectionFour()
-        sectionFive()
+        sectionFlightRecords()
+        sectionSix()
 
         divider()
         body("If this guide does not agree with the aircraft, obey the aircraft. Then tell " +
@@ -744,8 +747,40 @@ class FieldGuideActivity : AppCompatActivity() {
             "down more.")
     }
 
-    private fun sectionFive() {
-        section("5. What this build cannot do")
+    // Flight path records (v1.5.9). A DESCRIPTION of automatic behaviour, not a control
+    // reference — there is no switch, and the section says so first, because a pilot who
+    // reads about a new function will otherwise go looking for its setting.
+    private fun sectionFlightRecords() {
+        section("5. Flight path records")
+        body("The app records the path of each flight. The recording is automatic. There is " +
+            "no switch, and there is nothing to start or stop.")
+
+        sub("When the app records")
+        bullet("The recording starts when the aircraft leaves the ground.")
+        bullet("The recording stops when the aircraft is on the ground for 10 seconds. A " +
+            "short touch on the ground does not divide the flight into two records.")
+        bullet("A TAK server is not necessary. A network is not necessary. The app records " +
+            "each flight also when the controller is fully offline.")
+
+        sub("Where the records are")
+        body("Open Downloads/TAKPilotFlights on the controller. Each flight makes two files " +
+            "with the same name:")
+        bullet(".gpx — the track. Import it into ATAK or Google Earth to see the flight " +
+            "path on a map.")
+        bullet(".csv — a table with one row each second: time, position, altitude, speed, " +
+            "heading, battery and satellite count. Open it in a spreadsheet.")
+
+        note("The folder keeps approximately 50 MB — months of flights. When it is full, " +
+            "the app deletes the oldest files. Copy a record to a different location if you " +
+            "must keep it permanently.")
+        note("If the app stops during a flight, the record is safe. The track file appears " +
+            "the next time you start the app.")
+        bullet("No GPS, no points. When the aircraft flies without a GPS position, the app " +
+            "records nothing for that time. It does not write a false position.")
+    }
+
+    private fun sectionSix() {
+        section("6. What this build cannot do")
         body("All the controls on the flight screen operate on the EVO II. One function is " +
             "not available:")
 
