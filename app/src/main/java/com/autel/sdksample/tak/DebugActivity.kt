@@ -123,6 +123,10 @@ class DebugActivity : AppCompatActivity() {
 
         setupExplorerControls()
 
+        findViewById<android.widget.Button>(R.id.debugRfPowerProbe).setOnClickListener {
+            AppLog.i(TAG, "RF power probe tapped")
+            runRfPowerProbe()
+        }
         findViewById<android.widget.Button>(R.id.debugExportButton).setOnClickListener {
             AppLog.v(TAG, "export tapped")
             exportLog()
@@ -193,6 +197,84 @@ class DebugActivity : AppCompatActivity() {
         val bottom = logScroll.scrollY + logScroll.height
         return bottom >= logText.height - slop
     }
+
+    /**
+     * RF transmit-power probe (2026-08-07), built because Autel support asked for logs on
+     * whether the RC's transmit power can be changed from this SDK.
+     *
+     * What the SDK offers — established by sweeping the WHOLE aar surface (RC, DSP,
+     * fly-controller, legacy sdk10), not one subsystem: exactly ONE power control exists,
+     * `setRFPower(FCC | CE)` on the remote controller — a regulatory REGION toggle, not a
+     * dBm value. The DSP's RFData get/set is the frequency-CHANNEL table (its second
+     * parameter is dropped in Dsp20 bytecode), and SignalInfo's meanPower/gain are telemetry
+     * readouts. There is no dBm-granular transmit-power API in this SDK.
+     *
+     * The probe exercises that one control with read-backs and logs each step under this
+     * activity's tag: current region → set CE → read back → set FCC (the fleet's configured
+     * region, so the sequence ENDS in the state applyRfPower pushes anyway) → read back.
+     * If the read-back follows the set, the region knob works and any dBm lock is inside
+     * the radio's own region tables; if it snaps back, the log shows the firmware refusing —
+     * either way this file is the evidence Autel asked for.
+     *
+     * Uses only the request/response packet path (RemoteControllerManager2.sendPacket) — no
+     * single-slot listeners touched, so the bridge's channels are safe (standing rule 2).
+     */
+    private fun runRfPowerProbe() {
+        val rc = AutelProductHolder.evo2?.remoteController
+        if (rc == null) {
+            AppLog.w(TAG, "RF probe: no aircraft/RC — connect and retry")
+            android.widget.Toast.makeText(this, "No aircraft connected.",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val h = android.os.Handler(mainLooper)
+        AppLog.i(TAG, "RF probe START — sdk=${runCatching {
+            com.autel.sdk.Autel.getSdkVersion() }.getOrNull()} " +
+            "product=${AutelProductHolder.product?.type}")
+
+        fun get(step: String, then: (() -> Unit)? = null) {
+            rc.getRFPower(object :
+                com.autel.common.CallbackWithOneParam<com.autel.common.remotecontroller.RFPower> {
+                override fun onSuccess(p: com.autel.common.remotecontroller.RFPower?) {
+                    AppLog.i(TAG, "RF probe $step: getRFPower = $p (value=${p?.value})")
+                    then?.let { h.postDelayed(it, STEP_DELAY_MS) }
+                }
+                override fun onFailure(e: com.autel.common.error.AutelError?) {
+                    AppLog.w(TAG, "RF probe $step: getRFPower FAILED: ${e?.description}")
+                    then?.let { h.postDelayed(it, STEP_DELAY_MS) }
+                }
+            })
+        }
+        fun set(step: String, want: com.autel.common.remotecontroller.RFPower, then: () -> Unit) {
+            rc.setRFPower(want, object : com.autel.common.CallbackWithNoParam {
+                override fun onSuccess() {
+                    AppLog.i(TAG, "RF probe $step: setRFPower($want) ACCEPTED")
+                    h.postDelayed(then, STEP_DELAY_MS)
+                }
+                override fun onFailure(e: com.autel.common.error.AutelError?) {
+                    AppLog.w(TAG, "RF probe $step: setRFPower($want) REFUSED: ${e?.description}")
+                    h.postDelayed(then, STEP_DELAY_MS)
+                }
+            })
+        }
+
+        get("1/5 baseline") {
+            set("2/5", com.autel.common.remotecontroller.RFPower.CE) {
+                get("3/5 after-CE") {
+                    set("4/5", com.autel.common.remotecontroller.RFPower.FCC) {
+                        get("5/5 after-FCC-restore") {
+                            AppLog.i(TAG, "RF probe DONE — export the log for Autel")
+                            android.widget.Toast.makeText(this,
+                                "RF probe done. Use Export Log.",
+                                android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private val STEP_DELAY_MS = 2000L
 
     private fun exportLog() {
         val file = AppLog.activeLogFile()

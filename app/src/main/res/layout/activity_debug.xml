@@ -132,6 +132,17 @@
                 android:text="Autel Explorer can start on its own and stop the video with no warning. This option prevents that. It does not change Explorer."
                 android:textColor="@color/tp_text_muted" android:textSize="12sp" />
 
+            <!-- RF power probe (2026-08-07, for Autel support): exercises the ONLY transmit
+                 power control the SDK exposes (setRFPower FCC/CE) with read-backs, and logs
+                 every step — evidence for whether the RC accepts or ignores the change.
+                 Bench tool; ends by restoring FCC, the fleet's configured region. -->
+            <Button
+            style="@style/TakButton.Neutral"
+                android:id="@+id/debugRfPowerProbe"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="RF Power Probe (bench)" />
             <Button
             style="@style/TakButton.Primary"
                 android:id="@+id/debugExportButton"
