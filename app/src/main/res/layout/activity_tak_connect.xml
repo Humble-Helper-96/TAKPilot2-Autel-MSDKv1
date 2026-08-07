@@ -130,19 +130,6 @@
             android:textSize="12sp"
             android:paddingTop="4dp" />
 
-        <!-- After the fields it protects, same as the TAK and video locks. Covers the two
-             battery percentages ONLY — the numeric limits and Apply to Aircraft stay live, so
-             a locked configuration can still be pushed to a freshly connected aircraft. -->
-        <CheckBox
-            android:id="@+id/limitBatteryLock"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock battery levels (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
-
         <!-- Kept in the tree though setupFailsafe() hides it: the single-option radio has
              nothing to report. Restoring a second option restores its status line. -->
         <TextView
@@ -345,6 +332,21 @@
             android:paddingTop="4dp"
             android:text="Not sent yet." />
 
+        <!-- LAST in the section, the same position every section's lock holds (v1.5.9): the
+             locks live at the bottom of their section so a pilot always knows where to look.
+             Covers the two battery percentages ONLY — the label says so. The numeric limits
+             and Apply to Aircraft stay live, so a locked configuration can still be pushed to
+             a freshly connected aircraft. -->
+        <CheckBox
+            android:id="@+id/limitBatteryLock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="@color/tp_accent"
+            android:text="Lock battery levels (fields read-only)"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -409,20 +411,6 @@
                     android:inputType="textPassword" />
             </LinearLayout>
         </LinearLayout>
-
-        <!-- After the fields it protects, same reasoning as the TAK section's lock. Quality and
-             transport below stay editable: those are link decisions a pilot legitimately makes
-             in the field, not server configuration. -->
-        <CheckBox
-            android:id="@+id/videoLockConfig"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock configuration (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
-
 
         <TextView style="@style/takLabelStyle" android:text="Video quality (on-device transcode)" />
         <RadioGroup
@@ -523,6 +511,20 @@
             android:fontFamily="monospace"
             android:text="rtsp://…" />
 
+        <!-- LAST in the section, the same position every section's lock holds (v1.5.9) — and
+             below EVERYTHING it locks, which the old placement was not once codec and TCP
+             transport joined the locked set (1.5.7/1.5.8). Quality stays editable: that is a
+             link decision a pilot legitimately makes in the field, not server configuration. -->
+        <CheckBox
+            android:id="@+id/videoLockConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="@color/tp_accent"
+            android:text="Lock configuration (fields read-only)"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -609,24 +611,6 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Placed AFTER the fields it protects: a pilot reaches for this having just finished
-             typing, not before starting (operator, 2026-07-31).
-
-             Locking also disables Log Out, which CLEARS the saved enrollment — destructive, and
-             exactly the kind of thing a lock should stand in front of. Enroll & Connect stays
-             live: reconnecting is safe, and needing to reconnect is when a pilot must not be
-             fighting a lock. -->
-        <CheckBox
-            android:id="@+id/takLockConfig"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock configuration (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
-
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -661,6 +645,22 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Log Out (switch user)" />
+
+        <!-- LAST in the section, the same position every section's lock holds (v1.5.9), and
+             directly below Log Out — which it disables. Log Out CLEARS the saved enrollment:
+             destructive, and exactly the kind of thing a lock should stand in front of.
+             Enroll & Connect stays live: reconnecting is safe, and needing to reconnect is
+             when a pilot must not be fighting a lock. My Channels below is its own block and
+             is not covered. -->
+        <CheckBox
+            android:id="@+id/takLockConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:buttonTint="@color/tp_accent"
+            android:text="Lock configuration (fields read-only)"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/takStatus"
