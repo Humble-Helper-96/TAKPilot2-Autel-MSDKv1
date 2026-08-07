@@ -227,6 +227,14 @@
             <TextView android:id="@+id/homeBatteryLevels" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="2dp" android:textStyle="bold" />
+            <!-- WHERE THE FOOTAGE WILL ACTUALLY GO. A card in the slot does not mean the camera
+                 is writing to it: on 2026-08-06 REC did nothing for a whole session because the
+                 camera was pointed at its full 4 GB internal memory with a 128 GB card sitting
+                 Ready beside it. That is a pre-flight fact — after landing it is too late — so
+                 it belongs on the card the pilot taps to fly. -->
+            <TextView android:id="@+id/homeStorage" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" android:textStyle="bold" />
             <!-- Shown while the connect-time pushes are still landing. The card refuses taps
                  until it clears, so a pilot cannot reach the flight screen before the aircraft
                  has actually been configured — see TakPilotHomeActivity.startInitializing. -->

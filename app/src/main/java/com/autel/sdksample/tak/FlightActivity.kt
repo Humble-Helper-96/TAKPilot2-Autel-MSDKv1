@@ -113,10 +113,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private var lastHomeSet = false
 
     /** Zoom pill state. Screen-scoped like the blueprint's — reopening the flight screen
-     *  re-reads reality via the connect-time baseline rather than trusting a saved flag. */
-    /** Current digital zoom step: 1, 2 or 4. Not a boolean any more — 4X is reachable by
-     *  long-press, so "zoomed in or not" can no longer describe the state. */
-    private var zoomLevel = 1
+     *  re-reads reality via the connect-time baseline rather than trusting a saved flag.
+     *
+     *  RAW HUNDREDTHS, NOT A STEP NUMBER (was `zoomLevel: Int` of 1/2/4 until 2026-08-06). The
+     *  right scroll wheel moves zoom continuously, so the state it produces — 2.4x, 3.1x — has
+     *  no step to name. The pill and C1 still work in whole steps; they now round this rather
+     *  than owning their own counter, so a wheel turn and a button press can never disagree
+     *  about where the camera is. See [applyZoomRaw]. */
+    private var zoomRaw = ZOOM_RAW_PER_X
+
+    /** Nearest whole step, for the pill's and C1's 1↔2 / 1↔4 toggles. */
+    private val zoomStep: Int get() = Math.round(zoomRaw / ZOOM_RAW_PER_X.toDouble()).toInt()
+
+    /** Wheel target, accumulated ahead of the camera. The wheel ticks about every 200ms; each
+     *  tick moves this and repaints the pill at once, while the camera is written on a slower
+     *  throttle — see [onZoomWheel]. */
+    private var pendingZoomRaw = ZOOM_RAW_PER_X
+    private var zoomPushScheduled = false
 
     // FAA cell lookup cache — see updateFaaCeiling.
     private var lastFaaGridRow = Int.MIN_VALUE
@@ -305,14 +318,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             onShootPhotoTapped()
         }
         zoomButton.setOnClickListener {
-            AppLog.v(TAG, "tap: Zoom (currently ${zoomLevel}X)")
+            AppLog.v(TAG, "tap: Zoom (currently ${zoomLabel(zoomRaw)})")
             // Tap cycles 1X <-> 2X. From 4X it returns to 1X rather than stepping down,
-            // so one tap always gets the pilot back to the widest view.
-            applyZoom(if (zoomLevel == 1) 2 else 1)
+            // so one tap always gets the pilot back to the widest view. From a wheel-set
+            // value it rounds to the nearest step first, so the tap is never a no-op.
+            applyZoom(if (zoomStep == 1) 2 else 1)
         }
         zoomButton.setOnLongClickListener {
-            AppLog.v(TAG, "long-press: Zoom (currently ${zoomLevel}X)")
-            applyZoom(if (zoomLevel == 4) 1 else 4)
+            AppLog.v(TAG, "long-press: Zoom (currently ${zoomLabel(zoomRaw)})")
+            applyZoom(if (zoomStep == 4) 1 else 4)
             true
         }
         // Exterior LEDs. Replaced the video re-sync button (2026-08-02): the video is stable on
@@ -576,9 +590,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                             // learned one control has learned the other, and both routes end in
                             // applyZoom() so the button label and the camera cannot disagree.
                             "CUSTOM_BUTTON_SHORT_$ZOOM_BUTTON" ->
-                                runOnUiThread { applyZoom(if (zoomLevel == 1) 2 else 1) }
+                                runOnUiThread { applyZoom(if (zoomStep == 1) 2 else 1) }
                             "CUSTOM_BUTTON_LONG_$ZOOM_BUTTON" ->
-                                runOnUiThread { applyZoom(if (zoomLevel == 4) 1 else 4) }
+                                runOnUiThread { applyZoom(if (zoomStep == 4) 1 else 4) }
+
+                            // RIGHT SCROLL WHEEL — continuous zoom, confirmed on hardware
+                            // 2026-08-06: turning it emits ZOOM_IN/ZOOM_OUT on THIS listener,
+                            // about every 200ms, and the app was already receiving and ignoring
+                            // them. The left wheel is the gimbal and emits nothing here, so
+                            // there is no ambiguity between the two.
+                            //
+                            // Deliberately NOT routed through applyZoom(step): the whole point
+                            // is the values between the steps. See onZoomWheel.
+                            "ZOOM_IN" -> runOnUiThread { onZoomWheel(+1) }
+                            "ZOOM_OUT" -> runOnUiThread { onZoomWheel(-1) }
                         }
                     }
                     override fun onFailure(error: AutelError?) {
@@ -1773,17 +1798,96 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // that factor. Observed for real — the app reattached at a true 4x, labelled it 1X, and
         // could no longer zoom out; "1X" returned to 4x and "4X" drove the camera to 16x. An
         // absolute scale has no baseline to capture wrong.
-        val target = level * ZOOM_RAW_PER_X
+        applyZoomRaw(level * ZOOM_RAW_PER_X)
+    }
+
+    /**
+     * Drives the camera to an absolute raw zoom and repaints the pill. The one place zoom is
+     * written, whichever control asked — the pill, C1, or the scroll wheel.
+     *
+     * Clamped HERE because the SDK does not: `setDigitalZoomScale` passes the int straight to the
+     * camera with no range check of its own (verified in the aar), so an unclamped accumulator
+     * would happily send nonsense. The bounds are this project's own measured ones — 100 = 1x
+     * through 1600 = 16x, from the focal-length/zoomScale calibration in [applyZoom].
+     */
+    private fun applyZoomRaw(rawTarget: Int) {
+        val cam = AutelProductHolder.xt706 ?: return
+        val target = rawTarget.coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
+        // Record the intent SYNCHRONOUSLY, before the round-trip. This is what the ack below
+        // checks itself against, and it is also where the rocker resumes from — so a pill tap
+        // or C1 press mid-flight leaves the wheel continuing from the value the pilot just
+        // chose, not from wherever it had drifted to.
+        pendingZoomRaw = target
         cam.setDigitalZoomScale(target, camCb("setDigitalZoomScale($target)") {
-            zoomLevel = level
-            zoomButton.text = "${level}X"
+            // ⚠ A STALE ACK MUST NOT DRAG THE PILL BACKWARDS. The camera answers a round-trip
+            // later, by which time a held rocker has already moved the accumulator on. Writing
+            // this (older) target back unconditionally made the label and the AR zoom jump
+            // backward mid-hold, then jump forward again on the next push — a visible stutter
+            // on the one control whose whole purpose is smoothness. So the write-back happens
+            // only when this ack IS still the latest intent.
+            if (pendingZoomRaw != target) {
+                AppLog.v(TAG, "zoom ack for $target superseded by $pendingZoomRaw — not repainting")
+                return@camCb
+            }
+            zoomRaw = target
+            zoomButton.text = zoomLabel(target)
             // The published FOV cone and the AR projection both narrow with zoom, so they must be
             // told — otherwise AR markers drift as the pilot zooms. The camera's status push also
             // reports zoomScale and corrects this within a tick; setting it here just avoids a
             // visible lag between the tap and the overlay catching up.
-            TakBridgeHolder.setLiveZoom(level.toDouble())
-            AppLog.i(TAG, "zoom now ${level}X (raw=$target)")
+            TakBridgeHolder.setLiveZoom(target / ZOOM_RAW_PER_X.toDouble())
+            AppLog.i(TAG, "zoom now ${zoomLabel(target)} (raw=$target)")
         })
+    }
+
+    /** "2X" for whole steps, "2.4X" for anything the wheel lands on between them. A pill reading
+     *  "2X" while the camera sits at 2.4x would be the kind of small lie this HUD does not tell. */
+    private fun zoomLabel(raw: Int): String {
+        val x = raw / ZOOM_RAW_PER_X.toDouble()
+        return if (raw % ZOOM_RAW_PER_X == 0) "${x.toInt()}X" else String.format("%.1fX", x)
+    }
+
+    /**
+     * The right scroll wheel moved: +1 zooms in (tighter), -1 zooms out (wider).
+     *
+     * ⚠ THE WHEEL IS A SPRING-LOADED ROCKER, NOT A FREE-SPINNING DETENTED WHEEL (operator,
+     * 2026-08-06). It is pushed against a stop and held there; the controller then REPEATS the
+     * same event about every 200ms until it is released, and release is simply the events
+     * stopping. Confirmed in the hardware capture: 8 × ZOOM_IN at 199-213ms spacing, then 12 ×
+     * ZOOM_OUT at the same cadence. So each event is a TICK OF HELD TIME, not a countable
+     * detent — which is why no release detection is needed here. The accumulator stops moving
+     * when the events stop, and the throttled push below lands the final value.
+     *
+     * LINEAR, at the operator's explicit instruction (2026-08-06): holding the rocker moves the
+     * zoom at a constant [ZOOM_WHEEL_STEP_RAW] per tick for the whole range, so a full 1x→16x
+     * hold takes about five seconds — the rate the stock Autel app runs at, measured on a
+     * second aircraft. A geometric ramp was written first and rejected: constant *ratio* keeps
+     * the felt rate even, but it makes the wide end coarse in absolute terms, and framing a
+     * subject is done in absolute terms.
+     *
+     * The pill and the AR projection follow the ACCUMULATOR immediately, while the camera is
+     * written on a [ZOOM_PUSH_MS] throttle. Each write is a command round-trip to the aircraft;
+     * coalescing keeps a long hold from becoming a queue of commands the camera answers long
+     * after the pilot let go. Nothing is lost by coalescing — only the newest target matters.
+     */
+    private fun onZoomWheel(direction: Int) {
+        if (AutelProductHolder.xt706 == null) return
+        val next = (pendingZoomRaw + direction * ZOOM_WHEEL_STEP_RAW)
+            .coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
+        if (next == pendingZoomRaw) return          // already against the stop
+        pendingZoomRaw = next
+        // Immediate feedback, ahead of the camera acknowledging: the pill and the AR overlay
+        // track the wheel, not the round-trip.
+        zoomRaw = next
+        zoomButton.text = zoomLabel(next)
+        TakBridgeHolder.setLiveZoom(next / ZOOM_RAW_PER_X.toDouble())
+        if (!zoomPushScheduled) {
+            zoomPushScheduled = true
+            handler.postDelayed({
+                zoomPushScheduled = false
+                applyZoomRaw(pendingZoomRaw)
+            }, ZOOM_PUSH_MS)
+        }
     }
 
     /** Log + toast-on-failure adapter for the camera's completion callbacks. */
@@ -1866,18 +1970,60 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * The window is generous: when the camera is genuinely ready, RECORD_START lands in ~1ms.
      */
     private fun startRecordVerified(cam: AutelBaseCamera, isRetry: Boolean = false) {
-        cam.startRecordVideo(camCb(if (isRetry) "startRecordVideo(retry)" else "startRecordVideo"))
-        handler.postDelayed({
-            if (AutelProductHolder.isRecording) return@postDelayed   // camera confirmed it
+        // WATCHDOG ARMED BEFORE THE CALL, NOT AFTER. It used to be posted on the line below the
+        // SDK call, which meant a SYNCHRONOUS THROW skipped the very safety net that exists to
+        // catch a record that does not happen. That is not hypothetical: with the camera set to
+        // internal flash, startRecordVideo throws NPE out of the SDK's own precondition check
+        // (2026-08-06). The SDK swallowed it, no callback ever came, the watchdog was never
+        // posted, and the pilot got a dark pill and complete silence — the exact outcome this
+        // whole verify-don't-trust design was written to prevent. Posting first makes the net
+        // independent of how the call fails.
+        val watchdog = Runnable {
+            if (AutelProductHolder.isRecording) return@Runnable   // camera confirmed it
             if (!isRetry) {
                 AppLog.w(TAG, "no RECORD_START ${RECORD_CONFIRM_MS}ms after startRecordVideo — retrying once")
                 startRecordVerified(cam, isRetry = true)
             } else {
                 AppLog.e(TAG, "recording did not start: camera accepted StartRecording twice " +
                     "but never reported RECORD_START")
-                toast("Recording did not start. The camera did not confirm.")
+                toast(recordFailureReason() ?: "Recording did not start. The camera did not confirm.")
             }
-        }, RECORD_CONFIRM_MS)
+        }
+        handler.postDelayed(watchdog, RECORD_CONFIRM_MS)
+        // Guarded for the same reason: a throw here must not escape into the SDK's dispatcher,
+        // where it is logged as a "parse error" and never reaches the pilot. On a throw we
+        // already know the outcome, so the watchdog is cancelled — BY REFERENCE, never
+        // removeCallbacksAndMessages(null), which would also take out the HUD refresh loop and
+        // the notice auto-hide that share this handler.
+        runCatching {
+            cam.startRecordVideo(camCb(if (isRetry) "startRecordVideo(retry)" else "startRecordVideo"))
+        }.onFailure {
+            AppLog.e(TAG, "startRecordVideo threw: $it")
+            handler.removeCallbacks(watchdog)
+            toast(recordFailureReason() ?: "Recording could not start. The camera refused.")
+        }
+    }
+
+    /**
+     * The reason recording is not going to work, in words a pilot can act on — or null when
+     * nothing known is wrong and the generic "camera did not confirm" is the honest answer.
+     *
+     * Storage is checked first because it is the failure that looks like nothing at all: a card
+     * in the slot that the camera is not writing to (see [AutelProductHolder.recordingToInternal]).
+     */
+    private fun recordFailureReason(): String? {
+        val h = AutelProductHolder
+        return when {
+            h.recordingToInternal && h.mmcState == com.autel.common.camera.base.MMCState.CARD_FULL ->
+                "The camera is recording to its internal memory, which is full. " +
+                    "Change the camera storage to the SD card."
+            h.recordingToInternal ->
+                "The camera is recording to its internal memory, not the SD card."
+            h.sdCardState != null &&
+                h.sdCardState != com.autel.common.camera.base.SDCardState.CARD_READY ->
+                "The SD card is not ready (${h.sdCardState})."
+            else -> null
+        }
     }
 
     /**
@@ -2543,6 +2689,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /** Raw digital-zoom units per 1x. The SDK's scale is hundredths; see [applyZoom]. */
     private const val ZOOM_RAW_PER_X = 100
+
+    /** Zoom limits in raw units, 1x to 16x. Enforced on OUR side: setDigitalZoomScale does no
+     *  range checking and forwards whatever int it is given straight to the camera. */
+    private const val ZOOM_RAW_MIN = 100
+    private const val ZOOM_RAW_MAX = 1600
+
+    /** Raw zoom units added per tick of the held rocker: 60 = 0.6x.
+     *
+     *  RATE MATCHED TO THE STOCK AUTEL APP, measured by the operator on a second aircraft
+     *  2026-08-06: a held rocker crosses 1x→16x in about five seconds. The arithmetic is
+     *  exactly that — the range is 1500 raw units, the controller repeats ~5 times a second,
+     *  so 1500 ÷ (5 s × 5 ticks/s) = 60. Matching it is deliberate: a pilot's muscle memory
+     *  comes from the stock app, and a control that moves at a different speed than the one
+     *  they learned on is a control they will overshoot. One constant to retune if the felt
+     *  rate is wrong; see [onZoomWheel]. */
+    private const val ZOOM_WHEEL_STEP_RAW = 60
+
+    /** How long rocker ticks are coalesced before the camera is written. Comfortably longer
+     *  than the rocker's ~200ms repeat, because the point is to collapse a sustained HOLD — ten
+     *  ticks in two seconds — into a few commands rather than ten. */
+    private const val ZOOM_PUSH_MS = 150L
 
         private const val REQUEST_CODE_LOCATION = 4302
 

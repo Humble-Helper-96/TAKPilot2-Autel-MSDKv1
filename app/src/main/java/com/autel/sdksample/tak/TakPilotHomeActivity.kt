@@ -43,10 +43,16 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var stickMode: TextView
     private lateinit var controlResponse: TextView
     private lateinit var batteryLevels: TextView
+    private lateinit var storage: TextView
     private lateinit var initializing: TextView
     private lateinit var sdk: TextView
     private lateinit var takStatus: TextView
     private lateinit var takDot: android.view.View
+
+    /** Camera free space for the storage line. The camera reports MEGABYTES; anything from a
+     *  gigabyte up reads as GB, because "122049 MB" is a number a pilot has to stop and convert. */
+    private fun spaceLabel(mb: Long): String =
+        if (mb >= 1024) String.format("%.1f GB", mb / 1024.0) else "$mb MB"
 
     private val refresh = object : Runnable {
         override fun run() {
@@ -75,6 +81,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         stickMode = findViewById(R.id.homeStickMode)
         controlResponse = findViewById(R.id.homeControlResponse)
         batteryLevels = findViewById(R.id.homeBatteryLevels)
+        storage = findViewById(R.id.homeStorage)
         initializing = findViewById(R.id.homeInitializing)
         sdk = findViewById(R.id.homeSdk)
         takStatus = findViewById(R.id.homeTakStatus)
@@ -270,6 +277,34 @@ class TakPilotHomeActivity : AppCompatActivity() {
         batteryLevels.setTextColor(
             if (warn != null && crit != null) Color.parseColor("#9AC4FF")
             else Color.parseColor("#FFB300"))
+
+        // Camera storage — WHERE THE FOOTAGE GOES, and whether there is room for it. Follows the
+        // avoidance line's three-state rule: unknown is amber and says so, rather than being
+        // dressed up as a working card. RED is reserved for "you will get no recording": the
+        // camera pointed at internal memory (the 2026-08-06 silent-REC case), or a card that is
+        // full or unusable. See AutelProductHolder's storage block.
+        val h = AutelProductHolder
+        val sd = h.sdCardState
+        val sdReady = sd == com.autel.common.camera.base.SDCardState.CARD_READY
+        storage.text = when {
+            product == null -> ""
+            h.recordingToInternal ->
+                "RECORDING TO INTERNAL MEMORY" +
+                    (h.mmcFreeMb?.let { " · ${spaceLabel(it)} FREE" } ?: "")
+            h.storageTarget == com.autel.common.camera.media.SaveLocation.SD_CARD && sdReady ->
+                "SD CARD" + (h.sdFreeMb?.let { " · ${spaceLabel(it)} FREE" } ?: "")
+            h.storageTarget == com.autel.common.camera.media.SaveLocation.SD_CARD ->
+                "SD CARD: ${sd?.toString() ?: "—"}"
+            else -> "STORAGE: —"
+        }
+        storage.setTextColor(when {
+            h.recordingToInternal -> Color.parseColor("#F44336")
+            h.storageTarget == com.autel.common.camera.media.SaveLocation.SD_CARD && sdReady ->
+                Color.parseColor("#4CAF50")
+            h.storageTarget == com.autel.common.camera.media.SaveLocation.SD_CARD ->
+                Color.parseColor("#F44336")
+            else -> Color.parseColor("#FFB300")
+        })
 
         val settled = AutelControlRates.precisionActive != null
         val infoColor = if (settled) Color.parseColor("#9AC4FF") else Color.parseColor("#FFB300")

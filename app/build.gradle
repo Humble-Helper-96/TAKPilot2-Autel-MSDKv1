@@ -250,8 +250,22 @@ android {
         //        The video lock now also covers the codec (H.264/H.265) and the TCP transport
         //        toggle. The quality profile stays live — a pilot must be able to drop to Low
         //        on a marginal link without a password.
-        versionCode 13
-        versionName "1.5.7"
+        // 1.5.8: THE RIGHT SCROLL WHEEL ADJUSTS THE ZOOM. Hold it clockwise to zoom in and
+        //        counterclockwise to zoom out. The zoom moves continuously at the rate of the
+        //        stock Autel app — about five seconds from 1x to 16x. The zoom pill shows the
+        //        values between the steps, such as "2.4X". The pill, its long press and the C1
+        //        button keep their stepped behaviour.
+        //
+        //        RECORDING FAILURES NOW REPORT THEIR CAUSE. The camera can record to its
+        //        internal memory instead of the SD card. When that memory is full, the record
+        //        command failed inside the SDK and the application showed nothing at all. The
+        //        application now registers the flash-card listener at each camera connect,
+        //        which is what makes the SDK report the true cause, and it starts its record
+        //        watchdog BEFORE the command, thus a failure in the command cannot stop the
+        //        watchdog. The Enter Flight card shows where the camera writes and how much
+        //        space is free.
+        versionCode 14
+        versionName "1.5.8"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

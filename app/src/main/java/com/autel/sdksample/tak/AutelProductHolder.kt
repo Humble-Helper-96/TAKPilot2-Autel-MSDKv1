@@ -80,6 +80,80 @@ object AutelProductHolder {
      *  a shutter press did something. Cleared by the reader. */
     @Volatile var photoTakenFlag: Boolean = false
 
+    // ---- Camera storage ----
+    //
+    // WHY THIS EXISTS: on 2026-08-06 REC did nothing at all — no error, no toast, no log beyond
+    // the tap. The camera was recording to its ~4 GB INTERNAL eMMC, which was full (253 MB of
+    // 4084 free), while a 128 GB SD card sat Ready and empty beside it. Having a card in the
+    // slot is not the same as the camera USING it, and nothing on either screen said so.
+    //
+    // Worse, the SDK turns that state into a crash rather than an error: with the target set to
+    // the flash card, CameraXT709PreconditionProxy.startRecordVideo dereferences
+    // CameraXB015Data.getFlashCardStatus() — populated ONLY by setFlashMemoryCardStateListener,
+    // which nothing here registered — and throws NPE straight back out of startRecordVideo. See
+    // [armCameraStorage] and FlightActivity.startRecordVerified.
+
+    /** Where the camera actually writes: SD card or internal flash. Null until asked. */
+    @Volatile var storageTarget: com.autel.common.camera.media.SaveLocation? = null
+        private set
+    @Volatile var sdCardState: com.autel.common.camera.base.SDCardState? = null
+        private set
+    @Volatile var mmcState: com.autel.common.camera.base.MMCState? = null
+        private set
+    /** Free/total space, MEGABYTES, as the camera reports them. */
+    @Volatile var sdFreeMb: Long? = null
+        private set
+    @Volatile var mmcFreeMb: Long? = null
+        private set
+    @Volatile var mmcTotalMb: Long? = null
+        private set
+
+    /** True when the camera is pointed at internal flash rather than the SD card — the state
+     *  that silently loses footage, so the Enter Flight card calls it out. */
+    val recordingToInternal: Boolean
+        get() = storageTarget == com.autel.common.camera.media.SaveLocation.FLASH_CARD
+
+    private val flashCardStateListener =
+        object : com.autel.common.CallbackWithOneParam<com.autel.common.camera.base.MMCState> {
+            override fun onSuccess(state: com.autel.common.camera.base.MMCState?) {
+                if (state != null && state != mmcState) AppLog.i(TAG, "flash card state: $state")
+                mmcState = state
+            }
+            override fun onFailure(error: AutelError?) {
+                AppLog.w(TAG, "flash card state listener error: ${error?.description}")
+            }
+        }
+
+    /**
+     * Registers the flash-card listener and reads the storage target, once per camera session.
+     *
+     * ⚠ THE LISTENER IS NOT OPTIONAL, and not merely informational. Registering it is what fills
+     * the SDK's own FlashCardStatus cache (CameraXT709Impl.setFMCardStateListener →
+     * CameraXB015Data.setFlashCardStatus, verified in the aar 2026-08-06). Without it that cache
+     * stays null and every startRecordVideo against internal flash throws NPE instead of failing
+     * with the real reason. Registering it converts a silent dead button into "card full".
+     */
+    private fun armCameraStorage(cam: AutelXT706) {
+        runCatching { cam.setFlashMemoryCardStateListener(flashCardStateListener) }
+            .onFailure { AppLog.w(TAG, "flash card listener install failed: ${it.message}") }
+        // Also populates CameraXB015Data.StorageType, which is the flag the record precondition
+        // branches on — so this read is load-bearing too, not just for the UI.
+        runCatching {
+            cam.getAlbumLocation(object :
+                com.autel.common.CallbackWithOneParam<com.autel.common.camera.media.SaveLocation> {
+                override fun onSuccess(loc: com.autel.common.camera.media.SaveLocation?) {
+                    storageTarget = loc
+                    AppLog.i(TAG, "camera album location: $loc " +
+                        "(sd ${sdCardState ?: "—"} ${sdFreeMb ?: "—"}MB free, " +
+                        "internal ${mmcState ?: "—"} ${mmcFreeMb ?: "—"}/${mmcTotalMb ?: "—"}MB)")
+                }
+                override fun onFailure(error: AutelError?) {
+                    AppLog.w(TAG, "getAlbumLocation failed: ${error?.description}")
+                }
+            })
+        }.onFailure { AppLog.w(TAG, "getAlbumLocation threw: ${it.message}") }
+    }
+
     private val mediaStateListener = object : CallbackWithTwoParams<MediaStatus, String> {
         override fun onSuccess(status: MediaStatus?, detail: String?) {
             status ?: return
@@ -150,6 +224,18 @@ object AutelProductHolder {
             liveHFovDeg = h.takeIf { it.isFinite() && it > 0f }
             liveVFovDeg = v.takeIf { it.isFinite() && it > 0f }
 
+            // Storage, off the same ~2Hz push that already carries the FOV — no extra polling for
+            // it. Only the free/used figures and card health come from here; WHICH storage the
+            // camera writes to is not in this object and has to be read separately, see
+            // [armCameraStorage].
+            runCatching {
+                sdCardState = info.sdCardState
+                mmcState = info.mmcState
+                sdFreeMb = info.sDcardFreeSpace
+                mmcFreeMb = info.mmcFreeSpace
+                mmcTotalMb = info.mmcTotalSpace
+            }
+
             // Hand the camera's own numbers to the FOV model. Sanity-gated inside — a camera that
             // has not finished booting reports 0, and an FOV of 0 sends every marker to infinity.
             //
@@ -200,7 +286,13 @@ object AutelProductHolder {
             isRecording = false   // new camera session — state re-learned from its events
             zoomBaseRaw = null
             liveHFovDeg = null; liveVFovDeg = null; lastLoggedCamInfo = null
+            storageTarget = null; sdCardState = null; mmcState = null
+            sdFreeMb = null; mmcFreeMb = null; mmcTotalMb = null
             cam?.setMediaStateListener(mediaStateListener)
+            // Storage FIRST among the XT706 calls: until this has run, a REC press against
+            // internal flash throws inside the SDK rather than reporting anything. See
+            // [armCameraStorage].
+            (cam as? AutelXT706)?.let { armCameraStorage(it) }
             // Real FOV straight from the camera — see [liveHFovDeg]. Registered here rather than
             // from the flight screen so the numbers are in the log for a bench check, with no
             // aircraft flown and no UI open.
