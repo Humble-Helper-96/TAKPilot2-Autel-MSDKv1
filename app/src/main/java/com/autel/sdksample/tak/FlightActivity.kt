@@ -54,6 +54,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvRthAltitude: TextView
     private lateinit var lightsButton: ImageButton
     private lateinit var fpvNotice: TextView
+    private lateinit var fpvWarningBanner: TextView
     private lateinit var resourceMonitorRow: View
     private lateinit var resourceMonitorCells: List<TextView>
     private lateinit var crosshairView: CrosshairView
@@ -189,6 +190,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
+        fpvWarningBanner = findViewById(R.id.fpvWarningBanner)
+        // Fresh flight screen: drop any banner hold left from the last session. The active
+        // set rebuilds from live telemetry within one frame.
+        FlightWarnings.reset()
         resourceMonitorRow = findViewById(R.id.flightResourceMonitorRow)
         resourceMonitorCells = listOf(
             R.id.flightResSys, R.id.flightResApp, R.id.flightResCpu, R.id.flightResGpu, R.id.flightResTak,
@@ -690,6 +695,19 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // rate is wasted work. The view keeps each face's last real reading, so a slower
         // refresh loses nothing.
         obstacleEdges.update(AutelAvoidance.radar)
+
+        // Aircraft warning banner (v1.5.9). Polled on the same tick for the same reason as
+        // the arcs: the source repeats at 2Hz, and FlightWarnings owns the edge/hold logic,
+        // so this is just "draw what it says".
+        val warning = FlightWarnings.display()
+        if (warning == null) {
+            fpvWarningBanner.visibility = View.GONE
+        } else {
+            fpvWarningBanner.text = warning.text
+            fpvWarningBanner.background?.setTint(
+                Color.parseColor(if (warning.red) "#E6B71C1C" else "#E6C15D00"))
+            fpvWarningBanner.visibility = View.VISIBLE
+        }
 
         val hud = TakBridgeHolder.hud()
         val takOk = TakManager.getInstance().isConnected

@@ -257,6 +257,17 @@ class AutelTakBridge(
                 // throttle check and a post; the logger's file I/O lives on its own thread.
                 FlightPathLogger.onTelemetry(
                     lat, lon, mslAlt, relAlt, speedMs, headingDeg, batteryPct, satCount)
+                // The companion's airborne flag is written HERE, not in pushOnce, since
+                // v1.5.9: pushOnce is TAK-gated, so with the telemetry-only bridge the flag
+                // silently froze at false — and AutelAvoidance reads it to refuse setting
+                // writes mid-flight. The callback is the one place that always runs.
+                val flying = relAlt.isFinite() && (relAlt > 0.5 || speedMs > 0.5)
+                airborne = flying
+                // Warnings for the flight screen (v1.5.9): the status this callback always
+                // carried and previously ignored. Cheap by contract — set compare, log on
+                // change only. `flying` is passed rather than re-read so the warning and the
+                // frame it came from can never disagree.
+                info.flyControllerStatus?.let { FlightWarnings.onStatus(it, batteryPct, flying) }
             }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "flyController listener error: ${error?.description}")
@@ -391,10 +402,9 @@ class AutelTakBridge(
 
         val gimbalPitch = gimbalPitchN ?: 0.0
         val gimbalYaw = gimbalYawN ?: 0.0
+        // Same test the fly-controller callback publishes as the companion's `airborne` flag
+        // (the flag is written THERE since v1.5.9 — this method is TAK-gated and froze it).
         val isFlying = relAlt.isFinite() && (relAlt > 0.5 || speedMs > 0.5)
-        // Published so other subsystems can refuse to write aircraft settings while airborne.
-        // See AutelAvoidance.applyAtConnect: a safety switch must not be rewritten mid-flight.
-        airborne = isFlying
 
         // north reference stays 0.0 — <sensor azimuth> is an ABSOLUTE true-north bearing
         // (the DJI original calibrated this the hard way; see its 2026-07 comment).

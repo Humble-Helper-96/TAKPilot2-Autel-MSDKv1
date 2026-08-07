@@ -317,6 +317,29 @@
 
     </LinearLayout>
 
+    <!-- Aircraft warning banner (v1.5.9) — top-CENTER, below the toolbar, over the video.
+         Red or amber per severity (FlightActivity tints the background); shows the single
+         worst active warning plus a +N count. Centered rather than in a corner because this
+         is the one element on the screen that must interrupt: the compass-interference case
+         (field event 2) had the controller beeping with nothing on screen to say why. -->
+    <TextView
+        android:id="@+id/fpvWarningBanner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="64dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="7dp"
+        android:paddingBottom="7dp"
+        android:background="@drawable/bg_warning_banner"
+        android:text=""
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.03"
+        android:visibility="gone" />
+
     <!-- Transient notice ("Home Point Set", etc.) — upper-left over the video, below the
          toolbar. Hidden by default; shown + auto-hidden in code. Same as DJI's fpvNotice. -->
     <TextView
