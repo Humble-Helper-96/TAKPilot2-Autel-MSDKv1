@@ -282,10 +282,12 @@ object FlightLimitsController {
      * the fly-controller channel for a value we are handed anyway. Only ever written from an
      * aircraft reply.
      */
+    // internal, not private, set: FlightWarningsTest injects thresholds (v1.6.0). Production
+    // writes stay in this file only.
     @Volatile var aircraftWarningPct: Float? = null
-        private set
+        internal set
     @Volatile var aircraftCriticalPct: Float? = null
-        private set
+        internal set
 
     /**
      * Records a battery level reported by the aircraft. Takes the SDK's FRACTION (0.15) and

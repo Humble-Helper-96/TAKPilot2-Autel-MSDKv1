@@ -292,6 +292,11 @@ android {
     lintOptions {
         abortOnError false
     }
+    // Unit tests (v1.6.0). returnDefaultValues lets pure-logic tests run code that touches
+    // android.util.Log (AppLog forwards there) without a device or a mock framework.
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
     productFlavors {
     }
 }
@@ -307,6 +312,9 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Unit tests for the pure-logic core (v1.6.0) — warnings policy, flight-record formats,
+    // CoT XML, unit conversions. See app/src/test.
+    testImplementation 'junit:junit:4.13.2'
     //    testCompile 'junit:junit:4.12'
     //*
     //implementation project(':sdk')

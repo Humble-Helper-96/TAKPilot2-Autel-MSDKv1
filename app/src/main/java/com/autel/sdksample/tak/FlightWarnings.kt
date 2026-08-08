@@ -141,8 +141,10 @@ object FlightWarnings {
     }
 
     /** Polled from the flight screen's 500 ms HUD tick. */
-    fun display(): Display? {
-        val now = System.currentTimeMillis()
+    fun display(): Display? = displayAt(System.currentTimeMillis())
+
+    /** [display] with an injectable clock, so unit tests can step time. Same logic, one body. */
+    internal fun displayAt(now: Long): Display? {
         synchronized(lock) {
             val worst = active.filter { it.banner }.minOrNull()
             val cur = shown

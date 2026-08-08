@@ -72,7 +72,7 @@ object FlightPathLogger {
      *  multi-hour flight to a few MB; a crash loses only this copy, never the CSV. */
     private val points = ArrayList<Point>()
 
-    private class Point(
+    internal class Point(
         val timeMs: Long, val lat: Double, val lon: Double,
         val mslAltM: Double, val relAltM: Double,
         val speedMs: Double, val headingDeg: Double,
@@ -200,7 +200,7 @@ object FlightPathLogger {
     private fun num(v: Double, decimals: Int): String =
         if (v.isFinite()) String.format(Locale.US, "%.${decimals}f", v) else ""
 
-    private fun csvRow(p: Point): String = buildString {
+    internal fun csvRow(p: Point): String = buildString {
         append(isoUtcFormat.format(Date(p.timeMs))).append(',')
         append(num(p.lat, 7)).append(',')
         append(num(p.lon, 7)).append(',')
@@ -212,7 +212,7 @@ object FlightPathLogger {
         append(p.satellites).append('\n')
     }
 
-    private fun parseCsvRow(line: String): Point? {
+    internal fun parseCsvRow(line: String): Point? {
         val f = line.split(',')
         if (f.size != 9) return null
         return runCatching {
@@ -229,7 +229,7 @@ object FlightPathLogger {
     /** GPX 1.1, one track, one segment. `<ele>` is MSL metres (falls back to altitude above
      *  takeoff when the GNSS never supplied MSL — wrong datum but right shape, and the CSV
      *  keeps both so nothing is lost). Times are the ISO-UTC instants the rows carry. */
-    private fun gpxDocument(pts: List<Point>): String = buildString {
+    internal fun gpxDocument(pts: List<Point>): String = buildString {
         append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
         append("<gpx version=\"1.1\" creator=\"TAKPilot2-Autel\" ")
         append("xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
