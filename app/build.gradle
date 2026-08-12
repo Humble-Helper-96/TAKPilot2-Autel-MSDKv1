@@ -264,8 +264,14 @@ android {
         //        watchdog BEFORE the command, thus a failure in the command cannot stop the
         //        watchdog. The Enter Flight card shows where the camera writes and how much
         //        space is free.
-        versionCode 15
-        versionName "1.5.9"
+        // 1.6.0: THE VIDEO FEED IS PLAYABLE FROM THE TAK MARKERS. The aircraft marker and the
+        //        pilot marker advertise the stream as <__video> with a nested ConnectionEntry,
+        //        which is the shape ATAK/CloudTAK/TAKAware build a player from. The old bare
+        //        sensor/url attributes went on the wire and no client offered a play control
+        //        (proved on the DJI sibling's 2026-08-12 flight). One stream, one uid: both
+        //        markers reference the same feed entry.
+        versionCode 16
+        versionName "1.6.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
