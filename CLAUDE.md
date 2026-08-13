@@ -57,5 +57,15 @@ change aircraft and find the same screens.
 
 ## Current work
 
-v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master; it waits for flight-test
-feedback. The v1.6.0 finding list is in `REVIEW_2026-08-07_AUDIT.md` section 4.
+v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master, at versionName `1.6.0` /
+versionCode 16; it waits for flight-test feedback from the test users. The v1.6.0 finding
+list is in `REVIEW_2026-08-07_AUDIT.md` section 4.
+
+In v1.6.0 so far: the CoT video advertisement now carries a nested `ConnectionEntry`, which
+is what makes the feed playable from the aircraft marker and the pilot marker. This was
+flight-verified on 2026-08-12 — the operator confirmed video on both markers. The bare
+`<__video sensor url/>` shape it replaced put the url on the wire and gave no client a play
+control. `com.taklite` is shared by contract, so this code is the same in the DJI tree.
+
+⚠ The advertised url still carries the video credentials (`user:pass@`) to every client on
+the channel. Open decision in both trees, and now in front of test users.
