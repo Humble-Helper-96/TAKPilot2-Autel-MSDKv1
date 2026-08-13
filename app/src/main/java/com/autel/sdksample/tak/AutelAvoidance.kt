@@ -83,6 +83,17 @@ object AutelAvoidance {
                         AppLog.i(TAG, "avoidance system ${if (systemEnabled == true) "ENABLED" else "DISABLED"} " +
                             "(rth-avoid=$avoidDuringRth landing-protect=$landingProtect)")
                     }
+                    // Self-heal: when the give-up warning is up and the aircraft state now
+                    // matches what enforcement pushed (a Pre-Flight toggle fixed it, or the
+                    // aircraft settled late), clear the warning. No write, no new subscription.
+                    val wanted = lastDesired
+                    if (FlightWarnings.avoidanceNotApplied && wanted != null &&
+                        systemEnabled == wanted[AvoidanceEnforcement.Switch.SYSTEM] &&
+                        avoidDuringRth == wanted[AvoidanceEnforcement.Switch.RTH] &&
+                        landingProtect == wanted[AvoidanceEnforcement.Switch.LANDING]) {
+                        FlightWarnings.avoidanceNotApplied = false
+                        AppLog.i(TAG, "avoidance now matches Pre-Flight — warning cleared")
+                    }
                 }
                 override fun onFailure(error: AutelError?) {
                     AppLog.w(TAG, "visual setting listener error: ${error?.description}")
@@ -115,6 +126,8 @@ object AutelAvoidance {
         latestVisualSetting = null
         lastRadarLogMs = 0L
         appliedForThisConnect = false
+        lastDesired = null
+        FlightWarnings.avoidanceNotApplied = false
     }
 
     /**
@@ -201,12 +214,36 @@ object AutelAvoidance {
 
     @Volatile private var appliedForThisConnect = false
 
+    /** Write passes allowed per connect before enforcement gives up and warns the pilot. */
+    private const val ENFORCE_MAX_ATTEMPTS = 3
+    /** Wait between a write pass and its verify read of the cache — about four times the
+     *  standing listener's ~0.5 s cache latency. */
+    private const val VERIFY_DELAY_MS = 2000L
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** What enforcement last pushed, kept so the standing listener can clear the warning
+     *  by itself when the aircraft state later comes to match (a Pre-Flight toggle, or a
+     *  late aircraft-side settle). */
+    @Volatile private var lastDesired: Map<AvoidanceEnforcement.Switch, Boolean>? = null
+
     /**
-     * Enforces the Pre-Flight selection on the aircraft, once per connect.
+     * Enforces the Pre-Flight selection on the aircraft, once per connect — and VERIFIES it.
      *
      * Only writes switches that are actually WRONG. Every needless write costs a round trip and,
      * on the controller side, an audible acknowledgement — the same mistake that produced a burst
      * of beeps when the control-rate push went unguarded.
+     *
+     * WHY THE VERIFY CHAIN (flight 2026-08-13): a LANDING_PROTECT write timed out, the result
+     * was ignored, and the aircraft flew the whole flight unprotected while the app showed the
+     * Pre-Flight selection. The ack cannot be trusted (standing rule 4), so each write pass is
+     * followed by a read of the standing listener's cache; only mismatched switches are written
+     * again, at most [ENFORCE_MAX_ATTEMPTS] passes. If a switch still does not match, the amber
+     * AVOIDANCE SETTING NOT APPLIED banner goes up.
+     *
+     * THIS IS NOT A TIMER THAT WRITES (standing rule 3). It is the existing connect-time write
+     * plus bounded verification: worst case [ENFORCE_MAX_ATTEMPTS] write passes per switch per
+     * physical connect, and the chain stops on verify success, attempt exhaustion, product
+     * disconnect, or launch. Same shape as the gimbal-unlock retry in [AutelProductHolder].
      */
     fun applyAtConnect(context: android.content.Context) {
         if (appliedForThisConnect) return
@@ -224,30 +261,76 @@ object AutelAvoidance {
         // populated the cache many times over. If it is still null, the visual-setting feed is
         // dead, enforcement is impossible anyway, and we do NOT write blind — leave
         // appliedForThisConnect false so a later call can still try.
-        val sys = systemEnabled
-        val rth = avoidDuringRth
-        val land = landingProtect
-        if (sys == null || rth == null || land == null) {
+        if (systemEnabled == null || avoidDuringRth == null || landingProtect == null) {
             AppLog.w(TAG, "avoidance state not known yet — deferring enforcement this connect")
             return
         }
         appliedForThisConnect = true
-        val want = listOf<Triple<com.autel.common.flycontroller.visual.VisualSettingSwitchblade, Boolean, Boolean>>(
-            Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM,
-                savedSystem(context), sys),
-            Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE,
-                savedRth(context), rth),
-            Triple(com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT,
-                savedLanding(context), land),
+        val desired = mapOf(
+            AvoidanceEnforcement.Switch.SYSTEM to savedSystem(context),
+            AvoidanceEnforcement.Switch.RTH to savedRth(context),
+            AvoidanceEnforcement.Switch.LANDING to savedLanding(context),
         )
-        var changed = 0
-        for ((which, desired, actual) in want) {
-            if (actual == desired) continue
-            changed++
-            AppLog.i(TAG, "enforcing $which -> $desired (aircraft had $actual)")
-            setSwitch(which, desired) { }
+        lastDesired = desired
+        FlightWarnings.avoidanceNotApplied = false
+        enforcePass(desired, attempt = 1)
+    }
+
+    /**
+     * One verify-and-write pass. Reads the standing listener's cache (never a get call —
+     * the wall-strike rule), decides through [AvoidanceEnforcement.decide], writes only the
+     * mismatched switches, and schedules the next pass. Terminates in at most
+     * [ENFORCE_MAX_ATTEMPTS] write passes plus one final verify.
+     */
+    private fun enforcePass(desired: Map<AvoidanceEnforcement.Switch, Boolean>, attempt: Int) {
+        if (AutelProductHolder.evo2 == null) {
+            AppLog.w(TAG, "avoidance enforcement pass $attempt: product gone — stopping")
+            return   // Disconnect clears the flags; the next connect starts fresh.
         }
-        if (changed == 0) AppLog.i(TAG, "avoidance already matches Pre-Flight — no writes")
+        val actual = mapOf(
+            AvoidanceEnforcement.Switch.SYSTEM to systemEnabled,
+            AvoidanceEnforcement.Switch.RTH to avoidDuringRth,
+            AvoidanceEnforcement.Switch.LANDING to landingProtect,
+        )
+        when (val d = AvoidanceEnforcement.decide(desired, actual, attempt, ENFORCE_MAX_ATTEMPTS)) {
+            is AvoidanceEnforcement.Outcome.Verified -> {
+                if (attempt == 1) AppLog.i(TAG, "avoidance already matches Pre-Flight — no writes")
+                else AppLog.i(TAG, "avoidance VERIFIED against aircraft after ${attempt - 1} write pass(es)")
+                FlightWarnings.avoidanceNotApplied = false
+            }
+            is AvoidanceEnforcement.Outcome.GiveUp -> {
+                AppLog.w(TAG, "avoidance NOT VERIFIED after $ENFORCE_MAX_ATTEMPTS write passes: " +
+                    "${d.switches} still mismatch (aircraft holds sys=$systemEnabled " +
+                    "rth=$avoidDuringRth land=$landingProtect) — warning the pilot")
+                FlightWarnings.avoidanceNotApplied = true
+            }
+            is AvoidanceEnforcement.Outcome.Retry -> {
+                if (AutelTakBridge.airborne) {
+                    // The aircraft launched mid-enforcement with an unverified switch: stop
+                    // writing (never rewrite a safety switch in the air) and warn.
+                    AppLog.w(TAG, "aircraft went airborne during enforcement with ${d.switches} " +
+                        "unverified — stopping writes, warning the pilot")
+                    FlightWarnings.avoidanceNotApplied = true
+                    return
+                }
+                for (sw in d.switches) {
+                    AppLog.i(TAG, "enforcing $sw -> ${desired[sw]} (attempt $attempt, aircraft had ${actual[sw]})")
+                    // The ack is ignored, as before: the standing listener is the only truth,
+                    // and the next pass reads it.
+                    setSwitch(toSdk(sw), desired[sw]!!) { }
+                }
+                mainHandler.postDelayed({ enforcePass(desired, attempt + 1) }, VERIFY_DELAY_MS)
+            }
+        }
+    }
+
+    private fun toSdk(sw: AvoidanceEnforcement.Switch) = when (sw) {
+        AvoidanceEnforcement.Switch.SYSTEM ->
+            com.autel.common.flycontroller.visual.VisualSettingSwitchblade.AVOIDANCE_SYSTEM
+        AvoidanceEnforcement.Switch.RTH ->
+            com.autel.common.flycontroller.visual.VisualSettingSwitchblade.RETURN_TO_HOME_AVOIDANCE
+        AvoidanceEnforcement.Switch.LANDING ->
+            com.autel.common.flycontroller.visual.VisualSettingSwitchblade.LANDING_PROTECT
     }
 
     /**
