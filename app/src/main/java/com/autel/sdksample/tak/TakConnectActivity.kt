@@ -533,7 +533,8 @@ class TakConnectActivity : AppCompatActivity() {
         if (AutelProductHolder.evo2 == null) {
             status.text = "The aircraft is not connected. The settings are saved. " +
                 "Connect the aircraft, then press the button again."
-            status.setTextColor(0xFFFFC107.toInt())
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(
+                this, R.color.tp_state_caution))
             return
         }
         cancelPendingSettingPushes()
@@ -541,6 +542,11 @@ class TakConnectActivity : AppCompatActivity() {
         progress.visibility = android.view.View.VISIBLE
         progress.progress = 0
         status.setTextColor(0xFF909090.toInt())
+
+        // One collector for THIS press. The setters below record their refusals into it and the
+        // verify reads it 11s later. The writes are fire-and-forget, thus this is the only way a
+        // refused write — and two of them have no getter at all — can reach the pilot.
+        val cycle = FlightLimitsController.beginApply()
 
         FlightLimitsController.pushLimitsNow(this)
         FlightLimitsController.pushBatteryAndRfNow(this)
@@ -572,12 +578,20 @@ class TakConnectActivity : AppCompatActivity() {
 
         val verify = Runnable {
             pendingVerify = null
-            FlightLimitsController.readBack(this) { report ->
+            FlightLimitsController.readBack(this, cycle) { report ->
                 runOnUiThread {
                     button.isEnabled = true
                     progress.visibility = android.view.View.GONE
                     status.text = report.text
-                    status.setTextColor(if (report.allMatched) 0xFF4CAF50.toInt() else 0xFFFF6B6B.toInt())
+                    // Three states, three colours. Amber is NOT a softer red: it says the
+                    // aircraft did not answer, which is a different fact from a refusal and must
+                    // not be shown as one.
+                    status.setTextColor(androidx.core.content.ContextCompat.getColor(
+                        this, when (report.state) {
+                            FlightLimitsController.ReportState.CONFIRMED -> R.color.tp_state_go
+                            FlightLimitsController.ReportState.UNKNOWN -> R.color.tp_state_caution
+                            FlightLimitsController.ReportState.PROBLEM -> R.color.tp_state_danger
+                        }))
                 }
             }
         }

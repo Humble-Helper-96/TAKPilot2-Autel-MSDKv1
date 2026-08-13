@@ -222,6 +222,9 @@ object FlightLimitsController {
             return
         }
         appliedForThisConnect = true
+        // A collector for this push. Nothing reads it — that is the point: a refusal from a
+        // re-connect must not appear in the report for a Pre-Flight button press.
+        beginApply()
         applyDefaults(context, fc)
     }
 
@@ -327,8 +330,148 @@ object FlightLimitsController {
     fun rthHudLabel(): String =
         aircraftReturnHeightM?.let { "RTH ${Math.round(it * FT_PER_M)} ft" } ?: "RTH --"
 
+    /**
+     * What the report says about ONE limit, independent of the SDK.
+     *
+     * [gotM] null means the aircraft did not answer. That is not a failure and it is not a
+     * match. [wantM] null means the pilot left the field empty, thus nothing was requested and
+     * what the aircraft holds is correct by definition.
+     */
+    data class LimitReadBack(val label: String, val wantM: Int?, val gotM: Float?)
+
+    /**
+     * The three states a read-back can end in.
+     *
+     * UNKNOWN is its own state on purpose. "The aircraft did not answer" is not "the aircraft
+     * refused", and to show the second when the first occurred tells the pilot something that is
+     * not true. Before v1.6.0 there were two states, and a getter that answered with no value
+     * became a red "did not take all the settings" with the value missing from the line.
+     */
+    enum class ReportState { CONFIRMED, UNKNOWN, PROBLEM }
+
     /** What the aircraft actually reports back, rendered for the pilot. */
-    data class ReadBackReport(val text: String, val allMatched: Boolean)
+    data class ReadBackReport(val text: String, val state: ReportState)
+
+    /**
+     * The writes the aircraft REFUSED during one apply.
+     *
+     * WHY THIS EXISTS. Each setter in this file used to put its failure in the log and nowhere
+     * else, thus an aircraft that refused the RF power, the battery levels or the signal-loss
+     * behaviour told the pilot nothing. Two of those settings have no getter, thus the read-back
+     * cannot find them: if the write does not record its own refusal, the refusal is lost.
+     *
+     * SDK callbacks arrive on the SDK thread, thus every method is synchronized. A LinkedHashSet
+     * keeps one entry for each setting, in the order the settings were sent.
+     */
+    class RefusedWrites {
+        private val labels = LinkedHashSet<String>()
+        @Synchronized fun add(label: String) { labels.add(label) }
+        @Synchronized fun snapshot(): List<String> = labels.toList()
+    }
+
+    /**
+     * The collector for the apply that runs now.
+     *
+     * REPLACED, NEVER CLEARED. Each apply function reads this field ONE time into a local, thus a
+     * setter that has already started keeps the instance it read. A new apply — or the automatic
+     * push that runs when an aircraft re-connects in the middle of one — cannot take a refusal
+     * away from the report it belongs to, and a late callback cannot put a refusal into a report
+     * that came later. Do not "simplify" those locals away.
+     */
+    @Volatile private var refusedThisApply = RefusedWrites()
+
+    /**
+     * Starts an apply-and-verify cycle and gives back the collector to hand to [readBack].
+     *
+     * The automatic at-connect push calls this too. Its collector is never read, which is the
+     * point: a refusal from a re-connect must not show in the report for a button press.
+     */
+    fun beginApply(): RefusedWrites {
+        val fresh = RefusedWrites()
+        refusedThisApply = fresh
+        return fresh
+    }
+
+    /**
+     * Tolerance, in metres. The values go over the wire as metres rounded from feet, thus an
+     * exact comparison would call a correct setting wrong.
+     */
+    private const val MATCH_TOLERANCE_M = 0.6f
+
+    /**
+     * How long the read-back waits for the three getters before it says "unknown".
+     *
+     * The fly-controller channel times a request out at about 10 seconds, thus this is past the
+     * point where an answer can still arrive. It exists for the case where no answer arrives AND
+     * no failure is reported either: the Apply button stays disabled until this function reports,
+     * and a getter that never called back used to leave it disabled for the life of the screen.
+     */
+    private const val READ_BACK_TIMEOUT_MS = 12_000L
+
+    /**
+     * Builds the line the pilot reads. A pure function: no SDK, no aircraft, no clock. The caller
+     * has already collected the answers. This is what the unit tests pin.
+     *
+     * THE RULE IT HOLDS. Three outcomes, and they do not collapse into two:
+     *  - CONFIRMED: each limit answered, and each answer agrees with what was asked.
+     *  - UNKNOWN:   nothing disagrees, but the aircraft did not answer for one limit or more.
+     *  - PROBLEM:   an answer disagrees, or a write was refused.
+     * PROBLEM beats UNKNOWN, and UNKNOWN beats CONFIRMED.
+     */
+    internal fun buildReadBackReport(
+        values: List<LimitReadBack>,
+        refusedWrites: List<String>,
+    ): ReadBackReport {
+        val confirmed = mutableListOf<String>()
+        val wrong = mutableListOf<String>()
+        val unknown = mutableListOf<String>()
+
+        for (v in values) {
+            val got = v.gotM
+            if (got == null) { unknown += v.label; continue }
+            val ft = Math.round(got * FT_PER_M).toInt()
+            if (v.wantM != null && Math.abs(got - v.wantM) > MATCH_TOLERANCE_M) {
+                wrong += "${v.label} is $ft ft, not ${Math.round(v.wantM * FT_PER_M)} ft"
+            } else {
+                confirmed += "${v.label} $ft ft"
+            }
+        }
+
+        val state = when {
+            wrong.isNotEmpty() || refusedWrites.isNotEmpty() -> ReportState.PROBLEM
+            unknown.isNotEmpty() -> ReportState.UNKNOWN
+            else -> ReportState.CONFIRMED
+        }
+
+        val text = buildString {
+            when (state) {
+                ReportState.CONFIRMED ->
+                    append("The aircraft confirms: ${confirmed.joinToString(", ")}.")
+                ReportState.UNKNOWN -> {
+                    append("⚠ The aircraft did not answer for: ${unknown.joinToString(", ")}.")
+                    if (confirmed.isNotEmpty()) {
+                        append(" It confirms: ${confirmed.joinToString(", ")}.")
+                    }
+                    append(" Press the button again.")
+                }
+                ReportState.PROBLEM -> {
+                    append("⚠ The aircraft did not take all the settings.")
+                    if (refusedWrites.isNotEmpty()) {
+                        append(" It refused: ${refusedWrites.joinToString(", ")}.")
+                    }
+                    if (wrong.isNotEmpty()) append(" ${wrong.joinToString(", ")}.")
+                    if (confirmed.isNotEmpty()) {
+                        append(" It confirms: ${confirmed.joinToString(", ")}.")
+                    }
+                    if (unknown.isNotEmpty()) {
+                        append(" It did not answer for: ${unknown.joinToString(", ")}.")
+                    }
+                    append(" Correct the values, then press the button again.")
+                }
+            }
+        }
+        return ReadBackReport(text, state)
+    }
 
     /**
      * Reads the three numeric limits back off the aircraft and compares them to what Pre-Flight
@@ -343,65 +486,76 @@ object FlightLimitsController {
      * The getters are one-shot ParamsQueryPackets (`SM_RTH_Height` and friends) — verified in the
      * bytecode, NOT the repeating-listener kind. Safe to call on demand.
      */
-    fun readBack(context: Context, done: (ReadBackReport) -> Unit) {
+    fun readBack(context: Context, refused: RefusedWrites?, done: (ReadBackReport) -> Unit) {
         val fc = AutelProductHolder.evo2?.flyController ?: run {
-            done(ReadBackReport("Aircraft disconnected before it could be verified.", false)); return
+            done(ReadBackReport(
+                "Aircraft disconnected before it could be verified.", ReportState.PROBLEM))
+            return
         }
         val wantAlt = ftToM(savedMaxAltitudeFt(context))
         val wantRad = ftToM(savedMaxRadiusFt(context))
         val wantRth = ftToM(savedRthAltitudeFt(context))
 
         val got = java.util.concurrent.ConcurrentHashMap<String, Float>()
-        val failed = java.util.Collections.synchronizedList(mutableListOf<String>())
         val outstanding = java.util.concurrent.atomic.AtomicInteger(3)
+        // ONE-SHOT. This SDK fires some callbacks twice. A second fire drove the old counter to
+        // -1, which is also "not greater than 0", thus the report was built and delivered again.
+        // It also closes the race between the last getter and the watchdog.
+        val reported = java.util.concurrent.atomic.AtomicBoolean(false)
+        // ⚠ Built HERE, not as a field of this object. The unit tests run with
+        // `returnDefaultValues = true`, thus Looper.getMainLooper() gives null in a test and a
+        // field would fail class-initialization — which would take the other suites down with it.
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        var watchdog: Runnable? = null
 
-        fun finish() {
-            if (outstanding.decrementAndGet() > 0) return
-            val parts = mutableListOf<String>()
-            var matched = true
-            fun cmp(label: String, key: String, want: Int?) {
-                val g = got[key]
-                if (g == null) { matched = false; return }
-                val ft = Math.round(g * FT_PER_M).toInt()
-                if (want != null && Math.abs(g - want) > 0.6f) {
-                    parts += "$label is $ft ft, not ${Math.round(want * FT_PER_M)} ft"
-                    matched = false
-                } else {
-                    parts += "$label $ft ft"
-                }
-            }
-            cmp("Max altitude", "alt", wantAlt)
-            cmp("Max distance", "rad", wantRad)
-            cmp("RTH altitude", "rth", wantRth)
-
-            // Pilot-facing text. Says what the aircraft reports, and nothing about how we asked it.
-            val text = when {
-                failed.isNotEmpty() ->
-                    "⚠ The aircraft did not answer for: ${failed.joinToString(", ")}. " +
-                        "Press the button again."
-                matched -> "The aircraft confirms: ${parts.joinToString(", ")}."
-                else -> "⚠ The aircraft did not take all the settings. " +
-                    "${parts.joinToString(", ")}. Correct the values, then press the button again."
-            }
-            done(ReadBackReport(text, matched && failed.isEmpty()))
+        fun report() {
+            if (!reported.compareAndSet(false, true)) return
+            watchdog?.let { main.removeCallbacks(it) }
+            done(buildReadBackReport(
+                listOf(
+                    LimitReadBack("Max altitude", wantAlt, got["alt"]),
+                    LimitReadBack("Max distance", wantRad, got["rad"]),
+                    LimitReadBack("RTH altitude", wantRth, got["rth"]),
+                ),
+                refused?.snapshot() ?: emptyList(),
+            ))
         }
+        fun oneDown() { if (outstanding.decrementAndGet() <= 0) report() }
 
+        watchdog = Runnable {
+            if (!reported.get()) {
+                AppLog.w(TAG, "read-back timed out after ${READ_BACK_TIMEOUT_MS}ms with " +
+                    "${outstanding.get()} getter(s) unanswered — they report as unknown")
+                report()
+            }
+        }
+        main.postDelayed(watchdog, READ_BACK_TIMEOUT_MS)
+
+        /**
+         * One getter. A failure and a silence are the same thing to the pilot — neither says what
+         * the aircraft holds — thus both leave the value absent and the report calls it unknown.
+         * The difference stays in the log, where it helps.
+         */
         fun read(key: String, label: String, call: (com.autel.common.CallbackWithOneParam<Float>) -> Unit) {
             runCatching {
                 call(object : com.autel.common.CallbackWithOneParam<Float> {
                     override fun onSuccess(v: Float?) {
+                        if (v == null) AppLog.w(TAG, "$label read answered with no value — unknown")
                         v?.let { got[key] = it }
                         // Keep the flight HUD in step with what we just learned.
                         if (key == "rth") aircraftReturnHeightM = v
-                        finish()
+                        oneDown()
                     }
                     override fun onFailure(error: AutelError?) {
+                        AppLog.w(TAG, "$label read failed: ${error?.description} — unknown")
                         if (key == "rth") aircraftReturnHeightM = null
-                        failed += label
-                        finish()
+                        oneDown()
                     }
                 })
-            }.onFailure { failed += label; finish() }
+            }.onFailure {
+                AppLog.w(TAG, "$label read threw: ${it.message} — unknown")
+                oneDown()
+            }
         }
         read("alt", "max altitude") { fc.getMaxHeight(it) }
         read("rad", "max distance") { fc.getMaxRange(it) }
@@ -432,6 +586,8 @@ object FlightLimitsController {
      * pending traffic on the fly-controller channel.
      */
     fun applyNumericLimits(context: Context, fc: Evo2FlyController) {
+        // Read ONE time into a local — see the note on [refusedThisApply].
+        val refused = refusedThisApply
         val maxAltM = ftToM(savedMaxAltitudeFt(context))
         val maxRadiusM = ftToM(savedMaxRadiusFt(context))
         val rthAltM = ftToM(savedRthAltitudeFt(context))
@@ -445,38 +601,42 @@ object FlightLimitsController {
         /** Refuses a push we already know the aircraft will reject, and says why. Pushing it
          *  anyway would only produce "out of range" in the log and leave the pilot's Pre-Flight
          *  value looking applied. */
-        fun inRange(name: String, m: Int, range: RangeM?): Boolean {
+        fun inRange(label: String, name: String, m: Int, range: RangeM?): Boolean {
             if (range == null || range.containsM(m)) return true
             AppLog.w(TAG, "REFUSING $name(${m}m / ${Math.round(m * FT_PER_M)}ft): aircraft " +
                 "accepts ${range.fromM}-${range.toM}m (${range.fromFt}-${range.toFt}ft). " +
                 "THE AIRCRAFT KEEPS ITS CURRENT VALUE — Pre-Flight does not match the aircraft.")
+            refused.add("$label (outside the range the aircraft accepts)")
             return false
         }
 
         maxAltM?.let { m ->
-            if (!inRange("setMaxHeight", m, altRange)) return@let
+            if (!inRange("Max altitude", "setMaxHeight", m, altRange)) return@let
             fc.setMaxHeight(m.toDouble(), object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() { AppLog.i(TAG, "setMaxHeight($m): OK") }
                 override fun onFailure(error: AutelError?) {
                     AppLog.w(TAG, "setMaxHeight($m) failed: ${error?.description}")
+                    refused.add("Max altitude")
                 }
             })
         }
         maxRadiusM?.let { m ->
-            if (!inRange("setMaxRange", m, radRange)) return@let
+            if (!inRange("Max distance", "setMaxRange", m, radRange)) return@let
             fc.setMaxRange(m.toDouble(), object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() { AppLog.i(TAG, "setMaxRange($m): OK") }
                 override fun onFailure(error: AutelError?) {
                     AppLog.w(TAG, "setMaxRange($m) failed: ${error?.description}")
+                    refused.add("Max distance")
                 }
             })
         }
         rthAltM?.let { m ->
-            if (!inRange("setReturnHeight", m, rthRange)) return@let
+            if (!inRange("RTH altitude", "setReturnHeight", m, rthRange)) return@let
             fc.setReturnHeight(m.toDouble(), object : com.autel.common.CallbackWithNoParam {
                 override fun onSuccess() { AppLog.i(TAG, "setReturnHeight($m): OK") }
                 override fun onFailure(error: AutelError?) {
                     AppLog.w(TAG, "setReturnHeight($m) failed: ${error?.description}")
+                    refused.add("RTH altitude")
                 }
             })
         }
@@ -496,6 +656,8 @@ object FlightLimitsController {
      * until that is resolved.
      */
     fun applyFailsafe(context: Context, fc: Evo2FlyController) {
+        // Read ONE time into a local — see the note on [refusedThisApply].
+        val refused = refusedThisApply
         val failsafe = savedFailsafe(context)
         fc.doEmergencyAction(failsafe.sdk, object : com.autel.common.CallbackWithNoParam {
             override fun onSuccess() {
@@ -505,6 +667,10 @@ object FlightLimitsController {
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "signal-loss behavior '${failsafe.label}' REJECTED: " +
                     "${error?.description} — aircraft keeps its previous setting")
+                // This setting has NO getter, thus this is the only way a refusal can reach the
+                // pilot. See the measurement note above: this write is not acknowledged on this
+                // firmware, thus expect it here on each apply until that is resolved.
+                refused.add("Signal-loss behaviour")
             }
         })
     }
@@ -523,6 +689,8 @@ object FlightLimitsController {
      * a return level below its landing level rather than the other way round.
      */
     private fun applyBatteryThresholds(context: Context) {
+        // Read ONE time into a local — see the note on [refusedThisApply].
+        val refused = refusedThisApply
         val bat = AutelProductHolder.evo2?.battery ?: return
         val low = savedLowBatteryPct(context).trim().toFloatOrNull()
         val crit = savedCriticalBatteryPct(context).trim().toFloatOrNull()
@@ -533,18 +701,21 @@ object FlightLimitsController {
         if (low <= crit) {
             AppLog.e(TAG, "REFUSING battery thresholds: low ($low%) is not above critical ($crit%) " +
                 "— the aircraft would return home and force-land at the same moment")
+            refused.add("Battery levels (Warning must be above Critical)")
             return
         }
         bat.setLowBatteryNotifyThreshold(low / 100f, object : com.autel.common.CallbackWithNoParam {
             override fun onSuccess() { AppLog.i(TAG, "low battery threshold set to $low%: OK") }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "low battery threshold $low% failed: ${error?.description}")
+                refused.add("Low battery level")
             }
         })
         bat.setCriticalBatteryNotifyThreshold(crit / 100f, object : com.autel.common.CallbackWithNoParam {
             override fun onSuccess() { AppLog.i(TAG, "critical battery threshold set to $crit%: OK") }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "critical battery threshold $crit% failed: ${error?.description}")
+                refused.add("Critical battery level")
             }
         })
     }
@@ -561,12 +732,16 @@ object FlightLimitsController {
      * this build elsewhere must revisit it.
      */
     private fun applyRfPower(context: Context) {
+        // Read ONE time into a local — see the note on [refusedThisApply].
+        val refused = refusedThisApply
         val rc = AutelProductHolder.evo2?.remoteController ?: return
         val want = savedRfPower(context)
         rc.setRFPower(want, object : com.autel.common.CallbackWithNoParam {
             override fun onSuccess() { AppLog.i(TAG, "RF power set to $want: OK") }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "RF power $want failed: ${error?.description}")
+                // No getter for this one either — the refusal reaches the pilot only from here.
+                refused.add("RF power")
             }
         })
     }
