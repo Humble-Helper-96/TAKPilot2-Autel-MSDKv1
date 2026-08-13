@@ -46,6 +46,14 @@ object FlightWarnings {
         RTH_BATTERY(false, "RETURNING HOME — LOW BATTERY"),
         RTH_RC_LOST(false, "RETURNING HOME — SIGNAL LOST"),
         RTH_RANGE(false, "RETURNING HOME — RANGE LIMIT"),
+        /** Set by AutelAvoidance when connect-time enforcement could not verify a switch
+         *  against the aircraft. On flight 2026-08-13 the LANDING_PROTECT write timed out
+         *  with no retry, and the aircraft flew unprotected while the app showed the
+         *  Pre-Flight selection. Amber: the pilot must KNOW the aircraft does not hold it. */
+        AVOIDANCE_NOT_APPLIED(false, "AVOIDANCE SETTING NOT APPLIED"),
+        /** Set from the bridge's gimbal feed through [GimbalPitchMonitor]. On flight
+         *  2026-08-13 a full-range pitch oscillation ran 39 s before the pilot reacted. */
+        GIMBAL_ERRATIC(false, "GIMBAL PITCH ERRATIC"),
         WIND(false, "WIND TOO HIGH"),
         BATTERY_LOW(false, "BATTERY LOW"),
         AT_MAX_ALTITUDE(false, "AT ALTITUDE LIMIT"),
@@ -60,6 +68,13 @@ object FlightWarnings {
     /** Minimum time a warning owns the banner once shown — long enough to read, short enough
      *  that a stack of warnings still cycles usefully. A WORSE warning preempts regardless. */
     private const val HOLD_MS = 4000L
+
+    /** External conditions. These do not come from `FlyControllerStatus`, so their owners set
+     *  these flags and [compute] folds them into the one policy. `AutelAvoidance` owns the
+     *  first, the bridge's gimbal feed owns the second — each owner sets AND clears its flag.
+     *  Volatile: written from SDK callback threads, read on the fly-controller frame. */
+    @Volatile var avoidanceNotApplied: Boolean = false
+    @Volatile var gimbalErratic: Boolean = false
 
     private val lock = Any()
     private var active: Set<Warning> = emptySet()
@@ -128,6 +143,8 @@ object FlightWarnings {
             FlyMode.EXCEED_RANGE_GO_HOME -> out.add(Warning.RTH_RANGE)
             else -> {}
         }
+        if (avoidanceNotApplied) out.add(Warning.AVOIDANCE_NOT_APPLIED)
+        if (gimbalErratic) out.add(Warning.GIMBAL_ERRATIC)
         if (s.isWindTooHigh) out.add(Warning.WIND)
         if (batteryPct > 0 && warn != null && batteryPct <= warn &&
             Warning.BATTERY_CRITICAL !in out) out.add(Warning.BATTERY_LOW)

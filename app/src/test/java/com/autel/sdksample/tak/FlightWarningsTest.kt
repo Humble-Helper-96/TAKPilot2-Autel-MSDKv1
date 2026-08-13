@@ -59,6 +59,8 @@ class FlightWarningsTest {
     @Before
     fun resetState() {
         FlightWarnings.reset()
+        FlightWarnings.avoidanceNotApplied = false
+        FlightWarnings.gimbalErratic = false
         FlightLimitsController.aircraftWarningPct = null
         FlightLimitsController.aircraftCriticalPct = null
     }
@@ -159,5 +161,53 @@ class FlightWarningsTest {
         val d = FlightWarnings.displayAt(t0)!!
         assertEquals("RETURNING HOME — SIGNAL LOST", d.text)
         assertTrue(!d.red)
+    }
+
+    @Test
+    fun avoidanceNotAppliedShowsAmberBanner() {
+        FlightWarnings.avoidanceNotApplied = true
+        FlightWarnings.onStatus(status(), batteryPct = 80, airborne = false)
+        val d = FlightWarnings.displayAt(t0)!!
+        assertEquals("AVOIDANCE SETTING NOT APPLIED", d.text)
+        assertTrue(!d.red)
+    }
+
+    @Test
+    fun avoidanceNotAppliedClearsWhenFlagClears() {
+        FlightWarnings.avoidanceNotApplied = true
+        FlightWarnings.onStatus(status(), batteryPct = 80, airborne = false)
+        assertEquals("AVOIDANCE SETTING NOT APPLIED", FlightWarnings.displayAt(t0)!!.text)
+        FlightWarnings.avoidanceNotApplied = false
+        FlightWarnings.onStatus(status(), batteryPct = 80, airborne = false)
+        // The banner rides out its hold, then hides.
+        assertNull(FlightWarnings.displayAt(t0 + 4_100))
+    }
+
+    @Test
+    fun gimbalErraticShowsAmberBanner() {
+        FlightWarnings.gimbalErratic = true
+        FlightWarnings.onStatus(status(), batteryPct = 80, airborne = true)
+        val d = FlightWarnings.displayAt(t0)!!
+        assertEquals("GIMBAL PITCH ERRATIC", d.text)
+        assertTrue(!d.red)
+    }
+
+    @Test
+    fun redWarningPreemptsExternalFlags() {
+        FlightWarnings.gimbalErratic = true
+        FlightWarnings.onStatus(status(compassValid = false), batteryPct = 80, airborne = true)
+        val d = FlightWarnings.displayAt(t0)!!
+        assertEquals("COMPASS INTERFERENCE  +1", d.text)
+        assertTrue(d.red)
+    }
+
+    @Test
+    fun rthOutranksAvoidanceNotApplied() {
+        // An autonomous return describes what the aircraft DOES right now; it must win the
+        // banner over a setting mismatch. This pins the enum declaration order.
+        FlightWarnings.avoidanceNotApplied = true
+        FlightWarnings.onStatus(
+            status(flyMode = FlyMode.LOW_BATTERY_GO_HOME), batteryPct = 80, airborne = true)
+        assertEquals("RETURNING HOME — LOW BATTERY  +1", FlightWarnings.displayAt(t0)!!.text)
     }
 }
