@@ -264,6 +264,26 @@ android {
         //        watchdog BEFORE the command, thus a failure in the command cannot stop the
         //        watchdog. The Enter Flight card shows where the camera writes and how much
         //        space is free.
+        // 1.5.9: THE APPLICATION RECORDS EACH FLIGHT BY ITSELF. A .gpx track and a .csv table,
+        //        one row each second, go to Downloads/TAKPilotFlights. This operates with no TAK
+        //        server and with no network, and on a controller that never enrolled. The folder
+        //        keeps approximately 50 MB and then deletes the oldest files.
+        //
+        //        AIRCRAFT WARNINGS ARE ON THE FLIGHT SCREEN. A banner shows compass
+        //        interference, GPS loss, high wind, battery, flight limits, and automatic
+        //        return-to-home with its reason. Red means act now, amber means know it. Before
+        //        this, the controller made warning sounds and showed no message. The no-fly-zone
+        //        warning is not on the banner — the fleet operates under an FAA exception — but
+        //        it stays in the log.
+        //
+        //        THE HOME SCREEN SHOWS THE NETWORK. A wifi line under the TAK status gives the
+        //        network name and the signal. Green means the system confirmed the internet
+        //        connection, amber means wifi with no internet, red means no wifi. Enroll &
+        //        Connect now says "No network connection" in words in place of a technical
+        //        error, because field reports read that error as a server fault.
+        //
+        //        Ironbow joins WHITE HOT and BLACK HOT on the thermal palette button. Each
+        //        configuration lock in Pre-Flight Setup moves to the bottom of its section.
         // 1.6.0: THE VIDEO FEED IS PLAYABLE FROM THE TAK MARKERS. The aircraft marker and the
         //        pilot marker advertise the stream as <__video> with a nested ConnectionEntry,
         //        which is the shape ATAK/CloudTAK/TAKAware build a player from. The old bare
