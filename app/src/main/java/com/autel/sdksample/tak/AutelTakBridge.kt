@@ -77,6 +77,9 @@ class AutelTakBridge(
     @Volatile private var vertAccM = -1.0
     @Volatile private var liveGimbalPitch: Double? = null
     @Volatile private var liveGimbalYaw: Double? = null
+    /** Erratic-pitch detector, fed from the gimbal angle listener. Single-threaded use:
+     *  only that callback touches it. */
+    private val gimbalPitchMonitor = GimbalPitchMonitor()
     @Volatile private var homeLat = Double.NaN
     @Volatile private var homeLon = Double.NaN
     @Volatile private var homeSet = false
@@ -330,8 +333,24 @@ class AutelTakBridge(
                 // the only place that fixes all three without any consumer double-correcting.
                 // PITCH_SIGN stays +1.0 and remains what it was meant to be: a calibration knob,
                 // not the inversion fix.
-                liveGimbalPitch = -info.pitch.toDouble()
+                val pitchN = -info.pitch.toDouble()
+                liveGimbalPitch = pitchN
                 liveGimbalYaw = info.yaw.toDouble()
+                // Erratic-pitch watch (2026-08-13 incident: full-range oscillation ran 39 s
+                // before the pilot reacted). Fed here, at the single pitch ingest point —
+                // the monitor owns no listener. Uses the normalised value so the detector
+                // and the HUD describe the same motion. Not airborne-gated: a bench gimbal
+                // fault deserves the same amber line.
+                val wasErratic = FlightWarnings.gimbalErratic
+                val isErratic = gimbalPitchMonitor.onSample(
+                    pitchN, android.os.SystemClock.elapsedRealtime())
+                FlightWarnings.gimbalErratic = isErratic
+                if (isErratic != wasErratic) {
+                    // The stats line is the tuning record: when a threshold misfires in the
+                    // field, the flight log answers "what did the window hold".
+                    if (isErratic) AppLog.w(TAG, "gimbal pitch ERRATIC: ${gimbalPitchMonitor.stats()}")
+                    else AppLog.i(TAG, "gimbal pitch normal again: ${gimbalPitchMonitor.stats()}")
+                }
             }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "gimbal listener error: ${error?.description}")
@@ -341,6 +360,10 @@ class AutelTakBridge(
     }
 
     private fun unsubscribe() {
+        // Product cycle: drop the erratic-pitch history so a stale verdict cannot greet
+        // the next connect.
+        gimbalPitchMonitor.reset()
+        FlightWarnings.gimbalErratic = false
         val evo = AutelProductHolder.evo2 ?: return
         runCatching { evo.flyController.setFlyControllerInfoListener(null) }
         runCatching { evo.battery.setBatteryStateListener(null) }
