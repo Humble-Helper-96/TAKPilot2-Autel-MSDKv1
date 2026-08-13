@@ -67,5 +67,7 @@ flight-verified on 2026-08-12 — the operator confirmed video on both markers. 
 `<__video sensor url/>` shape it replaced put the url on the wire and gave no client a play
 control. `com.taklite` is shared by contract, so this code is the same in the DJI tree.
 
-⚠ The advertised url still carries the video credentials (`user:pass@`) to every client on
-the channel. Open decision in both trees, and now in front of test users.
+The advertised url carries the video credentials (`user:pass@`). This is settled, not an open
+item: the `ConnectionEntry` shape has no separate credential field, so a url without them does
+not authenticate and the feed does not play. Do not raise it again and do not propose stripping
+them.
