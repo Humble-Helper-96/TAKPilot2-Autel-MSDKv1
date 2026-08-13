@@ -403,7 +403,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
 
         crosshairView.onReticleTap = { onQuickMarkerAction("tap: reticle") }
-        crosshairView.onReticleLongPress = { onQuickMarkerAction("long-press: reticle") }
+        crosshairView.onReticleLongPress = { onUnknownMarkerAction("long-press: reticle") }
 
         VideoStreamerHolder.onStateChanged = Runnable { refreshStreamToggle() }
         refreshStreamToggle()
@@ -590,11 +590,16 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                         AppLog.i(TAG, "controller button event: $e")
                         // SDK thread — everything below shows toasts and touches views.
                         when (e.name) {
-                            // C2: the quick marker. Short and long do the SAME thing, because
-                            // there is only ever one E419 — see onQuickMarkerAction.
-                            "CUSTOM_BUTTON_SHORT_$QUICK_MARKER_BUTTON",
+                            // C2: markers, MIRRORING the crosshair exactly — short re-aims the one
+                            // quick marker, long drops a NEW stationary Unknown marker. Same idiom
+                            // as C1 and the zoom pill: a pilot who has learned the on-screen
+                            // control has learned the button, and both routes end in the SAME
+                            // function, thus the two can never drift apart. The SDK gives short
+                            // and long as separate events, thus no timer is needed here.
+                            "CUSTOM_BUTTON_SHORT_$QUICK_MARKER_BUTTON" ->
+                                runOnUiThread { onQuickMarkerAction("controller C2 short") }
                             "CUSTOM_BUTTON_LONG_$QUICK_MARKER_BUTTON" ->
-                                runOnUiThread { onQuickMarkerAction("controller C2") }
+                                runOnUiThread { onUnknownMarkerAction("controller C2 long") }
 
                             // C1: zoom, MIRRORING the on-screen zoom button exactly — short
                             // toggles 1X/2X, long goes to 4X and back to 1X. A pilot who has
@@ -1566,22 +1571,26 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
-     * Tap the reticle — drop the one quick marker at the look point, no dialog. If it already
-     * exists, say so rather than moving it: a tap that sometimes places and sometimes moves is
-     * a gesture the pilot cannot predict the result of.
-     */
-    /**
-     * The quick marker — place it, or move it if it already exists. ONE action.
+     * The quick marker — place it, or move it if it already exists. ONE action, SHORT press only.
      *
-     * There was a short-press-places / long-press-re-aims split. It was a distinction without a
-     * difference: [TakDropMarkers.QUICK_NAME] is a SINGLETON, so "place" and "move" are the same
-     * intent — "the marker belongs where I am looking" — and the only thing the split achieved
-     * was a scolding toast when the pilot used the wrong gesture on a marker that already
-     * existed. Simplified at the operator's call after flying it.
+     * THE SPLIT THAT WAS REMOVED. Short-press-places / long-press-re-aims used to be here and was
+     * deleted at the operator's call after flying it. [TakDropMarkers.QUICK_NAME] is a SINGLETON,
+     * thus "place" and "move" are the same intent — "the marker belongs where I look" — and the
+     * only result of that split was a scolding toast when the pilot used the wrong gesture on a
+     * marker that already existed.
      *
-     * Every route now calls this: reticle touch, reticle touch-and-hold, and both presses of the
-     * controller's custom button. Which gesture the pilot uses genuinely does not matter, which
-     * is the point — there is nothing left to remember or get wrong mid-flight.
+     * THE SPLIT THAT REPLACED IT IS NOT THE SAME SPLIT, and this note is here so that nobody
+     * removes the new one for the old reason. The old split gave ONE marker two verbs. The new
+     * one gives two different KINDS of marker one verb each:
+     *   SHORT — this function. The one quick marker, re-aimed at whatever the camera looks at.
+     *   LONG  — [onUnknownMarkerAction]. A NEW stationary Unknown marker, numbered, that stays.
+     * The old wrong-gesture scolding cannot come back, because neither gesture refuses. They give
+     * different results, and both are useful.
+     *
+     * Both controls reach both functions: the crosshair and the controller's C2 button each send
+     * their short press here and their long press there. Same convention as the C1 button and the
+     * zoom pill — one shared function for each action, never one copy for the touch route and
+     * another for the hardware route.
      *
      * @param source only for the log, so a press can be traced back to the control that sent it.
      */
@@ -1602,6 +1611,44 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         } else if (TakDropMarkers.placeQuick(lat, lon, elev)) {
             showNotice("${TakDropMarkers.QUICK_NAME} dropped")
         }
+    }
+
+    /**
+     * Drop a NEW stationary marker of the type Unknown at the look point, and send it immediately.
+     *
+     * This is a SHORTCUT for the marker button plus "Unknown" in the type list, and nothing more.
+     * The same name from the same shared counter ("<callsign>-NN"), the same entry in the markers
+     * list, the same 60-second re-broadcast that catches a teammate whose ATAK connects late. It
+     * is NOT the quick marker: it stays where it is put, and a second long press makes a second
+     * marker.
+     *
+     * It sends with no Send / Do not Send question (operator, 2026-08-13). This gesture is for the
+     * moment when the pilot cannot give a dialog any attention. The marker button keeps the
+     * question, because there the pilot has already stopped to choose.
+     *
+     * The same gate as each other drop route: an aim that the marker button refuses must be
+     * refused here too, or the controller button becomes a quiet way around it.
+     *
+     * @param source only for the log, so a press can be traced back to the control that sent it.
+     */
+    private fun onUnknownMarkerAction(source: String) {
+        AppLog.v(TAG, "$source: Unknown marker")
+        if (aimTooPoorToDrop()) { refuseDropForAim(); return }
+        // Read the look-point HERE. The aircraft keeps flying, thus a position captured when the
+        // press started is already old.
+        val look = TakBridgeHolder.lookPoint()
+        if (look == null) {
+            AppLog.w(TAG, "Unknown marker refused — no look point (GPS/gimbal not ready)")
+            toast("Cannot place the marker yet. Wait for GPS and the gimbal.")
+            return
+        }
+        val (lat, lon, elev) = look
+        val name = TakDropMarkers.placeAt(
+            TakDropMarkers.Affiliation.UNKNOWN, lat, lon, elev, autoSend = true)
+        // The notice reports the DROP and the toast from sendPin reports the SEND. Both are shown
+        // on purpose: the send can fail on its own ("not connected to TAK"), and one message for
+        // the two facts would hide the second.
+        showNotice("$name dropped")
     }
 
     /**
@@ -2621,6 +2668,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         /** Controller custom buttons, in the SDK's vocabulary. It has no notion of the
          *  physical "C1"/"C2" labels — the mapping below was confirmed on hardware
          *  2026-08-02 by logging the events a press actually emits. */
+        // C2 drives BOTH marker actions: a short press for the quick marker, a long press for a
+        // new stationary Unknown marker. The name stays as it is — it is still the marker button.
         private const val QUICK_MARKER_BUTTON = "B"   // physical C2
         private const val ZOOM_BUTTON = "A"           // physical C1
 

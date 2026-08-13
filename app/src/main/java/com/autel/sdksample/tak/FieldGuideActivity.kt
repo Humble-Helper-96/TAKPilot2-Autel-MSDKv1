@@ -549,8 +549,7 @@ class FieldGuideActivity : AppCompatActivity() {
                 "There is only one quick marker. Point the camera at a new target and " +
                 "touch the crosshair again: the marker MOVES to the new target. It moves " +
                 "on the screens of all your team. The app does not put a second marker.\n\n" +
-                "You can also touch and hold the crosshair, or press the C2 button on the " +
-                "controller. All of them do the same thing.\n\n" +
+                "You can also press the C2 button on the controller. It does the same thing.\n\n" +
                 "Use the quick marker to show your team what you look at now. To keep a " +
                 "record of a position, use the marker button. With that button you can set a " +
                 "name and a type.",
@@ -558,6 +557,30 @@ class FieldGuideActivity : AppCompatActivity() {
                 "To remove the quick marker, delete it from the marker list. Touch and hold " +
                     "the marker button to open the list.",
                 "The quick marker follows the same rules as other markers.",
+            ),
+        )
+
+        entry(
+            emptyList(),
+            "Unknown marker: touch and hold the crosshair",
+            "Touch the crosshair and hold it to put a marker of the type Unknown immediately. " +
+                "The controller makes a short vibration. The app does not ask you questions and " +
+                "sends the marker immediately.\n\n" +
+                "This marker DOES NOT MOVE. It stays at the position where you put it. If you " +
+                "touch and hold the crosshair again, the app puts a SECOND marker. This is " +
+                "different from the quick marker, which moves.\n\n" +
+                "The name is the callsign of the aircraft and a number, for example EVO2-07. " +
+                "The number increases with each marker. This is the same name that the marker " +
+                "button gives.\n\n" +
+                "You can also press and hold the C2 button on the controller. It does the same " +
+                "thing.\n\n" +
+                "This is a quick way to put an Unknown marker. The result is the same as the " +
+                "marker button with the type Unknown, but with no windows.",
+            listOf(
+                "The rules of the crosshair ring apply. If the ring is red, the app does not " +
+                    "put the marker.",
+                "Use this to keep a record of a position. Use the quick marker to show your " +
+                    "team what you look at now.",
             ),
         )
 
@@ -712,7 +735,7 @@ class FieldGuideActivity : AppCompatActivity() {
         bullet("9. If the marker is counter-clockwise from the target, touch the plus button " +
             "of \"Bearing offset\".")
         bullet("10. Touch \"Done\".")
-        bullet("11. Touch and hold the crosshair. The marker moves to the new position.")
+        bullet("11. Touch the crosshair. The marker moves to the new position.")
         bullet("12. Do steps 3 to 11 again until the marker is correct.")
 
         warn("Change one control at a time. If you change both controls together, you cannot " +

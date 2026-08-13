@@ -117,10 +117,13 @@ class CrosshairView @JvmOverloads constructor(
     // array on every HUD tick.
     private val armPaints = arrayOf(outline, line)
 
-    /** Tap inside the reticle — quick-drop a marker at the look point. Set by the flight screen. */
+    /** Tap inside the reticle — drop or re-aim the one quick marker at the look point. Set by the
+     *  flight screen. */
     var onReticleTap: (() -> Unit)? = null
 
-    /** Long-press inside the reticle — re-aim the existing quick-drop marker. */
+    /** Long-press inside the reticle — drop a NEW stationary Unknown marker at the look point.
+     *  This is NOT the quick marker: see FlightActivity.onUnknownMarkerAction. Set by the flight
+     *  screen. */
     var onReticleLongPress: (() -> Unit)? = null
 
     private val gesture = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {

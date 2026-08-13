@@ -161,22 +161,40 @@ object TakDropMarkers {
      * Place a marker at an explicit position (also used by hot keys, which drop at the
      * camera look-point). Draws + persists, then Send/Don't-Send auto-shows — unless a
      * Data Sync feed is joined, in which case it auto-publishes.
+     *
+     * [autoSend] removes the question for the routes that must not stop for one: the crosshair
+     * touch-and-hold and the controller's long press exist for the moment when the pilot has no
+     * attention to give to a dialog. The marker button keeps the question, because there the
+     * pilot has already stopped to choose a type.
+     *
+     * @return the name given to the marker, so the caller can say it back to the pilot. The name
+     *   comes from [nextMarkerName], which is the ONE shared counter — each route must come
+     *   through here rather than build a name of its own.
      */
-    fun placeAt(aff: Affiliation, lat: Double, lon: Double, alt: Double) {
+    fun placeAt(
+        aff: Affiliation,
+        lat: Double,
+        lon: Double,
+        alt: Double,
+        autoSend: Boolean = false,
+    ): String {
         val pin = Pin(
             key = "${aff.id}-${System.nanoTime()}",
             lat = lat, lon = lon, alt = alt,
             affiliation = aff, name = nextMarkerName(), transmitted = false,
         )
         pins[pin.key] = pin
-        AppLog.i(TAG, "pin placed: ${pin.key} \"${pin.name}\" (${aff.label}) @ $lat,$lon alt=$alt")
+        AppLog.i(TAG, "pin placed: ${pin.key} \"${pin.name}\" (${aff.label}) @ $lat,$lon " +
+            "alt=$alt autoSend=$autoSend")
         draw(pin)
         save()
-        if (TakMissionManager.joinedFeed != null && TakManager.getInstance().isConnected) {
-            sendPin(pin)
-        } else {
-            ui?.askSend(aff.label) { send -> if (send) sendPin(pin) }
+        when {
+            autoSend -> sendPin(pin)
+            TakMissionManager.joinedFeed != null && TakManager.getInstance().isConnected ->
+                sendPin(pin)
+            else -> ui?.askSend(aff.label) { send -> if (send) sendPin(pin) }
         }
+        return pin.name
     }
 
     /**
