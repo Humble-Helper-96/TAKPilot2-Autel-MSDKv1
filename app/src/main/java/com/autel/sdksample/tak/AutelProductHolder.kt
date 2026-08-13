@@ -164,14 +164,34 @@ object AutelProductHolder {
                 MediaStatus.RECORD_FAILED_WRITE_ERROR,
                 MediaStatus.RECORD_FAILED_SDCARD_REMOVED,
                 MediaStatus.RECORD_BUFFER_FULL -> isRecording = false
-                MediaStatus.PHOTO_TAKEN_DONE -> photoTakenFlag = true
+                MediaStatus.PHOTO_TAKEN_DONE -> {
+                    photoTakenFlag = true
+                    lastPhotoDoneMs = android.os.SystemClock.elapsedRealtime()
+                }
                 else -> { /* mode/update chatter — logged above, no state change */ }
             }
         }
         override fun onFailure(error: AutelError?) {
-            AppLog.w(TAG, "media state listener error: ${error?.description}")
+            val desc = error?.description ?: "unknown"
+            val doneMs = lastPhotoDoneMs
+            val sincePhotoMs =
+                if (doneMs == 0L) Long.MAX_VALUE
+                else android.os.SystemClock.elapsedRealtime() - doneMs
+            if (isSpuriousPhotoFailure(desc, sincePhotoMs)) {
+                // This firmware double-reports: DONE, then a failure ~20 ms later for the
+                // same capture. The photo is on the card. INFO, not WARN — a WARN here
+                // sends someone hunting for a photo that was never lost.
+                AppLog.i(TAG, "spurious SDK photo-failure callback ${sincePhotoMs}ms after " +
+                    "successful capture (ignored): $desc")
+                return
+            }
+            AppLog.w(TAG, "media state listener error: $desc")
         }
     }
+
+    /** When the camera last reported PHOTO_TAKEN_DONE (elapsedRealtime), 0 = never. See
+     *  [isSpuriousPhotoFailure]. */
+    @Volatile private var lastPhotoDoneMs = 0L
 
     /**
      * The digital-zoom value the camera reported AT CONNECT, in the SDK's raw int units.
