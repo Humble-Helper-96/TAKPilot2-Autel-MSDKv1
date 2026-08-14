@@ -298,17 +298,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         refreshBatteryBands()
         TakMapMarkers.onMapReady(map)
 
-        // Distance scale, bottom-right of the mini-map (operator, 2026-08-13: without a
+        // Distance scale, right side of the mini-map (operator, 2026-08-13: without a
         // scale the pilot could not judge how far map items were). osmdroid recomputes the
         // bar for each zoom level, so WIDE and NEAR each read correctly. Imperial to match
-        // every other HUD distance (see Units). Bottom-right because the zoom toggle
-        // already owns bottom-left.
+        // every other HUD distance (see Units). Raised 40dp off the bottom so it can never
+        // sit on the same row as the zoom toggle (seen adjacent on the V3 screenshot,
+        // 2026-08-13) — the toggle owns the map's bottom edge.
         val density = resources.displayMetrics.density
         org.osmdroid.views.overlay.ScaleBarOverlay(map).apply {
             unitsOfMeasure = org.osmdroid.views.overlay.ScaleBarOverlay.UnitsOfMeasure.imperial
             setAlignBottom(true)
             setAlignRight(true)
-            setScaleBarOffset((8 * density).toInt(), (8 * density).toInt())
+            setScaleBarOffset((8 * density).toInt(), (40 * density).toInt())
             setTextSize(10 * density)
             map.overlays.add(this)
         }
