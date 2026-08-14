@@ -2,7 +2,6 @@ package com.autel.sdksample.tak
 
 import android.content.Context
 import com.autel.common.error.AutelError
-import com.autel.common.flycontroller.EmergencyAction
 import com.autel.sdk.flycontroller.Evo2FlyController
 import com.taklite.util.AppLog
 
@@ -21,26 +20,19 @@ import com.taklite.util.AppLog
  *   AutelFlyController.setMaxRange(double meters, CallbackWithNoParam)
  *   AutelFlyController.setReturnHeight(double meters, CallbackWithNoParam)
  *
- * **Signal-loss failsafe: `AutelFlyController.doEmergencyAction(EmergencyAction)`.**
+ * **There is NO signal-loss failsafe control here, and there must not be one.**
  *
- * The method name is misleading and cost this port a wrong call once already — it reads like a
- * one-shot "do this now" command, and was initially dismissed as such, leaving the failsafe
- * control unbuilt. Decompiling the SDK shows otherwise: it sends the MAVLink command
- * **`MAV_CMD_SET_MSN_EMERGENCY`** carrying the enum value (NONE=0, HOVER=1, LAND=2, GO_HOME=3).
- * `MAV_CMD_SET_*` sets a parameter; the genuinely-immediate calls beside it in
- * `FlyControllerManager2` use `MAV_CMD_DO_*` (e.g. `setLocationToHome` → `MAV_CMD_DO_SET_HOME`).
- * So this is the aircraft-side policy setter — the equivalent of DJI's
- * `setConnectionFailSafeBehavior` — under an unhelpful name.
+ * This file used to send `doEmergencyAction(GO_HOME)` and Pre-Flight used to offer a picker for
+ * it. Both are gone (2026-08-13). The reasoning that built them was careful and still wrong:
+ * the SDK call does send `MAV_CMD_SET_MSN_EMERGENCY`, and `MAV_CMD_SET_*` does set a parameter
+ * rather than command an action — but the parameter has no home on this airframe. The write
+ * timed out after 10 s on every attempt for eleven days, the SDK has no getter to read it back
+ * (whole-aar sweep: seven classes touch `EmergencyAction`, all write-only), and Autel Explorer
+ * V3.1.134 — decompiled off the controller — offers no such setting either. Its only
+ * lost-action control is a WAYPOINT MISSION one.
  *
- * **One real gap vs the blueprint: there is no read-back.** DJI pairs its setter with
- * `getConnectionFailSafeBehavior()` and this project's DJI side deliberately reads the value
- * back after setting it, because "I picked Return to Home" and "the aircraft is set to Return to
- * Home" are different claims. Autel exposes no getter, so the command result is all the
- * confirmation available — it's logged, and the UI says so rather than implying more certainty
- * than exists. Verify against Autel's own app before relying on it (Phase 4/5).
- *
- * [EmergencyAction.NONE] is deliberately not offered: DJI's picker has three options, and "do
- * nothing on link loss" is not a setting worth making one tap away.
+ * The aircraft returns home on link loss because that is the only thing it does. The Enter
+ * Flight card states that; nothing here writes it.
  */
 object FlightLimitsController {
     private const val TAG = "TP2LimitsAutel"
@@ -48,34 +40,10 @@ object FlightLimitsController {
     private const val KEY_MAX_ALT_FT = "limit_max_altitude_ft"
     private const val KEY_MAX_RADIUS_FT = "limit_max_radius_ft"
     private const val KEY_RTH_ALT_FT = "limit_rth_altitude_ft"
-    private const val KEY_FAILSAFE = "limit_failsafe_behavior"
     private const val KEY_LOW_BATT_PCT = "limit_low_battery_pct"
     private const val KEY_CRIT_BATT_PCT = "limit_critical_battery_pct"
 
     private const val FT_PER_M = 3.28084
-
-    /** What the aircraft does when it loses the RC link. Ids are what's persisted — same id
-     *  strings as the DJI sibling, so the two ports' prefs stay conceptually parallel. */
-    enum class Failsafe(val id: String, val label: String, val sdk: EmergencyAction) {
-        GO_HOME("gohome", "Return to Home", EmergencyAction.GO_HOME),
-        ;
-        companion object {
-            /** Anything else — including "hover"/"land" saved by an older build — becomes
-             *  GO_HOME. Those options were removed on 2026-08-02, see the enum doc. */
-            fun fromId(id: String?): Failsafe = values().firstOrNull { it.id == id } ?: GO_HOME
-        }
-    }
-
-    /** Defaults to Return to Home — the safe choice for the "flew out of radio range" case,
-     *  and what the aircraft most likely already defaults to (this makes it explicit rather
-     *  than assumed). Matches the blueprint's default. */
-    fun savedFailsafe(context: Context): Failsafe =
-        Failsafe.fromId(pref(context, KEY_FAILSAFE, Failsafe.GO_HOME.id))
-
-    fun saveFailsafe(context: Context, failsafe: Failsafe) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_FAILSAFE, failsafe.id).apply()
-    }
 
     fun savedMaxAltitudeFt(context: Context): String = pref(context, KEY_MAX_ALT_FT, "200")
     fun savedMaxRadiusFt(context: Context): String = pref(context, KEY_MAX_RADIUS_FT, "5280")
@@ -240,13 +208,6 @@ object FlightLimitsController {
     fun pushLimitsNow(context: Context): Boolean {
         val fc = AutelProductHolder.evo2?.flyController ?: return false
         applyNumericLimits(context, fc)
-        return true
-    }
-
-    /** As [pushLimitsNow], for the failsafe selection. */
-    fun pushFailsafeNow(context: Context): Boolean {
-        val fc = AutelProductHolder.evo2?.flyController ?: return false
-        applyFailsafe(context, fc)
         return true
     }
 
@@ -580,7 +541,6 @@ object FlightLimitsController {
         applyNumericLimits(context, fc)
         applyBatteryThresholds(context)
         applyRfPower(context)
-        applyFailsafe(context, fc)
     }
 
     /**
@@ -649,39 +609,23 @@ object FlightLimitsController {
     }
 
     /**
-     * Signal-loss failsafe. Logged loudly either way: this is the one limit a pilot cannot
-     * casually verify in the air (confirming it for real means deliberately dropping the RC
-     * link mid-flight), and unlike the DJI side there's no getter to read it back — so this
-     * log line is the only evidence the aircraft accepted it.
+     * SIGNAL-LOSS FAILSAFE: there is no write here any more, on purpose.
      *
-     * ⚠ MEASURED 2026-08-02: on this firmware this write is NOT acknowledged. It fails with
-     * "The execution of this process has timed out" after 10s, on a clean channel, with Autel
-     * Explorer closed and camera init finished. Flight testing separately confirmed the aircraft
-     * DOES return to home on link loss — so the behaviour is right, but it is the aircraft's own
-     * setting and this call is not what puts it there. Do not present this as a working control
-     * until that is resolved.
+     * `doEmergencyAction` used to go out on every connect and every apply. It never landed —
+     * it fails with "The execution of this process has timed out" after a full 10 SECONDS,
+     * every time (measured 2026-08-02, and on every apply since). That timeout was the whole
+     * reason the apply-and-verify cycle had to wait 11 s.
+     *
+     * It is gone because the setting it targets does not exist on this airframe. The SDK's
+     * `EmergencyAction` (NONE/HOVER/LAND/GO_HOME) is generic Autel scaffolding, and Autel
+     * Explorer V3.1.134 — decompiled 2026-08-13 — has no signal-loss picker either: its only
+     * lost-action control is a WAYPOINT MISSION setting. The aircraft returns home on link
+     * loss because that is the only thing it does, confirmed in flight. Nothing was being
+     * set, so nothing is lost by not asking, and the pilot now gets their settings confirmed
+     * in about 2 s instead of 11.
+     *
+     * The Enter Flight card states the behaviour. Do not add this write back.
      */
-    fun applyFailsafe(context: Context, fc: Evo2FlyController) {
-        // Read ONE time into a local — see the note on [refusedThisApply].
-        val refused = refusedThisApply
-        val failsafe = savedFailsafe(context)
-        fc.doEmergencyAction(failsafe.sdk, object : com.autel.common.CallbackWithNoParam {
-            override fun onSuccess() {
-                AppLog.i(TAG, "signal-loss behavior set to '${failsafe.label}' " +
-                    "(${failsafe.sdk}): OK — no read-back available on this SDK")
-            }
-            override fun onFailure(error: AutelError?) {
-                AppLog.w(TAG, "signal-loss behavior '${failsafe.label}' REJECTED: " +
-                    "${error?.description} — aircraft keeps its previous setting")
-                // DELIBERATELY NOT a reported refusal (operator, 2026-08-13). This firmware
-                // never acknowledges the write and there is no way for the pilot to make it,
-                // so putting it in the apply report only taught them to dismiss that report.
-                // The pilot is told what matters — that the aircraft's real setting is
-                // unknown and must be checked — on the Enter Flight card. The write still
-                // goes out on every connect: if it does take, that is the safe direction.
-            }
-        })
-    }
 
     /** Parses a feet string to a rounded meters int, or null if blank/unparseable. */
     private fun ftToM(feetStr: String): Int? {

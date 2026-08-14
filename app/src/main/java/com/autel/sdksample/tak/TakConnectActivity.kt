@@ -550,10 +550,11 @@ class TakConnectActivity : AppCompatActivity() {
 
         FlightLimitsController.pushLimitsNow(this)
         FlightLimitsController.pushBatteryAndRfNow(this)
-        FlightLimitsController.pushFailsafeNow(this)
 
-        // Verify AFTER the writes have had time to land. The failsafe write in particular takes a
-        // 10s timeout to fail on this firmware, so a verify any sooner would read mid-flight.
+        // Verify AFTER the writes have had time to land. The wait used to be 11s because the
+        // signal-loss write took a 10s timeout to fail; that write is gone (see
+        // FlightLimitsController's note), and the remaining writes acknowledge in well under
+        // a second, so the pilot waits about two.
         val startNs = android.os.SystemClock.elapsedRealtime()
         val tick = object : Runnable {
             override fun run() {
@@ -690,7 +691,7 @@ class TakConnectActivity : AppCompatActivity() {
             applyAllToAircraft(applyButton, applyProgress, applyStatus)
         }
 
-        setupFailsafe()
+
     }
 
     /**
@@ -748,19 +749,6 @@ class TakConnectActivity : AppCompatActivity() {
         listOf(low, crit).forEach { it.addTextChangedListener(watcher) }
     }
 
-    /**
-     * Keeps the stored failsafe at Return to Home.
-     *
-     * There is no picker any more (operator, 2026-08-13). Offering one implied a choice the app
-     * cannot deliver: `doEmergencyAction` is the only failsafe API in the SDK, this firmware
-     * never acknowledges it, and no getter exists to check what the aircraft actually holds.
-     * The preference stays so the connect-time write keeps asking for Return to Home — if it
-     * does land, that is the direction we want it to land in — and the pilot is told the real
-     * state, which is "unknown, confirm it in Explorer", on the Enter Flight card.
-     */
-    private fun setupFailsafe() {
-        FlightLimitsController.saveFailsafe(this, FlightLimitsController.Failsafe.GO_HOME)
-    }
 
     // ---- Configuration locks ----
 
@@ -1266,10 +1254,12 @@ class TakConnectActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "TakConnectActivity"
 
-        /** How long "Apply to aircraft" waits before reading back. Must clear the slowest write:
-         *  the failsafe takes a full 10s to time out on this firmware, so verifying sooner would
-         *  read while writes are still in flight and report a false mismatch. */
-        private const val VERIFY_DELAY_MS = 11000L
+        /** How long "Apply to aircraft" waits before reading back. Must clear the slowest write.
+         *  Was 11s, set by the signal-loss write's 10s timeout; that write is gone (2026-08-13,
+         *  it set nothing) and the remaining ones acknowledge in well under a second — the
+         *  bench log has the whole batch answering within ~150ms. Two seconds is that with
+         *  room to spare, and the read-back keeps its own 12s watchdog underneath. */
+        private const val VERIFY_DELAY_MS = 2000L
         /** Progress-bar/countdown refresh rate while waiting for [VERIFY_DELAY_MS] to elapse. */
         private const val APPLY_TICK_MS = 200L
         private const val REQUEST_CODE_DTED_PICK = 4301
