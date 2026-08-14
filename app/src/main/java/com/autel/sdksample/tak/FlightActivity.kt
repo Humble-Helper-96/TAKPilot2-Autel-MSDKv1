@@ -2300,6 +2300,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val dtedAvailable = hud != null && hud.hasFix &&
             DtedIndex.elevationAt(this, hud.lat, hud.lon) != null
         crosshairView.setGimbalPitch(pitch, dtedAvailable)
+        // Look-point distance at the reticle's lower-right (operator, 2026-08-13). Null —
+        // and no text — when the camera is at/above the horizon or telemetry is not ready;
+        // Units.distance keeps it in the HUD's imperial convention (ft, then mi).
+        crosshairView.setRangeText(
+            TakBridgeHolder.lookRangeMeters()?.let { Units.distance(it) })
         if (pitch == null) {
             fpvGimbalPitch.text = "GIMBAL —"
             fpvGimbalPitch.setTextColor(Color.parseColor("#B0B0B0"))

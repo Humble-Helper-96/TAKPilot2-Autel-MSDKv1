@@ -670,6 +670,27 @@ class AutelTakBridge(
         return Triple(gp.lat, gp.lon, gp.elevationMeters)
     }
 
+    /**
+     * Slant range (m) to the camera look-point, or null when there is nothing honest to
+     * show: telemetry not ready, or the camera at/above the horizon (same -1° guard as the
+     * SPI push — no ground intersection, so no distance). Feeds the reticle readout on the
+     * 500 ms HUD tick; uses the same [CameraSlantPoint] solve as [lookPoint] so the number
+     * and a dropped marker cannot disagree.
+     */
+    fun lookRangeMeters(): Double? {
+        val pitch = liveGimbalPitch ?: return null
+        val yaw = liveGimbalYaw ?: return null
+        val lat = this.lat; val lon = this.lon
+        if (!isValidLat(lat) || !isValidLon(lon)) return null
+        val pitchAdj = pitch * PITCH_SIGN + TakBridgeHolder.currentPitchOffset
+        if (pitchAdj > -1.0) return null
+        val agl = aglMeters()
+        val gp = CameraSlantPoint.compute(
+            lat, lon, agl, cameraBearing(yaw, headingDeg), pitchAdj,
+            ::elevationLookup, aircraftMsl(agl))
+        return gp.rangeMeters
+    }
+
     // ---- HUD accessors for FlightActivity ----
     data class Hud(
         val lat: Double, val lon: Double, val relAlt: Double, val hae: Double,
@@ -1016,6 +1037,7 @@ object TakBridgeHolder {
     val isRunning: Boolean get() = bridge != null
 
     fun lookPoint(): Triple<Double, Double, Double>? = bridge?.lookPoint()
+    fun lookRangeMeters(): Double? = bridge?.lookRangeMeters()
     fun hud(): AutelTakBridge.Hud? = bridge?.hud()
     fun cameraPose(): AutelTakBridge.CameraPose? = bridge?.cameraPose()
     fun isOwnPublishedUid(uid: String?): Boolean = bridge?.isOwnPublishedUid(uid) ?: false

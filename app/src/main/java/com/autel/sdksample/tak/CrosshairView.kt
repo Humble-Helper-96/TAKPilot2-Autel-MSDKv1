@@ -83,6 +83,35 @@ class CrosshairView @JvmOverloads constructor(
         invalidate()
     }
 
+    /**
+     * Distance to the look-point, shown off the reticle's lower-right (operator,
+     * 2026-08-13: the pilot had no way to know how far away the thing under the reticle
+     * was). Null hides the text — the flight screen passes null when the camera is at or
+     * above the horizon, where no ground distance exists.
+     */
+    fun setRangeText(text: String?) {
+        if (text == rangeText) return   // avoid invalidating on every HUD tick
+        rangeText = text
+        invalidate()
+    }
+
+    private var rangeText: String? = null
+    private val rangeFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 14f * resources.displayMetrics.scaledDensity
+        isFakeBoldText = true
+    }
+    /** Dark halo behind the range text — same job as the arms' outline: stay legible on
+     *  bright ground. */
+    private val rangeOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        alpha = 160
+        textSize = 14f * resources.displayMetrics.scaledDensity
+        isFakeBoldText = true
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+
     private var ringColor = Color.WHITE
     /** Twice the arms' weight: the ring carries the accuracy state, so it should read at a
      *  glance without the pilot looking for it. Stroke widths come from dimens (crosshair_*_width)
@@ -178,6 +207,14 @@ class CrosshairView @JvmOverloads constructor(
         // bright background whatever colour it is.
         canvas.drawCircle(cx, cy, ringR, ringOutline)
         canvas.drawCircle(cx, cy, ringR, ring)
+        // Look-point distance, off the lower-right arm — outside the arms so it never
+        // covers what the pilot is sighting.
+        rangeText?.let {
+            val tx = cx + armLen * 0.75f
+            val ty = cy + armLen * 0.75f + rangeFill.textSize * 0.5f
+            canvas.drawText(it, tx, ty, rangeOutline)
+            canvas.drawText(it, tx, ty, rangeFill)
+        }
     }
 
     companion object {
