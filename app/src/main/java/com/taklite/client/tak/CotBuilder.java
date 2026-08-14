@@ -14,11 +14,13 @@ public class CotBuilder {
     private static final long STALE_DURATION_MS = 300000; // 5 minutes — matches ATAK default
 
     // Drone (air) track: friendly-Air-Military-rotorcraftH-unmanned(Q). ATAK/taklite CotParser
-    // detects the air domain ("-A-") as a drone. 2 minutes so a momentary GPS-lock loss still
-    // shows the aircraft at its last known position on TAK instead of vanishing near-instantly
-    // (was 15s — too short: it staled out almost as fast as the telemetry hiccup itself).
+    // detects the air domain ("-A-") as a drone. 60 seconds (operator, 2026-08-13 flights):
+    // long enough that a momentary GPS-lock loss does not blink the aircraft off TAK (15s did
+    // — it staled out almost as fast as the telemetry hiccup itself), short enough that a
+    // landed or disconnected aircraft leaves the picture inside a minute. 2 minutes kept a
+    // ghost aircraft on other screens too long after shutdown.
     private static final String DRONE_TYPE = "a-f-A-M-H-Q";
-    private static final long DRONE_STALE_DURATION_MS = 120000; // 2 minutes
+    private static final long DRONE_STALE_DURATION_MS = 60000; // 60 seconds
 
     // Pilot-dropped 2525 markers — see the note in buildMarker().
     //
