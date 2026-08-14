@@ -253,20 +253,31 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 null -> Color.parseColor("#FFB300")
             })
 
-        // SIGNAL LOSS — the one setting this aircraft will not tell us (operator, 2026-08-13).
+        // SIGNAL LOSS — a statement of what the airframe does, not a setting.
         //
-        // The SDK has a setter and NO getter: doEmergencyAction is write-only, and the whole
-        // aar was swept on 2026-08-13 to be sure of it. TAKPilot asks for Return to Home on
-        // every connect, but the firmware does not acknowledge the write, so the app cannot
-        // honestly claim the aircraft holds it.
+        // This line first went up amber, telling the pilot to confirm the choice in Autel
+        // Explorer. THERE IS NO SUCH CHOICE. Decompiling Explorer V3.1.134 on the controller
+        // (2026-08-13) found exactly one lost-action type in the whole application, and it is
+        // `com.autel.common.mission.evo.RemoteControlLostSignalAction` — a WAYPOINT MISSION
+        // setting whose values are Continue and Return Home. No hover/land/return picker for
+        // ordinary flight exists in Explorer, which is what the operator saw when they went
+        // looking for one.
         //
-        // That gap matters more than any other unknown on this card: an aircraft left on Hover
-        // in Autel Explorer flies out of range and stays there until the battery ends the
-        // flight. The pilot cannot discover this in the air. So the line asks them to confirm
-        // it on the ground, every time, and stays amber because an unknown must look unknown.
-        signalLoss.text = if (product == null) "" else
-            "SIGNAL LOSS: — CHECK EXPLORER IS SET TO RETURN HOME"
-        signalLoss.setTextColor(Color.parseColor("#FFB300"))
+        // Which explains the rest of it: the SDK's EmergencyAction (NONE/HOVER/LAND/GO_HOME)
+        // is a generic Autel enum this airframe does not implement, so `doEmergencyAction`
+        // times out with no acknowledgement — there is nothing for it to set. Flight testing
+        // confirmed the aircraft returns home on link loss. Return to Home is not the
+        // configured behaviour; it is the ONLY behaviour.
+        //
+        // So the card answers the pilot's real question — "what happens if I fly out of
+        // range" — and does not ask them to go check something that is not there. Neutral,
+        // not amber: nothing here is unknown or wrong.
+        //
+        // ⚠ The one exception is a WAYPOINT MISSION, where the mission's own lost action can
+        // be set to Continue. TAKPilot does not fly waypoint missions, so it cannot arise
+        // from this app; revisit this line if that ever changes.
+        signalLoss.text = if (product == null) "" else "SIGNAL LOSS: RETURNS HOME"
+        signalLoss.setTextColor(Color.parseColor("#4CAF50"))
 
         // Sticks and control feel. Both are enforced from Pre-Flight at connect, so these state
         // what the aircraft WILL do rather than what it happens to be set to.

@@ -237,11 +237,9 @@
             <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="6dp" android:textStyle="bold" />
-            <!-- SIGNAL LOSS (operator, 2026-08-13). The aircraft will not report this setting
-                 — the SDK has no getter for it — and an aircraft left on Hover by Autel
-                 Explorer is lost the moment it goes out of range. So the pilot is told, before
-                 every flight, that they must confirm it themselves. Amber and permanent: this
-                 is an unknown, and unknown is its own state. -->
+            <!-- SIGNAL LOSS (operator, 2026-08-13). States what the airframe does when the
+                 link drops, on the screen the pilot passes through before takeoff. It is not
+                 a setting on this aircraft — see the note in TakPilotHomeActivity. -->
             <TextView android:id="@+id/homeSignalLoss" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="6dp" android:textStyle="bold" />
