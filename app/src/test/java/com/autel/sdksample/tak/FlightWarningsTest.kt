@@ -183,18 +183,30 @@ class FlightWarningsTest {
         assertNull(FlightWarnings.displayAt(t0 + 4_100))
     }
 
+    /**
+     * Erratic gimbal pitch is LOGGED, never shown. The pilot is already watching the video it
+     * is happening in (operator, after flying it), so the banner spent an interrupt on
+     * something visible. Same treatment as the no-fly zone: active, logged, off screen.
+     */
     @Test
-    fun gimbalErraticShowsAmberBanner() {
+    fun gimbalErraticIsLoggedButNeverShown() {
         FlightWarnings.gimbalErratic = true
         FlightWarnings.onStatus(status(), batteryPct = 80, airborne = true)
+        assertNull(FlightWarnings.displayAt(t0))
+    }
+
+    @Test
+    fun gimbalErraticIsNotEvenCountedBehindARedWarning() {
+        FlightWarnings.gimbalErratic = true
+        FlightWarnings.onStatus(status(compassValid = false), batteryPct = 80, airborne = true)
         val d = FlightWarnings.displayAt(t0)!!
-        assertEquals("GIMBAL PITCH ERRATIC", d.text)
-        assertTrue(!d.red)
+        assertEquals("COMPASS INTERFERENCE", d.text)   // no "+1" from a log-only warning
+        assertTrue(d.red)
     }
 
     @Test
     fun redWarningPreemptsExternalFlags() {
-        FlightWarnings.gimbalErratic = true
+        FlightWarnings.avoidanceNotApplied = true
         FlightWarnings.onStatus(status(compassValid = false), batteryPct = 80, airborne = true)
         val d = FlightWarnings.displayAt(t0)!!
         assertEquals("COMPASS INTERFERENCE  +1", d.text)

@@ -290,7 +290,7 @@ android {
         //        sensor/url attributes went on the wire and no client offered a play control
         //        (proved on the DJI sibling's 2026-08-12 flight). One stream, one uid: both
         //        markers reference the same feed entry.
-        versionCode 27
+        versionCode 28
         versionName "1.6.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

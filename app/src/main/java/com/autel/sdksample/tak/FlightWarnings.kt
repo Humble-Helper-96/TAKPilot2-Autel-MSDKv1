@@ -51,9 +51,17 @@ object FlightWarnings {
          *  with no retry, and the aircraft flew unprotected while the app showed the
          *  Pre-Flight selection. Amber: the pilot must KNOW the aircraft does not hold it. */
         AVOIDANCE_NOT_APPLIED(false, "AVOIDANCE SETTING NOT APPLIED"),
-        /** Set from the bridge's gimbal feed through [GimbalPitchMonitor]. On flight
-         *  2026-08-13 a full-range pitch oscillation ran 39 s before the pilot reacted. */
-        GIMBAL_ERRATIC(false, "GIMBAL PITCH ERRATIC"),
+        /** Set from the bridge's gimbal feed through [GimbalPitchMonitor].
+         *
+         *  LOG-ONLY (operator, 2026-08-13, after flying it): erratic pitch is happening in
+         *  the video the pilot is already looking at, so a banner tells them nothing they
+         *  cannot see and spends the one interrupt slot that belongs to the things they
+         *  CANNOT see — an avoidance switch that did not take, a compass going bad. What the
+         *  detector is genuinely good for is the record: it timestamps the onset and carries
+         *  the window's travel and reversal count, which is what made the 2026-08-13 runaway
+         *  diagnosable afterwards. So it stays in the ACTIVE set and in the transition log,
+         *  and off the screen. */
+        GIMBAL_ERRATIC(false, "GIMBAL PITCH ERRATIC", banner = false),
         WIND(false, "WIND TOO HIGH"),
         BATTERY_LOW(false, "BATTERY LOW"),
         AT_MAX_ALTITUDE(false, "AT ALTITUDE LIMIT"),
