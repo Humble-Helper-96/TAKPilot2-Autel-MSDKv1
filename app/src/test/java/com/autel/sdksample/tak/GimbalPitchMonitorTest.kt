@@ -64,8 +64,29 @@ class GimbalPitchMonitorTest {
 
     @Test
     fun incidentReplayTrips() {
-        // 37 s of the real 2026-08-13 stream must trip — the pilot took 39 s.
+        // 37 s of the real 2026-08-13 stream must trip — the pilot took 39 s. Replaying the
+        // full logged series offline puts the trip at 30 s after onset.
         assertTrue(replay(GimbalPitchMonitor(), incidentTrace))
+    }
+
+    /**
+     * Six minutes of REAL deliberate searching from the same flight (11:35:59–11:41:14,
+     * sampled every ~2 s) must stay silent. This is the negative case the thresholds were
+     * tuned against; without it, "never false-fires" is only an assertion.
+     */
+    @Test
+    fun realSearchingFlightNeverTrips() {
+        val m = GimbalPitchMonitor()
+        // Legs and holds as flown: sweep, hold, sweep deeper, hold, ease back, hold.
+        val trace = listOf(
+            0.0 to -33.1, 12.0 to -14.8, 20.0 to -12.4, 25.0 to -19.1, 62.0 to -19.1,
+            66.0 to -19.4, 74.0 to -37.5, 80.0 to -34.6, 86.0 to -34.6, 90.0 to -66.9,
+            120.0 to -66.9, 128.0 to -65.8, 140.0 to -44.2, 150.0 to -48.9, 175.0 to -48.9,
+            185.0 to -52.9, 195.0 to -65.4, 240.0 to -65.4, 250.0 to -57.1, 262.0 to -46.9,
+            285.0 to -44.5, 300.0 to -37.0, 340.0 to -37.0, 350.0 to -31.9, 360.0 to -19.5,
+            375.0 to -17.9, 385.0 to -16.2,
+        )
+        assertFalse(replay(m, trace))
     }
 
     @Test
@@ -112,7 +133,7 @@ class GimbalPitchMonitorTest {
         val m = GimbalPitchMonitor()
         assertTrue(replay(m, incidentTrace))
         // Motion stops. After the window drains past the relatch hold, the verdict clears.
-        val verdict = run(m, 28.8, listOf(45_000L to 0.0), startMs = 37_000L)
+        val verdict = run(m, 28.8, listOf(70_000L to 0.0), startMs = 37_000L)
         assertFalse(verdict)
     }
 

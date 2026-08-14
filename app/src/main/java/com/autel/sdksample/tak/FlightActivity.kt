@@ -2339,11 +2339,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val dtedAvailable = hud != null && hud.hasFix &&
             DtedIndex.elevationAt(this, hud.lat, hud.lon) != null
         crosshairView.setGimbalPitch(pitch, dtedAvailable)
-        // Look-point distance at the reticle's lower-right (operator, 2026-08-13). Null —
-        // and no text — when the camera is at/above the horizon or telemetry is not ready;
-        // Units.distance keeps it in the HUD's imperial convention (ft, then mi).
+        // Look-point distance and bearing at the reticle's lower-right (operator,
+        // 2026-08-13). Null — and no text — when the camera is at/above the horizon or
+        // telemetry is not ready; Units.distance keeps the range in the HUD's imperial
+        // convention (ft, then mi). The bearing is the camera's own true bearing, the same
+        // model the SPI and a marker drop use, so the reticle cannot disagree with them.
         crosshairView.setRangeText(
-            TakBridgeHolder.lookRangeMeters()?.let { Units.distance(it) })
+            TakBridgeHolder.lookRangeMeters()?.let { range ->
+                val brg = TakBridgeHolder.cameraPose()?.bearingDeg
+                if (brg == null) Units.distance(range)
+                else "%s  %03.0f°T".format(Units.distance(range), brg)
+            })
         if (pitch == null) {
             fpvGimbalPitch.text = "GIMBAL —"
             fpvGimbalPitch.setTextColor(Color.parseColor("#B0B0B0"))

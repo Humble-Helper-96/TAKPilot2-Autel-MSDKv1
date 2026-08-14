@@ -2,6 +2,7 @@ package com.autel.sdksample.tak
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.taklite.util.AppLog
 import com.autel.common.CallbackWithOneParam
 import com.autel.common.battery.evo.EvoBatteryInfo
@@ -75,6 +76,9 @@ class AutelTakBridge(
     // shipped data.
     @Volatile private var horizAccM = -1.0
     @Volatile private var vertAccM = -1.0
+    /** elapsedRealtime of the last fly-controller frame, 0 = none yet. The drone CoT is only
+     *  published while this is recent — see the freshness gate in [pushOnce]. */
+    @Volatile private var lastTelemetryMs = 0L
     @Volatile private var liveGimbalPitch: Double? = null
     @Volatile private var liveGimbalYaw: Double? = null
     /** Erratic-pitch detector, fed from the gimbal angle listener. Single-threaded use:
@@ -202,6 +206,8 @@ class AutelTakBridge(
             CallbackWithOneParam<EvoFlyControllerInfo> {
             override fun onSuccess(info: EvoFlyControllerInfo?) {
                 info ?: return
+                // Proof of life for the drone CoT push — see the freshness gate in pushOnce().
+                lastTelemetryMs = android.os.SystemClock.elapsedRealtime()
                 // Flight limits used to be pushed from here, latched on the TAK session. They are
                 // now applied on AIRCRAFT connect by AutelProductHolder — a TAK server link has
                 // no business gating aircraft safety parameters, and latching on it meant a
@@ -403,6 +409,14 @@ class AutelTakBridge(
         val lat = this.lat
         val lon = this.lon
         if (!isValidLat(lat) || !isValidLon(lon)) return   // no GPS fix — skip, don't send 0,0
+        // FRESHNESS, not just validity (operator, 2026-08-13: "as long as the controller is
+        // on, the aircraft marker never stales out"). lat/lon are the LAST values the
+        // fly-controller listener wrote and they persist after the aircraft goes away, so
+        // this push kept re-sending the last known position every 2 s and renewed the CoT
+        // stale time forever. The marker could never expire on any other client, whatever
+        // stale duration we put on it. An aircraft that stopped talking must stop being
+        // reported: the last message then ages out on its own (see CotBuilder's 60 s).
+        if (SystemClock.elapsedRealtime() - lastTelemetryMs > TELEMETRY_FRESH_MS) return
         val hae = if (this.hae.isFinite()) this.hae else 0.0
         val relAlt = this.relAlt
         val speedMs = this.speedMs
@@ -721,6 +735,12 @@ class AutelTakBridge(
 
     companion object {
         private const val TAG = "AutelTakBridge"
+
+        /** How old the last fly-controller frame may be and still be worth publishing as the
+         *  aircraft's position. The feed runs at about 2 Hz, so five seconds is many missed
+         *  frames — long enough to ride out a hiccup, short enough that a powered-down
+         *  aircraft stops being reported almost at once and its marker can then stale out. */
+        private const val TELEMETRY_FRESH_MS = 5_000L
 
         /** How long one controller-battery reading serves the pilot PLI — see pilotBatteryPct. */
         private const val BATTERY_CACHE_MS = 30_000L

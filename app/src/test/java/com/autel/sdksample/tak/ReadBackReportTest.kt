@@ -98,17 +98,45 @@ class ReadBackReportTest {
     }
 
     /**
-     * A refused write reaches the pilot even when every value that HAS a getter agrees. The
-     * signal-loss behaviour and the RF power have no getter at all, thus without this the pilot
-     * would read a clean green line for an apply the aircraft partly rejected.
+     * A refused write the pilot CAN act on reaches them even when every value that has a getter
+     * agrees — without this they would read a clean green line for an apply the aircraft partly
+     * rejected.
      */
     @Test
     fun aRefusedWriteIsAProblemEvenWhenEveryValueAgrees() {
-        val r = build(allAgree(), listOf("RF power"))
+        val r = build(allAgree(), listOf("Low battery level"))
         assertEquals(ReportState.PROBLEM, r.state)
-        assertTrue("It refused: RF power." in r.text)
+        assertTrue("It refused: Low battery level." in r.text)
         // and it still says what the aircraft did confirm
         assertTrue("It confirms:" in r.text)
+    }
+
+    /**
+     * The two writes this firmware ALWAYS refuses are stated, never made into a task. Before
+     * this split, every single apply came back red telling the pilot to "correct the values"
+     * for two settings no one at the controller can change (observed on the bench, 2026-08-13).
+     */
+    @Test
+    fun firmwareManagedRefusalsAreStatedNotBlamed() {
+        val r = build(allAgree(), listOf("RF power", "Signal-loss behaviour"))
+        assertEquals(ReportState.CONFIRMED, r.state)
+        assertTrue("The aircraft confirms:" in r.text)
+        assertTrue("keeps its own RF power and Signal-loss behaviour" in r.text)
+        assertTrue("Correct the values" !in r.text)
+    }
+
+    /** A real problem still reads as one, with the firmware note kept separate from it. */
+    @Test
+    fun firmwareManagedRefusalsDoNotHideARealProblem() {
+        val r = build(listOf(
+            v("Max altitude", 61, 46f),
+            v("Max distance", 152, 152f),
+            v("RTH altitude", 30, 30f),
+        ), listOf("RF power"))
+        assertEquals(ReportState.PROBLEM, r.state)
+        assertTrue("Max altitude is 151 ft, not 200 ft" in r.text)
+        assertTrue("keeps its own RF power" in r.text)
+        assertTrue("It refused:" !in r.text)   // nothing actionable was refused
     }
 
     @Test

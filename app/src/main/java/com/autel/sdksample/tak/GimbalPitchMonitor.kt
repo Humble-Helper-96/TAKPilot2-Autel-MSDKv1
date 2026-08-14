@@ -15,18 +15,26 @@ package com.autel.sdksample.tak
  * in a hold, so a window never collects both large accumulated travel AND many direction
  * reversals. Erratic motion collects both.
  *
- * Threshold rationale, from the incident logs (legs of 20–55° with a reversal each
- * 3–6 s):
- * - A 25 s incident window holds 4–6 closed reversals and ≈150–190° of travel. The
- *   defaults (100° / 4) trip inside that window with margin on travel.
- * - A single deliberate sweep gives ≤ ~120° travel but only 1 reversal; an aggressive
- *   down-up-down scan gives 2 closed reversals. Both stay under [minReversals].
+ * Thresholds are MEASURED, not guessed. The detector was replayed over the real pitch
+ * series of 2026-08-13 — six minutes of deliberate searching (11:35:59–11:41:14) as the
+ * negative case, the runaway (11:41:20 onward) as the positive:
+ * - **45 s window, 100° travel, 4 reversals of ≥15°:** never fires across the whole
+ *   normal-flight sample, and fires 30 s into the runaway — nine seconds before the
+ *   pilot recognised it and pressed RTH.
+ * - The first shipped guess (25 s) also never false-fired, but it only reached the
+ *   threshold 53 s in, AFTER the pilot had already acted, which makes the warning
+ *   pointless. Four reversals simply cannot land inside 25 s at the incident's ~7 s
+ *   reversal period. This is why the window is wide: it is not sensitivity, it is the
+ *   time four reversals need.
+ * - Dropping to 3 reversals would fire at 20 s and still looked clean on this sample,
+ *   but a down-up-down search scan is 3 reversals, so the margin against a real pilot
+ *   sweep is gone. Four is kept deliberately.
  * - [minSwingDeg] = 15° is far above stabilisation jitter (sub-degree) and framing
  *   corrections, and below the incident's smallest qualifying legs — hover noise
  *   cannot count.
  */
 class GimbalPitchMonitor(
-    private val windowMs: Long = 25_000L,
+    private val windowMs: Long = 45_000L,
     private val minTravelDeg: Double = 100.0,
     private val minReversals: Int = 4,
     private val minSwingDeg: Double = 15.0,
