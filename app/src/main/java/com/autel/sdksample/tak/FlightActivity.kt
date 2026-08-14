@@ -50,6 +50,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
     private lateinit var fpvHomeDistance: TextView
+    private lateinit var fpvAntennaAim: TextView
+    private lateinit var fpvAntennaArrow: TextView
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
     private lateinit var lightsButton: ImageButton
@@ -193,6 +195,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
+        fpvAntennaAim = findViewById(R.id.fpvAntennaAim)
+        fpvAntennaArrow = findViewById(R.id.fpvAntennaArrow)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
@@ -533,6 +537,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         syncIrStateFromCamera()
         map.onResume()
         installHardwareButtonListener()
+        ControllerCompass.start(this)   // BVLOS antenna aim; no-op without the sensor
         // Pre-Flight Setup may have changed the two battery levels while this screen was in the
         // background, and the gauge's colours are meaningless if they lag them.
         refreshBatteryBands()
@@ -561,6 +566,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         super.onPause()
         AppLog.v(TAG, "onPause")
         map.onPause()
+        ControllerCompass.stop()
         // Dropped while this screen is not showing: the hardware button must not
         // place markers from the home screen or with the app in the background.
         runCatching { AutelProductHolder.evo2?.remoteController?.setRemoteButtonControllerListener(null) }
@@ -837,6 +843,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         } else {
             "HOME — ft  —°T"
         }
+
+        updateAntennaAim(hud)
 
         // Same readout as the DJI blueprint, imperial throughout (see Units).
         fpvOverlayText.text = buildString {
@@ -2293,6 +2301,50 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             if (known) Color.parseColor("#B0B0B0") else Color.parseColor("#FFC107"))
     }
 
+    /**
+     * BVLOS antenna aim (operator, 2026-08-13): the controller's antennas are directional,
+     * and during authorized BVLOS work the pilot cannot see the aircraft to face it.
+     *
+     * The bearing is CONTROLLER→AIRCRAFT from the operator's own GPS fix — home point would
+     * be wrong the moment the pilot walks. With a controller compass the arrow turns to the
+     * aircraft relative to the way the controller faces (green when within
+     * [ANTENNA_ALIGNED_DEG]); without one the arrow stays hidden and the text leads with a
+     * cardinal, which a pilot can act on outdoors without any on-screen reference.
+     */
+    private fun updateAntennaAim(hud: AutelTakBridge.Hud?) {
+        val fix = OperatorLocation.latest
+        if (hud == null || !hud.hasFix || fix == null) {
+            fpvAntennaAim.visibility = View.GONE
+            fpvAntennaArrow.visibility = View.GONE
+            return
+        }
+        val bearing = CameraSlantPoint.initialBearingDeg(
+            fix.latitude, fix.longitude, hud.lat, hud.lon)
+        val facing = ControllerCompass.azimuthTrueDeg()
+        fpvAntennaAim.visibility = View.VISIBLE
+        if (facing == null) {
+            fpvAntennaArrow.visibility = View.GONE
+            fpvAntennaAim.text = "AIM %s %03.0f°T".format(cardinalFor(bearing), bearing)
+            fpvAntennaAim.setTextColor(Color.WHITE)
+            return
+        }
+        // Signed relative turn, -180..+180: the arrow leans the way the pilot must turn.
+        val relative = ((bearing - facing + 540.0) % 360.0) - 180.0
+        val aligned = kotlin.math.abs(relative) <= ANTENNA_ALIGNED_DEG
+        fpvAntennaArrow.visibility = View.VISIBLE
+        fpvAntennaArrow.rotation = relative.toFloat()
+        val color = if (aligned) Color.parseColor("#4CAF50") else Color.WHITE
+        fpvAntennaArrow.setTextColor(color)
+        fpvAntennaAim.setTextColor(color)
+        fpvAntennaAim.text = "AIM %03.0f°T".format(bearing)
+    }
+
+    /** Eight-point cardinal for a true bearing — the no-compass fallback wording. */
+    private fun cardinalFor(bearingDeg: Double): String {
+        val names = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        return names[(((bearingDeg + 22.5) % 360.0) / 45.0).toInt()]
+    }
+
     private fun updateGimbalPitch(hud: AutelTakBridge.Hud?) {
         val pitch = hud?.gimbalPitch
         // Whether a marker dropped RIGHT NOW would get CameraSlantPoint's terrain-corrected
@@ -2768,6 +2820,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          * toggle has no DJI counterpart at all; it is the first place this build is
          * deliberately ahead of the blueprint rather than catching up to it.
          */
+        /** Within this many degrees of the aircraft bearing, the antenna-aim arrow reads
+         *  GREEN — close enough for the controller's antenna lobe. */
+        private const val ANTENNA_ALIGNED_DEG = 10.0
+
         private const val MAP_ZOOM_WIDE = 15.5
         private const val MAP_ZOOM_NEAR = 18.0
         private const val KEY_MAP_WIDE = "flight_map_wide"
