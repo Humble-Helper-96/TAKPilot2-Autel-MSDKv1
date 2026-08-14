@@ -11,11 +11,12 @@ import com.taklite.util.AppLog
 /**
  * The controller's own compass facing, for the BVLOS antenna-aim readout.
  *
- * The RCPad's sensor set is UNVERIFIED (standing rule 8): this object degrades instead of
- * assuming. When the rotation-vector sensor exists, [azimuthTrueDeg] gives the direction
- * the controller's top edge faces, in degrees TRUE (declination from the operator's GPS
- * fix — magnetic-only would be ~15° off in Anchorage). When the sensor does not exist or
- * has not reported, it gives null and the readout falls back to cardinal text.
+ * RCPad sensor set VERIFIED 2026-08-13 (dumpsys sensorservice, rule 8): ISENTEK IST8310
+ * magnetometer plus QTI Rotation Vector and GeoMagnetic Rotation Vector fusion sensors —
+ * TYPE_ROTATION_VECTOR is real on this hardware. [azimuthTrueDeg] gives the direction the
+ * controller's top edge faces, in degrees TRUE (declination from the operator's GPS fix —
+ * magnetic-only would be ~15° off in Anchorage). The no-sensor path stays as a guard for
+ * any other device, returning null, which simply hides the aim indicator.
  *
  * Started/stopped with the flight screen so the sensor never runs in the background.
  */

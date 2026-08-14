@@ -50,7 +50,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
     private lateinit var fpvHomeDistance: TextView
-    private lateinit var fpvAntennaAim: TextView
     private lateinit var fpvAntennaArc: AntennaAimView
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
@@ -195,7 +194,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
-        fpvAntennaAim = findViewById(R.id.fpvAntennaAim)
         fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
@@ -2306,38 +2304,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * and during authorized BVLOS work the pilot cannot see the aircraft to face it.
      *
      * The bearing is CONTROLLER→AIRCRAFT from the operator's own GPS fix — home point would
-     * be wrong the moment the pilot walks. With a controller compass the bottom-centre arc
-     * ([AntennaAimView]) carries the whole story: pilot dot at the centre, aircraft marker
-     * riding the arc, marker at the top = antennas on target. Without a compass the arc
-     * stays hidden and the HUD-column text leads with a cardinal, which a pilot can act on
-     * outdoors without any on-screen reference.
+     * be wrong the moment the pilot walks. The bottom-centre arc ([AntennaAimView]) carries
+     * the whole story: pilot dot at the centre, aircraft marker riding the arc, marker at
+     * the top = antennas on target. No text fallback (operator's call): a bearing number
+     * without an on-screen compass gives the pilot nothing to act on, and the RCPad's
+     * rotation-vector sensor is verified present, so the arc is the indicator.
      */
     private fun updateAntennaAim(hud: AutelTakBridge.Hud?) {
         val fix = OperatorLocation.latest
-        if (hud == null || !hud.hasFix || fix == null) {
-            fpvAntennaAim.visibility = View.GONE
+        val facing = ControllerCompass.azimuthTrueDeg()
+        if (hud == null || !hud.hasFix || fix == null || facing == null) {
             fpvAntennaArc.setRelativeBearing(null)
             return
         }
         val bearing = CameraSlantPoint.initialBearingDeg(
             fix.latitude, fix.longitude, hud.lat, hud.lon)
-        val facing = ControllerCompass.azimuthTrueDeg()
-        if (facing == null) {
-            fpvAntennaArc.setRelativeBearing(null)
-            fpvAntennaAim.visibility = View.VISIBLE
-            fpvAntennaAim.text = "AIM %s %03.0f°T".format(cardinalFor(bearing), bearing)
-            fpvAntennaAim.setTextColor(Color.WHITE)
-            return
-        }
         // Signed relative turn, -180..+180: which way and how far the pilot must rotate.
-        fpvAntennaAim.visibility = View.GONE
         fpvAntennaArc.setRelativeBearing(((bearing - facing + 540.0) % 360.0) - 180.0)
-    }
-
-    /** Eight-point cardinal for a true bearing — the no-compass fallback wording. */
-    private fun cardinalFor(bearingDeg: Double): String {
-        val names = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
-        return names[(((bearingDeg + 22.5) % 360.0) / 45.0).toInt()]
     }
 
     private fun updateGimbalPitch(hud: AutelTakBridge.Hud?) {

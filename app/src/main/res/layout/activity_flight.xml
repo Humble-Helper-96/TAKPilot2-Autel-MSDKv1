@@ -530,17 +530,6 @@
                 android:gravity="end"
                 android:text="HOME — ft  —°T" />
 
-            <!-- Antenna aim, no-compass FALLBACK only (operator, 2026-08-13): cardinal +
-                 true bearing to the aircraft. When the controller has a usable compass the
-                 graphical arc at the bottom centre (fpvAntennaArc) replaces this text. -->
-            <TextView
-                android:id="@+id/fpvAntennaAim"
-                style="@style/flightReadoutText"
-                android:layout_marginBottom="4dp"
-                android:gravity="end"
-                android:text=""
-                android:visibility="gone" />
-
             <!-- FAA UASFM ceiling; own view so it can turn amber/red independently. Advisory.
                  Last of the bottom group, directly above the map. -->
             <TextView
