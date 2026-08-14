@@ -97,6 +97,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *  screen starts at the normal size, so a pilot never arrives at a screen with the video
      *  half covered by a map they expanded on a previous flight. */
     private var mapExpanded = false
+    /** Mini-map scale bar; its length follows [toggleMapSize] (short on the small map,
+     *  full on the expanded one). */
+    private var mapScaleBar: org.osmdroid.views.overlay.ScaleBarOverlay? = null
     private lateinit var mapZoomButton: TextView
 
     /** Mini-map zoom mode. Persisted, so a pilot who settles on one keeps it across a battery
@@ -305,11 +308,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // in on-screen centimetres) so it shares the bottom row with the zoom toggle
         // without ever reaching it — operator preferred a shorter bar over a raised one.
         val density = resources.displayMetrics.density
-        org.osmdroid.views.overlay.ScaleBarOverlay(map).apply {
+        mapScaleBar = org.osmdroid.views.overlay.ScaleBarOverlay(map).apply {
             unitsOfMeasure = org.osmdroid.views.overlay.ScaleBarOverlay.UnitsOfMeasure.imperial
             setAlignBottom(true)
             setAlignRight(true)
-            setMaxLength(1.27f)
+            setMaxLength(SCALE_BAR_CM_SMALL)
             setScaleBarOffset((8 * density).toInt(), (8 * density).toInt())
             setTextSize(10 * density)
             map.overlays.add(this)
@@ -1134,6 +1137,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             mapContainer.elevation = 0f
         }
         mapContainer.layoutParams = lp
+        // The doubled map earns the full-length scale bar; the small map keeps the short
+        // one so the bar never reaches the zoom toggle (operator, 2026-08-13).
+        mapScaleBar?.setMaxLength(if (mapExpanded) SCALE_BAR_CM_FULL else SCALE_BAR_CM_SMALL)
+        map.invalidate()
         AppLog.i(TAG, "mini-map ${if (mapExpanded) "EXPANDED to ${w * 2}x${h * 2}px" else "restored"}")
     }
 
@@ -2800,6 +2807,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          * toggle has no DJI counterpart at all; it is the first place this build is
          * deliberately ahead of the blueprint rather than catching up to it.
          */
+        /** Mini-map scale-bar lengths, in on-screen centimetres (osmdroid's unit for
+         *  maxLength). Short keeps the bar off the zoom toggle on the 180dp map; full is
+         *  osmdroid's default inch for the doubled map. */
+        private const val SCALE_BAR_CM_SMALL = 1.27f
+        private const val SCALE_BAR_CM_FULL = 2.54f
+
         /** Within this many degrees of the aircraft bearing, the antenna-aim marker reads
          *  GREEN — close enough for the controller's antenna lobe. Read by [AntennaAimView]
          *  so the arc and this screen judge "aligned" identically. */
