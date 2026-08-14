@@ -360,6 +360,19 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
+    <!-- BVLOS antenna-aim arc (operator, 2026-08-13): pilot dot at the centre, aircraft
+         marker riding the semicircle at its bearing relative to the controller's facing —
+         marker at the TOP of the arc means the antennas face the aircraft. Bottom centre,
+         clear of the bottom-left radar labels and the right HUD column. Hidden until the
+         flight screen has a compass facing, an operator fix, and an aircraft fix. -->
+    <com.autel.sdksample.tak.AntennaAimView
+        android:id="@+id/fpvAntennaArc"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
     <!-- RIGHT-HAND HUD COLUMN, mirroring the DJI blueprint: telemetry readout, gimbal look
          angle, FAA ceiling, then the locked mini-map — all in ONE container with a weighted
          spacer, so they can't grow into each other at any screen size (the failure mode DJI
@@ -517,31 +530,16 @@
                 android:gravity="end"
                 android:text="HOME — ft  —°T" />
 
-            <!-- Antenna aim for BVLOS (operator, 2026-08-13): which way to face the
-                 controller's directional antennas when the aircraft cannot be seen. The
-                 arrow is a rotated TextView, turned to the aircraft RELATIVE to the
-                 controller's own compass facing; it stays gone when the controller has no
-                 usable compass and the readout falls back to cardinal + true bearing. -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
+            <!-- Antenna aim, no-compass FALLBACK only (operator, 2026-08-13): cardinal +
+                 true bearing to the aircraft. When the controller has a usable compass the
+                 graphical arc at the bottom centre (fpvAntennaArc) replaces this text. -->
+            <TextView
+                android:id="@+id/fpvAntennaAim"
+                style="@style/flightReadoutText"
                 android:layout_marginBottom="4dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-                <TextView
-                    android:id="@+id/fpvAntennaArrow"
-                    style="@style/flightReadoutText"
-                    android:layout_marginEnd="4dp"
-                    android:text="▲"
-                    android:visibility="gone" />
-                <TextView
-                    android:id="@+id/fpvAntennaAim"
-                    style="@style/flightReadoutText"
-                    android:gravity="end"
-                    android:text=""
-                    android:visibility="gone" />
-            </LinearLayout>
+                android:gravity="end"
+                android:text=""
+                android:visibility="gone" />
 
             <!-- FAA UASFM ceiling; own view so it can turn amber/red independently. Advisory.
                  Last of the bottom group, directly above the map. -->

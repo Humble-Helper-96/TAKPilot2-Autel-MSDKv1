@@ -51,7 +51,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvGimbalPitch: TextView
     private lateinit var fpvHomeDistance: TextView
     private lateinit var fpvAntennaAim: TextView
-    private lateinit var fpvAntennaArrow: TextView
+    private lateinit var fpvAntennaArc: AntennaAimView
     private lateinit var fpvFaaCeiling: TextView
     private lateinit var fpvRthAltitude: TextView
     private lateinit var lightsButton: ImageButton
@@ -196,7 +196,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
         fpvAntennaAim = findViewById(R.id.fpvAntennaAim)
-        fpvAntennaArrow = findViewById(R.id.fpvAntennaArrow)
+        fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
@@ -2306,37 +2306,32 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * and during authorized BVLOS work the pilot cannot see the aircraft to face it.
      *
      * The bearing is CONTROLLER→AIRCRAFT from the operator's own GPS fix — home point would
-     * be wrong the moment the pilot walks. With a controller compass the arrow turns to the
-     * aircraft relative to the way the controller faces (green when within
-     * [ANTENNA_ALIGNED_DEG]); without one the arrow stays hidden and the text leads with a
-     * cardinal, which a pilot can act on outdoors without any on-screen reference.
+     * be wrong the moment the pilot walks. With a controller compass the bottom-centre arc
+     * ([AntennaAimView]) carries the whole story: pilot dot at the centre, aircraft marker
+     * riding the arc, marker at the top = antennas on target. Without a compass the arc
+     * stays hidden and the HUD-column text leads with a cardinal, which a pilot can act on
+     * outdoors without any on-screen reference.
      */
     private fun updateAntennaAim(hud: AutelTakBridge.Hud?) {
         val fix = OperatorLocation.latest
         if (hud == null || !hud.hasFix || fix == null) {
             fpvAntennaAim.visibility = View.GONE
-            fpvAntennaArrow.visibility = View.GONE
+            fpvAntennaArc.setRelativeBearing(null)
             return
         }
         val bearing = CameraSlantPoint.initialBearingDeg(
             fix.latitude, fix.longitude, hud.lat, hud.lon)
         val facing = ControllerCompass.azimuthTrueDeg()
-        fpvAntennaAim.visibility = View.VISIBLE
         if (facing == null) {
-            fpvAntennaArrow.visibility = View.GONE
+            fpvAntennaArc.setRelativeBearing(null)
+            fpvAntennaAim.visibility = View.VISIBLE
             fpvAntennaAim.text = "AIM %s %03.0f°T".format(cardinalFor(bearing), bearing)
             fpvAntennaAim.setTextColor(Color.WHITE)
             return
         }
-        // Signed relative turn, -180..+180: the arrow leans the way the pilot must turn.
-        val relative = ((bearing - facing + 540.0) % 360.0) - 180.0
-        val aligned = kotlin.math.abs(relative) <= ANTENNA_ALIGNED_DEG
-        fpvAntennaArrow.visibility = View.VISIBLE
-        fpvAntennaArrow.rotation = relative.toFloat()
-        val color = if (aligned) Color.parseColor("#4CAF50") else Color.WHITE
-        fpvAntennaArrow.setTextColor(color)
-        fpvAntennaAim.setTextColor(color)
-        fpvAntennaAim.text = "AIM %03.0f°T".format(bearing)
+        // Signed relative turn, -180..+180: which way and how far the pilot must rotate.
+        fpvAntennaAim.visibility = View.GONE
+        fpvAntennaArc.setRelativeBearing(((bearing - facing + 540.0) % 360.0) - 180.0)
     }
 
     /** Eight-point cardinal for a true bearing — the no-compass fallback wording. */
@@ -2820,9 +2815,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          * toggle has no DJI counterpart at all; it is the first place this build is
          * deliberately ahead of the blueprint rather than catching up to it.
          */
-        /** Within this many degrees of the aircraft bearing, the antenna-aim arrow reads
-         *  GREEN — close enough for the controller's antenna lobe. */
-        private const val ANTENNA_ALIGNED_DEG = 10.0
+        /** Within this many degrees of the aircraft bearing, the antenna-aim marker reads
+         *  GREEN — close enough for the controller's antenna lobe. Read by [AntennaAimView]
+         *  so the arc and this screen judge "aligned" identically. */
+        const val ANTENNA_ALIGNED_DEG = 10.0
 
         private const val MAP_ZOOM_WIDE = 15.5
         private const val MAP_ZOOM_NEAR = 18.0
