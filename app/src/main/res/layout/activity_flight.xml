@@ -317,17 +317,18 @@
 
     </LinearLayout>
 
-    <!-- Aircraft warning banner (v1.5.9) — top-CENTER, below the toolbar, over the video.
-         Red or amber per severity (FlightActivity tints the background); shows the single
-         worst active warning plus a +N count. Centered rather than in a corner because this
-         is the one element on the screen that must interrupt: the compass-interference case
-         (field event 2) had the controller beeping with nothing on screen to say why. -->
+    <!-- Aircraft warning banner — top-LEFT, below the toolbar, over the video (operator,
+         2026-08-13: top-center sat on the part of the picture the pilot works with; the
+         banner colour still interrupts from the corner). Red or amber per severity
+         (FlightActivity tints the background); shows the single worst active warning plus
+         a +N count. -->
     <TextView
         android:id="@+id/fpvWarningBanner"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
+        android:layout_gravity="top|start"
         android:layout_marginTop="64dp"
+        android:layout_marginStart="16dp"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingTop="7dp"
@@ -340,15 +341,15 @@
         android:letterSpacing="0.03"
         android:visibility="gone" />
 
-    <!-- Transient notice ("Home Point Set", etc.) — upper-left over the video, below the
-         toolbar. Hidden by default; shown + auto-hidden in code. Same as DJI's fpvNotice. -->
+    <!-- Transient notice ("Home Point Set", etc.) — top-CENTER over the video, below the
+         toolbar (moved from top-left when the warning banner took that corner). Hidden by
+         default; shown + auto-hidden in code. Same role as DJI's fpvNotice. -->
     <TextView
         android:id="@+id/fpvNotice"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
+        android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="64dp"
-        android:layout_marginStart="16dp"
         android:shadowColor="@color/tp_shadow"
         android:shadowDx="0"
         android:shadowDy="1"
