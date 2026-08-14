@@ -107,19 +107,11 @@
                     android:inputType="number" />
             </LinearLayout>
 
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="If the signal is lost" />
-                <RadioGroup
-                    android:id="@+id/limitFailsafeGroup"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <RadioButton
-                        android:id="@+id/failsafeGoHome"
-                        style="@style/takColumnRadio"
-                        android:text="Return Home" />
-                </RadioGroup>
-            </LinearLayout>
+            <!-- "If the signal is lost" was a control here until 2026-08-13. It is gone
+                 because it was never a choice: the firmware refuses the write, the SDK has no
+                 getter, and offering a picker implied the app could set something it cannot.
+                 The pilot now reads the real state — unknown, check Explorer — on the Enter
+                 Flight card, which is the screen they pass through before takeoff. -->
         </LinearLayout>
 
         <TextView
@@ -129,15 +121,6 @@
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:paddingTop="4dp" />
-
-        <!-- Kept in the tree though setupFailsafe() hides it: the single-option radio has
-             nothing to report. Restoring a second option restores its status line. -->
-        <TextView
-            android:id="@+id/limitFailsafeStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
 
         <!-- Obstacle avoidance. DIFFERENT FROM EVERYTHING ELSE ON THIS SCREEN, deliberately.
              Every other control here stores a value and PUSHES it to the aircraft on connect.

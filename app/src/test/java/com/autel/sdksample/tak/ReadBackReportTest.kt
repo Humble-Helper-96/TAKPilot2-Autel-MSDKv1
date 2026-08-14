@@ -112,31 +112,18 @@ class ReadBackReportTest {
     }
 
     /**
-     * The two writes this firmware ALWAYS refuses are stated, never made into a task. Before
-     * this split, every single apply came back red telling the pilot to "correct the values"
-     * for two settings no one at the controller can change (observed on the bench, 2026-08-13).
+     * A clean apply reads clean. RF power and the signal-loss behaviour are no longer recorded
+     * as refusals (2026-08-13) — the firmware always refuses both and no pilot can change
+     * either, so a red "correct the values" on every apply was training pilots to dismiss this
+     * report. The signal-loss state now lives on the Enter Flight card instead.
      */
     @Test
-    fun firmwareManagedRefusalsAreStatedNotBlamed() {
-        val r = build(allAgree(), listOf("RF power", "Signal-loss behaviour"))
+    fun anApplyWithNoActionableRefusalIsClean() {
+        val r = build(allAgree())
         assertEquals(ReportState.CONFIRMED, r.state)
-        assertTrue("The aircraft confirms:" in r.text)
-        assertTrue("keeps its own RF power and Signal-loss behaviour" in r.text)
         assertTrue("Correct the values" !in r.text)
-    }
-
-    /** A real problem still reads as one, with the firmware note kept separate from it. */
-    @Test
-    fun firmwareManagedRefusalsDoNotHideARealProblem() {
-        val r = build(listOf(
-            v("Max altitude", 61, 46f),
-            v("Max distance", 152, 152f),
-            v("RTH altitude", 30, 30f),
-        ), listOf("RF power"))
-        assertEquals(ReportState.PROBLEM, r.state)
-        assertTrue("Max altitude is 151 ft, not 200 ft" in r.text)
-        assertTrue("keeps its own RF power" in r.text)
-        assertTrue("It refused:" !in r.text)   // nothing actionable was refused
+        assertTrue("RF power" !in r.text)
+        assertTrue("Signal-loss" !in r.text)
     }
 
     @Test

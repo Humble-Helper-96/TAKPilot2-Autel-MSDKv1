@@ -349,25 +349,6 @@ object FlightLimitsController {
      */
     enum class ReportState { CONFIRMED, UNKNOWN, PROBLEM }
 
-    /**
-     * Writes this firmware ALWAYS refuses, whatever the pilot does.
-     *
-     * Both are measured, not assumed:
-     *  - **RF power** — every SDK write path refuses it. The controller stays on the region it
-     *    is pinned to; the fleet flies that way knowingly.
-     *  - **Signal-loss behaviour** — `doEmergencyAction` is the ONE API the SDK exposes for it
-     *    (swept the whole aar, 2026-08-13: `AutelFlyController.doEmergencyAction` and its proxy,
-     *    nothing else), and this firmware never acknowledges it. There is no getter either.
-     *    Flight testing DID confirm the aircraft returns home on link loss, so the behaviour the
-     *    pilot needs is the behaviour the aircraft has — it is simply the aircraft's own setting
-     *    and not ours to write. TAKPilot offers Return to Home as its only option (see
-     *    [Failsafe]), so nothing here can put the aircraft into a different one.
-     *
-     * These are REPORTED but never counted as a problem: a pilot cannot correct them, and a red
-     * "correct the values" on every apply is how a warning dialog becomes wallpaper.
-     */
-    private val FIRMWARE_MANAGED = setOf("RF power", "Signal-loss behaviour")
-
     /** What the aircraft actually reports back, rendered for the pilot. */
     data class ReadBackReport(val text: String, val state: ReportState)
 
@@ -456,16 +437,14 @@ object FlightLimitsController {
             }
         }
 
-        // Two kinds of refusal, and they need different words. A refusal the pilot can act on
-        // (a value out of range, battery levels crossed) belongs in "correct it and press
-        // again". A refusal this FIRMWARE always gives — see [FIRMWARE_MANAGED] — cannot be
-        // corrected by anyone at the controller, so telling the pilot to correct it is false
-        // instruction, and a red report on every apply teaches them to dismiss the dialog that
-        // is meant to carry the real problems.
-        val (firmwareManaged, actionable) = refusedWrites.partition { it in FIRMWARE_MANAGED }
-
+        // Only settings the pilot can actually act on reach this report. The two the firmware
+        // never accepts — RF power and the signal-loss behaviour — are no longer recorded as
+        // refusals at all (operator, 2026-08-13): a pilot cannot correct them, so a red
+        // "correct the values" on every single apply was false instruction, and it is how a
+        // dialog meant to carry real problems becomes wallpaper. The signal-loss setting is
+        // now stated on the Enter Flight card instead, where it belongs.
         val state = when {
-            wrong.isNotEmpty() || actionable.isNotEmpty() -> ReportState.PROBLEM
+            wrong.isNotEmpty() || refusedWrites.isNotEmpty() -> ReportState.PROBLEM
             unknown.isNotEmpty() -> ReportState.UNKNOWN
             else -> ReportState.CONFIRMED
         }
@@ -483,8 +462,8 @@ object FlightLimitsController {
                 }
                 ReportState.PROBLEM -> {
                     append("⚠ The aircraft did not take all the settings.")
-                    if (actionable.isNotEmpty()) {
-                        append(" It refused: ${actionable.joinToString(", ")}.")
+                    if (refusedWrites.isNotEmpty()) {
+                        append(" It refused: ${refusedWrites.joinToString(", ")}.")
                     }
                     if (wrong.isNotEmpty()) append(" ${wrong.joinToString(", ")}.")
                     if (confirmed.isNotEmpty()) {
@@ -495,12 +474,6 @@ object FlightLimitsController {
                     }
                     append(" Correct the values, then press the button again.")
                 }
-            }
-            // Always last, in every state: the settings this firmware keeps for itself. Stated,
-            // never presented as a task.
-            if (firmwareManaged.isNotEmpty()) {
-                append(" The aircraft keeps its own ${firmwareManaged.joinToString(" and ")} " +
-                    "— not settable on this firmware.")
             }
         }
         return ReadBackReport(text, state)
@@ -700,10 +673,12 @@ object FlightLimitsController {
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "signal-loss behavior '${failsafe.label}' REJECTED: " +
                     "${error?.description} — aircraft keeps its previous setting")
-                // This setting has NO getter, thus this is the only way a refusal can reach the
-                // pilot. See the measurement note above: this write is not acknowledged on this
-                // firmware, thus expect it here on each apply until that is resolved.
-                refused.add("Signal-loss behaviour")
+                // DELIBERATELY NOT a reported refusal (operator, 2026-08-13). This firmware
+                // never acknowledges the write and there is no way for the pilot to make it,
+                // so putting it in the apply report only taught them to dismiss that report.
+                // The pilot is told what matters — that the aircraft's real setting is
+                // unknown and must be checked — on the Enter Flight card. The write still
+                // goes out on every connect: if it does take, that is the safe direction.
             }
         })
     }
@@ -773,8 +748,9 @@ object FlightLimitsController {
             override fun onSuccess() { AppLog.i(TAG, "RF power set to $want: OK") }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "RF power $want failed: ${error?.description}")
-                // No getter for this one either — the refusal reaches the pilot only from here.
-                refused.add("RF power")
+                // Not a reported refusal: the region is pinned on this controller and every
+                // SDK write path refuses it, so there is nothing the pilot can do about it.
+                // It stays in the log, which is where a regulatory fact belongs.
             }
         })
     }

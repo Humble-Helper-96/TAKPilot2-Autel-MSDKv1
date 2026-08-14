@@ -40,6 +40,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var aircraft: TextView
     private lateinit var aircraftImage: ImageView
     private lateinit var avoidance: TextView
+    private lateinit var signalLoss: TextView
     private lateinit var stickMode: TextView
     private lateinit var controlResponse: TextView
     private lateinit var batteryLevels: TextView
@@ -83,6 +84,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         aircraft = findViewById(R.id.homeAircraft)
         aircraftImage = findViewById(R.id.homeAircraftImage)
         avoidance = findViewById(R.id.homeAvoidance)
+        signalLoss = findViewById(R.id.homeSignalLoss)
         stickMode = findViewById(R.id.homeStickMode)
         controlResponse = findViewById(R.id.homeControlResponse)
         batteryLevels = findViewById(R.id.homeBatteryLevels)
@@ -250,6 +252,21 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 false -> Color.parseColor("#F44336")
                 null -> Color.parseColor("#FFB300")
             })
+
+        // SIGNAL LOSS — the one setting this aircraft will not tell us (operator, 2026-08-13).
+        //
+        // The SDK has a setter and NO getter: doEmergencyAction is write-only, and the whole
+        // aar was swept on 2026-08-13 to be sure of it. TAKPilot asks for Return to Home on
+        // every connect, but the firmware does not acknowledge the write, so the app cannot
+        // honestly claim the aircraft holds it.
+        //
+        // That gap matters more than any other unknown on this card: an aircraft left on Hover
+        // in Autel Explorer flies out of range and stays there until the battery ends the
+        // flight. The pilot cannot discover this in the air. So the line asks them to confirm
+        // it on the ground, every time, and stays amber because an unknown must look unknown.
+        signalLoss.text = if (product == null) "" else
+            "SIGNAL LOSS: — CHECK EXPLORER IS SET TO RETURN HOME"
+        signalLoss.setTextColor(Color.parseColor("#FFB300"))
 
         // Sticks and control feel. Both are enforced from Pre-Flight at connect, so these state
         // what the aircraft WILL do rather than what it happens to be set to.

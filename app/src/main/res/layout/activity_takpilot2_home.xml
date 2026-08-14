@@ -237,6 +237,14 @@
             <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="6dp" android:textStyle="bold" />
+            <!-- SIGNAL LOSS (operator, 2026-08-13). The aircraft will not report this setting
+                 — the SDK has no getter for it — and an aircraft left on Hover by Autel
+                 Explorer is lost the moment it goes out of range. So the pilot is told, before
+                 every flight, that they must confirm it themselves. Amber and permanent: this
+                 is an unknown, and unknown is its own state. -->
+            <TextView android:id="@+id/homeSignalLoss" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="6dp" android:textStyle="bold" />
             <!-- What the sticks and the gimbal wheel will actually do. These are ENFORCED from
                  Pre-Flight at connect, so this is a statement of fact, not a hope — and it is
                  here rather than on the flight screen because the pilot needs it BEFORE they

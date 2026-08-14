@@ -738,27 +738,17 @@ class TakConnectActivity : AppCompatActivity() {
     }
 
     /**
-     * Signal-loss failsafe picker. Like the numeric limits above, saved locally and pushed to
-     * the aircraft on its next connect via
-     * [FlightLimitsController.applyDefaults] → `doEmergencyAction` (the policy setter behind a
-     * misleading name — see that class's doc).
+     * Keeps the stored failsafe at Return to Home.
      *
-     * The status line spells out that it applies on next connect AND that this SDK cannot read
-     * the value back, because "I picked Return to Home" and "the aircraft is set to Return to
-     * Home" are different claims — and this is the setting where assuming the first means the
-     * second is exactly the wrong habit.
+     * There is no picker any more (operator, 2026-08-13). Offering one implied a choice the app
+     * cannot deliver: `doEmergencyAction` is the only failsafe API in the SDK, this firmware
+     * never acknowledges it, and no getter exists to check what the aircraft actually holds.
+     * The preference stays so the connect-time write keeps asking for Return to Home — if it
+     * does land, that is the direction we want it to land in — and the pilot is told the real
+     * state, which is "unknown, confirm it in Explorer", on the Enter Flight card.
      */
     private fun setupFailsafe() {
-        val group = findViewById<android.widget.RadioGroup>(R.id.limitFailsafeGroup)
-        val status = findViewById<TextView>(R.id.limitFailsafeStatus)
-
-        // Return to Home is the only option, so this is effectively a labelled statement of what
-        // the aircraft does rather than a choice. It stays as a checked radio (not plain text) so
-        // the pref, the push path and the pilot's mental model all keep working unchanged, and so
-        // re-adding an option later is a layout edit rather than a rewrite.
-        group.check(R.id.failsafeGoHome)
         FlightLimitsController.saveFailsafe(this, FlightLimitsController.Failsafe.GO_HOME)
-        status.visibility = android.view.View.GONE
     }
 
     // ---- Configuration locks ----
