@@ -578,6 +578,17 @@ class TakConnectActivity : AppCompatActivity() {
 
         val verify = Runnable {
             pendingVerify = null
+            // STOP THE COUNTDOWN FIRST. Both runnables come due at VERIFY_DELAY_MS, and the
+            // countdown's last frame is posted from the tick before it, so it lands a few
+            // milliseconds AFTER this one and used to paint "confirming in 0s" straight over
+            // the finished report. The screen then sat on a frozen countdown while the button
+            // was live again and the text carried the report's colour — the apply had
+            // succeeded and looked hung (bench, 2026-08-13).
+            pendingTick?.let { applyHandler.removeCallbacks(it) }
+            pendingTick = null
+            // Says what is happening during the read-back, which is not instant: the getters
+            // answer in their own time and have their own 12s watchdog.
+            status.text = "Confirming the settings with the aircraft…"
             FlightLimitsController.readBack(this, cycle) { report ->
                 runOnUiThread {
                     button.isEnabled = true
