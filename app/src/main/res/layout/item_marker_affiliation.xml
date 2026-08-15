@@ -18,16 +18,10 @@
 
     <ImageView
         android:id="@+id/affiliationIcon"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+        style="@style/TakDialogListIcon"
         android:contentDescription="@null" />
 
     <TextView
         android:id="@+id/affiliationLabel"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginStart="20dp"
-        android:textSize="18sp"
-        android:textColor="#FFFFFF" />
+        style="@style/TakDialogListLabel" />
 </LinearLayout>

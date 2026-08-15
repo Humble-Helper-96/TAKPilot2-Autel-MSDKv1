@@ -338,6 +338,12 @@ android {
         //        settings form that discards a half-entered value. Only FlightActivity had it;
         //        both DJI siblings had it everywhere (spec 2, conformance V10). Home also
         //        declares launchMode=singleTask now, matching the siblings.
+        //
+        //        Housekeeping, no pixel change: two unused button styles and their two colours
+        //        are deleted (nothing referenced them), the marker-affiliation dialog row's
+        //        styling moves into reusable styles and loses its last #FFFFFF literal, and the
+        //        flight/home themes stay in values/ where the DJI siblings have now joined them
+        //        (conformance A4, A6, A7).
         versionCode 29
         versionName "1.6.0"
         multiDexEnabled true

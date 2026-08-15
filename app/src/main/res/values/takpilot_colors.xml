@@ -23,11 +23,15 @@
   tokens were added to receive them. calloutView now takes @ColorRes, so a hex string does not
   compile there any more.
 
-  ⚠ NOT covered here yet: the flight-HUD custom views (ArOverlayView, CrosshairView,
-  ObstacleEdgeView, BatteryGaugeView, etc.) still hold their own literals. Those colours are
-  safety-relevant and were tuned in flight (accuracy ring, obstacle arc, battery bands, the ADS-B
-  magenta), so migrating and consolidating them needs an on-device visual check — deferred to a
-  controller-connected session. See REVIEW_2026-08-03_UI #3.
+  THE FLIGHT-HUD VIEWS WERE MIGRATED on 2026-08-14 (conformance A1) and this file no longer has
+  a gap. ArOverlayView, CrosshairView, ObstacleEdgeView, BatteryGaugeView, SignalBarsView,
+  EvSliderView, LiveToggleView, RecordToggleView and AntennaAimView all resolve tokens, and each
+  migrated constant was checked against the value it held before, so nothing was re-tuned.
+
+  ⚠ THE tp_hud_* AND tp_ar_* VALUES ARE FLIGHT-TUNED. They were chosen against live video with
+  the aircraft flying. Roles that share a value today are still separate tokens on purpose — the
+  battery gauge's good band and the accuracy ring's good band are both #4CAF50 and are not the
+  same decision. Change one only with the aircraft in front of you.
 -->
 <resources>
 
@@ -86,9 +90,7 @@
     <color name="tp_btn_primary">#2E7D32</color>      <!-- primary / go (Pre-Flight, Apply) -->
     <color name="tp_btn_info">#1565C0</color>         <!-- informational (Field Guide); also checkbox tint -->
     <color name="tp_btn_neutral">#37474F</color>      <!-- neutral secondary -->
-    <color name="tp_btn_confirm">#2E5C3A</color>      <!-- confirm a heavier action (area download) -->
     <color name="tp_btn_danger">#B71C1C</color>       <!-- destructive (Stop/Quit) -->
-    <color name="tp_btn_danger_soft">#5C2E2E</color>  <!-- destructive, less alarming (clear cache, deprovision) -->
     <color name="tp_btn_danger_dialog">#EF5350</color><!-- destructive-confirm dialog highlight -->
 
     <!-- Status indicators (bright, used for text/dots that report a state) -->

@@ -166,14 +166,8 @@
     <style name="TakButton.Info">
         <item name="android:backgroundTint">@color/tp_btn_info</item>
     </style>
-    <style name="TakButton.Confirm">
-        <item name="android:backgroundTint">@color/tp_btn_confirm</item>
-    </style>
     <style name="TakButton.Danger">
         <item name="android:backgroundTint">@color/tp_btn_danger</item>
-    </style>
-    <style name="TakButton.DangerSoft">
-        <item name="android:backgroundTint">@color/tp_btn_danger_soft</item>
     </style>
 
     <!-- Pre-Flight Setup form layout, matching the DJI blueprint's styles of the same names. -->
@@ -266,5 +260,25 @@
         <item name="android:fontFamily">monospace</item>
         <item name="android:textColor">@color/tp_state_go_soft</item>
         <item name="android:textSize">11sp</item>
+    </style>
+    <!-- Rows of a dialog list (the marker-affiliation and Change Type pickers). Extracted from
+         item_marker_affiliation.xml 2026-08-14 (conformance A6) so a second list dialog has
+         something to reuse instead of copying the row. Values are this tree's own, unchanged.
+
+         ⚠ They are NOT the DJI siblings' values: this icon is 32dp against their 28dp and this
+         label 18sp against their 16sp. That difference is real and predates the extraction —
+         see the conformance ledger. Do not "fix" it by copying either way without looking at
+         both screens; this controller is the larger of the two. -->
+    <style name="TakDialogListIcon">
+        <item name="android:layout_width">32dp</item>
+        <item name="android:layout_height">32dp</item>
+    </style>
+    <style name="TakDialogListLabel">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">20dp</item>
+        <item name="android:textColor">@color/tp_text_primary</item>
+        <item name="android:textSize">18sp</item>
     </style>
 </resources>
