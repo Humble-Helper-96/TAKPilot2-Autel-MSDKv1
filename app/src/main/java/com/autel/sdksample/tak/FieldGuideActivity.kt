@@ -424,8 +424,10 @@ class FieldGuideActivity : AppCompatActivity() {
             "This button changes the zoom of the camera. Touch it to change between 1X " +
                 "and 2X. Touch and hold it for 4X. From 4X, a touch or a touch-and-hold " +
                 "goes back to 1X.\n\n" +
-                "The C1 button on the controller does the same thing. A short press " +
-                "changes between 1X and 2X. A long press gives 4X.\n\n" +
+                "The rocker switch on the right of the controller also changes the zoom, " +
+                "in small steps. Hold the rocker to change the zoom continuously. The zoom " +
+                "stops for one second at 2X, at 4X and at 8X. Release the rocker at a stop " +
+                "to keep that zoom. Continue to hold it to go past the stop.\n\n" +
                 "The zoom changes the camera image. Your team sees the same view in the " +
                 "video.",
             listOf(
@@ -448,7 +450,10 @@ class FieldGuideActivity : AppCompatActivity() {
                 "WHITE HOT - hot is white, cold is black.\n" +
                 "BLACK HOT - hot is black, cold is white.\n" +
                 "IRONBOW - hot is yellow and white, cold is purple and black. This is the " +
-                "colour view many pilots know from Explorer.",
+                "colour view many pilots know from Explorer.\n\n" +
+                "The C1 button on the controller does the same two things. A short press " +
+                "changes between the normal camera and the thermal camera. A long press " +
+                "changes the heat colours when the thermal camera is on.",
             listOf(
                 "The buttons show the state of the CAMERA. If you start the app when the " +
                     "camera is already in thermal, the button is green immediately.",

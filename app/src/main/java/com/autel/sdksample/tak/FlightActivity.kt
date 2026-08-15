@@ -7,6 +7,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -127,20 +128,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *  re-reads reality via the connect-time baseline rather than trusting a saved flag.
      *
      *  RAW HUNDREDTHS, NOT A STEP NUMBER (was `zoomLevel: Int` of 1/2/4 until 2026-08-06). The
-     *  right scroll wheel moves zoom continuously, so the state it produces — 2.4x, 3.1x — has
-     *  no step to name. The pill and C1 still work in whole steps; they now round this rather
-     *  than owning their own counter, so a wheel turn and a button press can never disagree
+     *  right zoom rocker moves zoom continuously, so the state it produces — 2.4x, 3.1x — has
+     *  no step to name. The pill still works in whole steps; it now rounds this rather
+     *  than owning their own counter, so a rocker deflection and a button press cannot disagree
      *  about where the camera is. See [applyZoomRaw]. */
     private var zoomRaw = ZOOM_RAW_PER_X
 
-    /** Nearest whole step, for the pill's and C1's 1↔2 / 1↔4 toggles. */
+    /** Nearest whole step, for the pill's 1↔2 / 1↔4 toggles. */
     private val zoomStep: Int get() = Math.round(zoomRaw / ZOOM_RAW_PER_X.toDouble()).toInt()
 
-    /** Wheel target, accumulated ahead of the camera. The wheel ticks about every 200ms; each
+    /** Rocker target, accumulated ahead of the camera. The rocker repeats about every 200ms; each
      *  tick moves this and repaints the pill at once, while the camera is written on a slower
-     *  throttle — see [onZoomWheel]. */
+     *  throttle — see [onZoomRocker]. */
     private var pendingZoomRaw = ZOOM_RAW_PER_X
     private var zoomPushScheduled = false
+
+    /** Soft-detent state — see [onZoomRocker]. [zoomDetentTicksLeft] is how many more held
+     *  ticks get swallowed while parked on a framing step; the other two exist only to tell a
+     *  continued hold apart from a new press or a reversal, either of which cancels the park. */
+    private var zoomDetentTicksLeft = 0
+    private var lastZoomTickMs = 0L
+    private var lastZoomDirection = 0
 
     // FAA cell lookup cache — see updateFaaCeiling.
     private var lastFaaGridRow = Int.MIN_VALUE
@@ -353,7 +361,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         zoomButton.setOnClickListener {
             AppLog.v(TAG, "tap: Zoom (currently ${zoomLabel(zoomRaw)})")
             // Tap cycles 1X <-> 2X. From 4X it returns to 1X rather than stepping down,
-            // so one tap always gets the pilot back to the widest view. From a wheel-set
+            // so one tap always gets the pilot back to the widest view. From a rocker-set
             // value it rounds to the nearest step first, so the tap is never a no-op.
             applyZoom(if (zoomStep == 1) 2 else 1)
         }
@@ -581,7 +589,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * taking a hand off the sticks or hunting for a touch target:
      *
      *   C2 (custom B) — the quick marker: place it, or move it to what the camera is on
-     *   C1 (custom A) — zoom: short toggles 1X/2X, long goes to 4X and back to 1X
+     *   C1 (custom A) — thermal: short changes visible/thermal, long changes the IR colours
      *
      * Short press  -> place the quick marker ([TakDropMarkers.QUICK_NAME])
      * Long press   -> re-aim the existing one at what the camera is looking at now
@@ -616,7 +624,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                         when (e.name) {
                             // C2: markers, MIRRORING the crosshair exactly — short re-aims the one
                             // quick marker, long drops a NEW stationary Unknown marker. Same idiom
-                            // as C1 and the zoom pill: a pilot who has learned the on-screen
+                            // as C1 and the IR buttons: a pilot who has learned the on-screen
                             // control has learned the button, and both routes end in the SAME
                             // function, thus the two can never drift apart. The SDK gives short
                             // and long as separate events, thus no timer is needed here.
@@ -625,25 +633,33 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                             "CUSTOM_BUTTON_LONG_$QUICK_MARKER_BUTTON" ->
                                 runOnUiThread { onUnknownMarkerAction("controller C2 long") }
 
-                            // C1: zoom, MIRRORING the on-screen zoom button exactly — short
-                            // toggles 1X/2X, long goes to 4X and back to 1X. A pilot who has
-                            // learned one control has learned the other, and both routes end in
-                            // applyZoom() so the button label and the camera cannot disagree.
-                            "CUSTOM_BUTTON_SHORT_$ZOOM_BUTTON" ->
-                                runOnUiThread { applyZoom(if (zoomStep == 1) 2 else 1) }
-                            "CUSTOM_BUTTON_LONG_$ZOOM_BUTTON" ->
-                                runOnUiThread { applyZoom(if (zoomStep == 4) 1 else 4) }
+                            // C1: thermal, MIRRORING the on-screen IR buttons exactly — short
+                            // changes the camera between visible and thermal, long changes the
+                            // thermal colours. A pilot who has learned one control has learned
+                            // the other, and both routes end in the SAME two functions, thus the
+                            // button labels and the camera cannot disagree.
+                            //
+                            // The long press does nothing while the visible camera is live: the
+                            // palette button is hidden then, and a colour change the pilot cannot
+                            // see is worse than no action. It is announced, not silent.
+                            "CUSTOM_BUTTON_SHORT_$IR_BUTTON" ->
+                                runOnUiThread { onIrTapped() }
+                            "CUSTOM_BUTTON_LONG_$IR_BUTTON" ->
+                                runOnUiThread {
+                                    if (irOn) onIrPaletteTapped()
+                                    else showNotice("The thermal camera is off.")
+                                }
 
-                            // RIGHT SCROLL WHEEL — continuous zoom, confirmed on hardware
-                            // 2026-08-06: turning it emits ZOOM_IN/ZOOM_OUT on THIS listener,
+                            // RIGHT ZOOM ROCKER — continuous zoom, confirmed on hardware
+                            // 2026-08-06: deflecting it emits ZOOM_IN/ZOOM_OUT on THIS listener,
                             // about every 200ms, and the app was already receiving and ignoring
-                            // them. The left wheel is the gimbal and emits nothing here, so
+                            // them. The left control is the gimbal and emits nothing here, so
                             // there is no ambiguity between the two.
                             //
                             // Deliberately NOT routed through applyZoom(step): the whole point
-                            // is the values between the steps. See onZoomWheel.
-                            "ZOOM_IN" -> runOnUiThread { onZoomWheel(+1) }
-                            "ZOOM_OUT" -> runOnUiThread { onZoomWheel(-1) }
+                            // is the values between the steps. See onZoomRocker.
+                            "ZOOM_IN" -> runOnUiThread { onZoomRocker(+1) }
+                            "ZOOM_OUT" -> runOnUiThread { onZoomRocker(-1) }
                         }
                     }
                     override fun onFailure(error: AutelError?) {
@@ -1913,7 +1929,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /**
      * Drives the camera to an absolute raw zoom and repaints the pill. The one place zoom is
-     * written, whichever control asked — the pill, C1, or the scroll wheel.
+     * written, whichever control asked — the pill or the zoom rocker.
      *
      * Clamped HERE because the SDK does not: `setDigitalZoomScale` passes the int straight to the
      * camera with no range check of its own (verified in the aar), so an unclamped accumulator
@@ -1925,7 +1941,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val target = rawTarget.coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
         // Record the intent SYNCHRONOUSLY, before the round-trip. This is what the ack below
         // checks itself against, and it is also where the rocker resumes from — so a pill tap
-        // or C1 press mid-flight leaves the wheel continuing from the value the pilot just
+        // mid-flight leaves the rocker continuing from the value the pilot just
         // chose, not from wherever it had drifted to.
         pendingZoomRaw = target
         cam.setDigitalZoomScale(target, camCb("setDigitalZoomScale($target)") {
@@ -1950,7 +1966,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
-    /** "2X" for whole steps, "2.4X" for anything the wheel lands on between them. A pill reading
+    /** "2X" for whole steps, "2.4X" for anything the rocker lands on between them. A pill reading
      *  "2X" while the camera sits at 2.4x would be the kind of small lie this HUD does not tell. */
     private fun zoomLabel(raw: Int): String {
         val x = raw / ZOOM_RAW_PER_X.toDouble()
@@ -1958,36 +1974,71 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
-     * The right scroll wheel moved: +1 zooms in (tighter), -1 zooms out (wider).
+     * The right zoom rocker was deflected: +1 zooms in (tighter), -1 zooms out (wider).
      *
-     * ⚠ THE WHEEL IS A SPRING-LOADED ROCKER, NOT A FREE-SPINNING DETENTED WHEEL (operator,
+     * ⚠ THE ROCKER IS SPRING-LOADED, NOT A FREE-SPINNING DETENTED WHEEL (operator,
      * 2026-08-06). It is pushed against a stop and held there; the controller then REPEATS the
      * same event about every 200ms until it is released, and release is simply the events
      * stopping. Confirmed in the hardware capture: 8 × ZOOM_IN at 199-213ms spacing, then 12 ×
      * ZOOM_OUT at the same cadence. So each event is a TICK OF HELD TIME, not a countable
-     * detent — which is why no release detection is needed here. The accumulator stops moving
-     * when the events stop, and the throttled push below lands the final value.
+     * detent. The accumulator stops moving when the events stop, and the throttled push below
+     * lands the final value.
      *
      * LINEAR, at the operator's explicit instruction (2026-08-06): holding the rocker moves the
-     * zoom at a constant [ZOOM_WHEEL_STEP_RAW] per tick for the whole range, so a full 1x→16x
+     * zoom at a constant [ZOOM_ROCKER_STEP_RAW] per tick for the whole range, so a full 1x→16x
      * hold takes about five seconds — the rate the stock Autel app runs at, measured on a
      * second aircraft. A geometric ramp was written first and rejected: constant *ratio* keeps
      * the felt rate even, but it makes the wide end coarse in absolute terms, and framing a
      * subject is done in absolute terms.
+     *
+     * SOFT DETENTS (operator, 2026-08-15): a held rocker PARKS for [ZOOM_DETENT_HOLD_TICKS]
+     * ticks — about a second — as it passes each of [ZOOM_DETENTS_RAW], the framing steps 2x,
+     * 4x and 8x. Hold through the pause and it continues. This is what makes the linear rate
+     * usable: the whole range still crosses in five seconds, but the values a pilot actually
+     * wants are the easy ones to stop on rather than the ones a 0.6x tick skips over. The park
+     * is a REAL camera state, not a UI illusion — the accumulator stops on the exact detent, so
+     * the throttled push lands 2.00x and the camera sits there.
+     *
+     * The pause is measured in TICKS OF HELD TIME, not wall clock, because that is the only
+     * clock this control has. Two things cancel it, both meaning "the pilot changed their
+     * mind": a release (ticks stop for longer than [ZOOM_RELEASE_GAP_MS]) and a direction
+     * reversal. Without the release check, a pilot who let go at 2x and pressed again would
+     * find the first second of their new press swallowed.
      *
      * The pill and the AR projection follow the ACCUMULATOR immediately, while the camera is
      * written on a [ZOOM_PUSH_MS] throttle. Each write is a command round-trip to the aircraft;
      * coalescing keeps a long hold from becoming a queue of commands the camera answers long
      * after the pilot let go. Nothing is lost by coalescing — only the newest target matters.
      */
-    private fun onZoomWheel(direction: Int) {
+    private fun onZoomRocker(direction: Int) {
         if (AutelProductHolder.xt706 == null) return
-        val next = (pendingZoomRaw + direction * ZOOM_WHEEL_STEP_RAW)
-            .coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
+
+        val now = SystemClock.elapsedRealtime()
+        val released = now - lastZoomTickMs > ZOOM_RELEASE_GAP_MS
+        lastZoomTickMs = now
+        if (released || direction != lastZoomDirection) zoomDetentTicksLeft = 0
+        lastZoomDirection = direction
+
+        // Parked on a detent: burn this tick and go nowhere.
+        if (zoomDetentTicksLeft > 0) {
+            zoomDetentTicksLeft--
+            return
+        }
+
+        val stepped = pendingZoomRaw + direction * ZOOM_ROCKER_STEP_RAW
+        // A tick that would step OVER a detent stops on it instead. `>=` and not `>` so a tick
+        // that lands exactly on one parks too, rather than sailing through the value the pilot
+        // was aiming for.
+        val detent = ZOOM_DETENTS_RAW.firstOrNull { d ->
+            if (direction > 0) pendingZoomRaw < d && stepped >= d
+            else pendingZoomRaw > d && stepped <= d
+        }
+        val next = (detent ?: stepped).coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
         if (next == pendingZoomRaw) return          // already against the stop
+        if (detent != null) zoomDetentTicksLeft = ZOOM_DETENT_HOLD_TICKS
         pendingZoomRaw = next
         // Immediate feedback, ahead of the camera acknowledging: the pill and the AR overlay
-        // track the wheel, not the round-trip.
+        // track the rocker, not the round-trip.
         zoomRaw = next
         zoomButton.text = zoomLabel(next)
         TakBridgeHolder.setLiveZoom(next / ZOOM_RAW_PER_X.toDouble())
@@ -2736,7 +2787,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // C2 drives BOTH marker actions: a short press for the quick marker, a long press for a
         // new stationary Unknown marker. The name stays as it is — it is still the marker button.
         private const val QUICK_MARKER_BUTTON = "B"   // physical C2
-        private const val ZOOM_BUTTON = "A"           // physical C1
+        // C1 drives BOTH thermal actions: a short press changes the camera between visible and
+        // thermal, a long press changes the thermal colours. It was the zoom button before
+        // v1.6.0 (operator, 2026-08-15); zoom stays on the pill and the right zoom rocker.
+        private const val IR_BUTTON = "A"             // physical C1
 
         /** Minimum height above ground for a marker drop, feet. Below this the slant
          *  solve degenerates onto the aircraft's own position — see dropRefusalReason. */
@@ -2861,8 +2915,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *  so 1500 ÷ (5 s × 5 ticks/s) = 60. Matching it is deliberate: a pilot's muscle memory
      *  comes from the stock app, and a control that moves at a different speed than the one
      *  they learned on is a control they will overshoot. One constant to retune if the felt
-     *  rate is wrong; see [onZoomWheel]. */
-    private const val ZOOM_WHEEL_STEP_RAW = 60
+     *  rate is wrong; see [onZoomRocker]. */
+    private const val ZOOM_ROCKER_STEP_RAW = 60
+
+    /** Zoom values a held rocker parks at on its way past, raw units: 2x, 4x and 8x. These are
+     *  the pill's own steps plus 8x — the same framing points the pilot already knows by name,
+     *  so the button and the rocker agree about which values matter. MUST STAY ASCENDING: the
+     *  crossing test in [onZoomRocker] takes the first match in each direction. 16x is absent
+     *  on purpose; it is the end stop, and the accumulator already stops there. */
+    private val ZOOM_DETENTS_RAW = intArrayOf(200, 400, 800)
+
+    /** How many held ticks a detent swallows. The DWELL a pilot feels is one tick longer than
+     *  this — the tick that arrives on the detent moves the zoom and then stops there — so at
+     *  the rocker's ~200ms repeat the dwell is (4 + 1) × 200ms = one second, which is what the
+     *  operator asked for (2026-08-15). Long enough to be a deliberate stopping point, short
+     *  enough that a pilot crossing the whole range does not think the control has failed. */
+    private const val ZOOM_DETENT_HOLD_TICKS = 4
+
+    /** A gap longer than this means the rocker was RELEASED and pressed again, rather than held
+     *  continuously. Two rocker repeats' worth: long enough not to trip on the jitter in the
+     *  hardware capture (199-213ms), short enough to catch a genuine release. */
+    private const val ZOOM_RELEASE_GAP_MS = 400L
 
     /** How long rocker ticks are coalesced before the camera is written. Comfortably longer
      *  than the rocker's ~200ms repeat, because the point is to collapse a sustained HOLD — ten

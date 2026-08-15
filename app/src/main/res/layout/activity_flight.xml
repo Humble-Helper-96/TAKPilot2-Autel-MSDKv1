@@ -212,7 +212,7 @@
             android:scaleType="fitCenter"
             android:src="@drawable/ic_camera_shutter" />
 
-        <!-- Zoom pill. 54dp wide, not the original 46: the right scroll wheel puts fractional
+        <!-- Zoom pill. 54dp wide, not the original 46: the right zoom rocker puts fractional
              values in here ("2.4X"), which is four glyphs where the stepped labels were two.
              Widened rather than shrinking the text — this is read at a glance in sunlight. -->
         <TextView
@@ -221,7 +221,7 @@
             android:layout_width="54dp"
             android:layout_height="34dp"
             android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Camera zoom — tap to step, right wheel to adjust"
+            android:contentDescription="Camera zoom — tap to step, right rocker to adjust"
             android:gravity="center"
             android:text="1X"
             android:textColor="@color/tp_text_primary"
