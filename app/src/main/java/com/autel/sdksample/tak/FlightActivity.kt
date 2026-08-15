@@ -2941,10 +2941,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /** How many held ticks a detent swallows. The DWELL a pilot feels is one tick longer than
      *  this — the tick that arrives on the detent moves the zoom and then stops there — so at
-     *  the rocker's ~200ms repeat the dwell is (4 + 1) × 200ms = one second, which is what the
-     *  operator asked for (2026-08-15). Long enough to be a deliberate stopping point, short
-     *  enough that a pilot crossing the whole range does not think the control has failed. */
-    private const val ZOOM_DETENT_HOLD_TICKS = 4
+     *  the rocker's ~200ms repeat the dwell is (7 + 1) × 200ms, about 1.6 seconds.
+     *
+     *  ⚠ THIS MUST STAY LONGER THAN THE ROCKER'S TRAILING BURST, which is the whole reason it
+     *  is not the one second the operator first asked for. THE ROCKER KEEPS EMITTING AFTER IT
+     *  IS RELEASED, as the spring returns it to centre: measured on hardware 2026-08-15 over
+     *  five releases at 2x, every one gave 7 ticks in 1.19-1.21s, of which FIVE arrived after
+     *  the pilot let go. The ±10ms spread across five trials is what proves it is mechanical
+     *  and not the pilot's finger. A trailing tick is indistinguishable from a held one — same
+     *  event, same ~200ms cadence — so the pause cannot filter them and can only outlast them.
+     *  At 4 the fifth trailing tick escaped and the zoom walked off the detent the moment the
+     *  pilot released, which is the opposite of what a detent is for.
+     *
+     *  Seven gives two ticks of margin over the measured five. Re-measure before lowering it. */
+    private const val ZOOM_DETENT_HOLD_TICKS = 7
 
     /** A gap longer than this means the rocker was RELEASED and pressed again, rather than held
      *  continuously. Two rocker repeats' worth: long enough not to trip on the jitter in the
