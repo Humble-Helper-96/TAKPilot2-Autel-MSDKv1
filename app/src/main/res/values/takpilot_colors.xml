@@ -105,10 +105,16 @@
 
     <!-- Effects -->
     <color name="tp_shadow">#CC000000</color>       <!-- HUD text drop-shadow -->
-    <!-- Wash behind the flight-screen HUD text panels. 40% black: enough to lift the
+    <!-- Wash behind the flight-screen HUD text panels. 20% black: enough to lift the
          readouts off snow or wet asphalt, light enough to see movement through it.
-         Flight-tuned (operator, 2026-08-04) — do not re-tune without the aircraft. -->
-    <color name="tp_hud_panel_scrim">#66000000</color>
+         Flight-tuned (operator, 2026-08-04) — do not re-tune without the aircraft.
+
+         55% → 40% (2026-08-04) → 20% (operator, 2026-08-15): the panels still read as
+         two dark blocks over the video. AWAITING FLIGHT VALIDATION, and the value is
+         deliberately out of step with specification §6.1 and the two DJI trees until
+         then. If it holds up in the air, propagate it to both and to the specification
+         table; if the readouts wash out over snow, this is the number to raise. -->
+    <color name="tp_hud_panel_scrim">#33000000</color>
     <!-- Warning-banner severity tints. The banner sits on live video, so these are
          near-opaque: white text must stay legible over an arbitrary bright scene.
          Specification §4.8 names both values. -->

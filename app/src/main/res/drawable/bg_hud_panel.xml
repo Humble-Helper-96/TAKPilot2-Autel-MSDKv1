@@ -8,9 +8,10 @@
 
      WHY THIS LIGHT: this covers live video the pilot is flying from, and the HUD column overlaps
      the right-hand side of the image. At full opacity these panels would be two solid blind spots.
-     Started at 55% black and lightened to 40% (operator, 2026-08-04) — enough to lift the text off
-     a bright background, light enough to still see movement through it. If the readouts ever wash
-     out over snow, raise this rather than making the text bigger.
+     Started at 55% black, lightened to 40% (operator, 2026-08-04), then to 20% (operator,
+     2026-08-15) — enough to lift the text off a bright background, light enough to still see
+     movement through it. If the readouts ever wash out over snow, raise this rather than making
+     the text bigger. The value is tp_hud_panel_scrim; change it there, not here.
 
      Corners and padding are deliberately modest — this is meant to read as a wash behind the text,
      not as a card sitting on top of the video. -->
