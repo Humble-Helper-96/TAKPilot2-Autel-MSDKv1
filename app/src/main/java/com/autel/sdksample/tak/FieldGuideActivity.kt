@@ -426,10 +426,12 @@ class FieldGuideActivity : AppCompatActivity() {
             "This button changes the zoom of the camera. Touch it to change between 1X " +
                 "and 2X. Touch and hold it for 4X. From 4X, a touch or a touch-and-hold " +
                 "goes back to 1X.\n\n" +
-                "The rocker switch on the right of the controller also changes the zoom, " +
-                "in small steps. Hold the rocker to change the zoom continuously. The zoom " +
-                "stops for one second at 2X, at 4X and at 8X. Release the rocker at a stop " +
-                "to keep that zoom. Continue to hold it to go past the stop.\n\n" +
+                "The rocker switch on the right of the controller also changes the zoom. " +
+                "It moves through these zoom levels:\n" +
+                "1X - 2X - 3X - 4X - 6X - 8X - 10X - 12X - 16X\n" +
+                "Push the rocker and release it to go to the next level. Push the rocker " +
+                "and hold it to move through the levels. Release it to stop on a level. " +
+                "The zoom is always on one of these levels.\n\n" +
                 "The zoom changes the camera image. Your team sees the same view in the " +
                 "video.",
             listOf(

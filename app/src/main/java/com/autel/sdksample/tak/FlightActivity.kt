@@ -124,31 +124,36 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private var homeLine: Polyline? = null
     private var lastHomeSet = false
 
-    /** Zoom pill state. Screen-scoped like the blueprint's — reopening the flight screen
-     *  re-reads reality via the connect-time baseline rather than trusting a saved flag.
+    /** Zoom pill state, in RAW HUNDREDTHS (100 = 1x) — the units the camera itself takes, not
+     *  a step number (it was `zoomLevel: Int` of 1/2/4 until 2026-08-06).
      *
-     *  RAW HUNDREDTHS, NOT A STEP NUMBER (was `zoomLevel: Int` of 1/2/4 until 2026-08-06). The
-     *  right zoom rocker moves zoom continuously, so the state it produces — 2.4x, 3.1x — has
-     *  no step to name. The pill still works in whole steps; it now rounds this rather
-     *  than owning their own counter, so a rocker deflection and a button press cannot disagree
-     *  about where the camera is. See [applyZoomRaw]. */
+     *  SEEDED FROM THE CAMERA, NEVER ASSUMED. This starts at 1x only because something has to
+     *  be on screen before the first reading arrives; [seedZoomFromCamera] corrects it as the
+     *  screen comes up, and every rocker press re-seeds. Autel Explorer can leave the camera
+     *  zoomed, and an app that assumes 1x then labels a true 4x as "1X" — see the incident in
+     *  AutelProductHolder, 2026-08-04. See [applyZoomRaw]. */
     private var zoomRaw = ZOOM_RAW_PER_X
 
     /** Nearest whole step, for the pill's 1↔2 / 1↔4 toggles. */
     private val zoomStep: Int get() = Math.round(zoomRaw / ZOOM_RAW_PER_X.toDouble()).toInt()
 
-    /** Rocker target, accumulated ahead of the camera. The rocker repeats about every 200ms; each
-     *  tick moves this and repaints the pill at once, while the camera is written on a slower
+    /** Rocker target, held ahead of the camera. The rocker repeats about every 200ms; a step
+     *  moves this and repaints the pill at once, while the camera is written on a slower
      *  throttle — see [onZoomRocker]. */
     private var pendingZoomRaw = ZOOM_RAW_PER_X
     private var zoomPushScheduled = false
 
-    /** Soft-detent state — see [onZoomRocker]. [zoomDetentTicksLeft] is how many more held
-     *  ticks get swallowed while parked on a framing step; the other two exist only to tell a
-     *  continued hold apart from a new press or a reversal, either of which cancels the park. */
-    private var zoomDetentTicksLeft = 0
+    /** Rocker press state — see [onZoomRocker]. [zoomHoldTicks] counts the ticks of the press
+     *  in progress, which is what separates a press from a hold; the other two tell a continued
+     *  hold apart from a new press or a reversal. */
+    private var zoomHoldTicks = 0
     private var lastZoomTickMs = 0L
     private var lastZoomDirection = 0
+
+    /** When this app last drove the zoom, for [seedZoomFromCamera]'s settle guard. Starts at a
+     *  long time ago, so the first press of a screen seeds from the camera rather than trusting
+     *  the 1x this class was constructed with. */
+    private var lastZoomWriteMs = Long.MIN_VALUE / 2
 
     // FAA cell lookup cache — see updateFaaCeiling.
     private var lastFaaGridRow = Int.MIN_VALUE
@@ -547,6 +552,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // app can have left the camera in IR, and the buttons must reflect the camera rather
         // than a default. No-ops when no camera is attached.
         syncIrStateFromCamera()
+        // Same reasoning for the zoom, and the same source of error: Autel's own app can have
+        // left the camera zoomed. The pill must show what the AIRCRAFT holds.
+        seedZoomFromCamera()
         map.onResume()
         installHardwareButtonListener()
         ControllerCompass.start(this)   // BVLOS antenna aim; no-op without the sensor
@@ -1957,6 +1965,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun applyZoomRaw(rawTarget: Int) {
         val cam = AutelProductHolder.xt706 ?: return
         val target = rawTarget.coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
+        // Stamped for seedZoomFromCamera's settle guard: for the next ZOOM_SEED_SETTLE_MS the
+        // camera's own ~2Hz reading may still describe the zoom from BEFORE this write.
+        lastZoomWriteMs = SystemClock.elapsedRealtime()
         // Record the intent SYNCHRONOUSLY, before the round-trip. This is what the ack below
         // checks itself against, and it is also where the rocker resumes from — so a pill tap
         // mid-flight leaves the rocker continuing from the value the pilot just
@@ -1998,70 +2009,76 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * 2026-08-06). It is pushed against a stop and held there; the controller then REPEATS the
      * same event about every 200ms. Confirmed in the hardware capture: 8 × ZOOM_IN at 199-213ms
      * spacing, then 12 × ZOOM_OUT at the same cadence. So each event is a TICK OF HELD TIME,
-     * not a countable detent.
+     * not a countable detent, and the code below counts ticks because that is the only clock
+     * this control has.
      *
      * EVERY TICK THAT REACHES THIS FUNCTION IS A HELD ONE. The rocker goes on emitting while
      * the spring returns it to centre, and for a while this function received those too and ran
-     * the zoom on past where the pilot let go — 1.8x at worst, three trailing ticks. The
-     * events carry keyValue 0 and are now dropped in installHardwareButtonListener, which is
-     * the only place that may read that field. Do not re-add release detection here.
+     * the zoom on past where the pilot let go — 1.8x at worst, three trailing ticks. Those
+     * events carry keyValue 0 and are dropped in installHardwareButtonListener, which is the
+     * only place that may read that field. Do not re-add release detection here.
      *
-     * LINEAR, at the operator's explicit instruction (2026-08-06): holding the rocker moves the
-     * zoom at a constant [ZOOM_ROCKER_STEP_RAW] per tick for the whole range, so a full 1x→16x
-     * hold takes about five seconds — the rate the stock Autel app runs at, measured on a
-     * second aircraft. A geometric ramp was written first and rejected: constant *ratio* keeps
-     * the felt rate even, but it makes the wide end coarse in absolute terms, and framing a
-     * subject is done in absolute terms.
+     * FIXED LEVELS, NOT A CONTINUOUS RATE (operator, 2026-08-15). One press moves ONE level
+     * along [ZoomLadder]; holding walks the levels and stops on whichever one it reaches. This
+     * REPLACES the continuous accumulator — 0.6x a tick, with soft detents parking at 2x, 4x
+     * and 8x — which was flown and judged the wrong model: a pilot frames a subject at a few
+     * known magnifications and does not want the values between them. The detents existed only
+     * to make a continuous rate usable, thus they went with it.
      *
-     * SOFT DETENTS (operator, 2026-08-15): a held rocker PARKS for [ZOOM_DETENT_HOLD_TICKS]
-     * ticks — about a second — as it passes each of [ZOOM_DETENTS_RAW], the framing steps 2x,
-     * 4x and 8x. Hold through the pause and it continues. This is what makes the linear rate
-     * usable: the whole range still crosses in five seconds, but the values a pilot actually
-     * wants are the easy ones to stop on rather than the ones a 0.6x tick skips over. The park
-     * is a REAL camera state, not a UI illusion — the accumulator stops on the exact detent, so
-     * the throttled push lands 2.00x and the camera sits there.
+     * Press and hold are told apart the way a keyboard does it: one level immediately, then
+     * [ZOOM_LADDER_REPEAT_DELAY_TICKS] before the walk starts, then one level every
+     * [ZOOM_LADDER_REPEAT_EVERY_TICKS]. An ordinary press is several ticks long, so without the
+     * delay it would run up several levels before the pilot could let go.
      *
-     * The pause is measured in TICKS OF HELD TIME, not wall clock, because that is the only
-     * clock this control has. Two things cancel it, both meaning "the pilot changed their
-     * mind": a new press (ticks stop for longer than [ZOOM_RELEASE_GAP_MS], since a released
-     * rocker now sends nothing that gets this far) and a direction reversal. Without that
-     * check, a pilot who let go at 2x and pressed again would find the first second of their
-     * new press swallowed.
-     *
-     * The pill and the AR projection follow the ACCUMULATOR immediately, while the camera is
-     * written on a [ZOOM_PUSH_MS] throttle. Each write is a command round-trip to the aircraft;
-     * coalescing keeps a long hold from becoming a queue of commands the camera answers long
-     * after the pilot let go. Nothing is lost by coalescing — only the newest target matters.
+     * A new press — silence longer than [ZOOM_RELEASE_GAP_MS], or a reversal — RE-SEEDS from
+     * the camera before it steps. See [seedZoomFromCamera] for why that matters to a ladder in
+     * a way it never did to an accumulator.
      */
     private fun onZoomRocker(direction: Int) {
         if (AutelProductHolder.xt706 == null) return
 
         val now = SystemClock.elapsedRealtime()
-        val released = now - lastZoomTickMs > ZOOM_RELEASE_GAP_MS
+        val newPress = now - lastZoomTickMs > ZOOM_RELEASE_GAP_MS ||
+            direction != lastZoomDirection
         lastZoomTickMs = now
-        if (released || direction != lastZoomDirection) zoomDetentTicksLeft = 0
         lastZoomDirection = direction
 
-        // Parked on a detent: burn this tick and go nowhere.
-        if (zoomDetentTicksLeft > 0) {
-            zoomDetentTicksLeft--
+        if (newPress) {
+            // START OF A PRESS: take the camera's own zoom before deciding where "one level
+            // up" goes. Nothing is in flight here — a new press follows at least
+            // ZOOM_RELEASE_GAP_MS of silence and the push throttle is shorter than that — so
+            // the reading is settled, and every press re-anchors the app to the aircraft
+            // rather than to whatever it last believed.
+            seedZoomFromCamera()
+            zoomHoldTicks = 0
+            stepZoomOneLevel(direction)
             return
         }
 
-        val stepped = pendingZoomRaw + direction * ZOOM_ROCKER_STEP_RAW
-        // A tick that would step OVER a detent stops on it instead. `>=` and not `>` so a tick
-        // that lands exactly on one parks too, rather than sailing through the value the pilot
-        // was aiming for.
-        val detent = ZOOM_DETENTS_RAW.firstOrNull { d ->
-            if (direction > 0) pendingZoomRaw < d && stepped >= d
-            else pendingZoomRaw > d && stepped <= d
-        }
-        val next = (detent ?: stepped).coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
-        if (next == pendingZoomRaw) return          // already against the stop
-        if (detent != null) zoomDetentTicksLeft = ZOOM_DETENT_HOLD_TICKS
+        // HELD. Wait out the repeat delay, then move one level per repeat period. This is a
+        // keyboard's typematic behaviour, and it is here for the same reason: without the
+        // delay, an ordinary press — which is several ticks long — would run up several levels
+        // before the pilot could let go.
+        zoomHoldTicks++
+        if (zoomHoldTicks < ZOOM_LADDER_REPEAT_DELAY_TICKS) return
+        if ((zoomHoldTicks - ZOOM_LADDER_REPEAT_DELAY_TICKS) % ZOOM_LADDER_REPEAT_EVERY_TICKS != 0)
+            return
+        stepZoomOneLevel(direction)
+    }
+
+    /**
+     * Moves the zoom one level along [ZoomLadder], in [direction], and paints the result.
+     *
+     * The pill and the AR overlay follow IMMEDIATELY, ahead of the camera acknowledging, while
+     * the camera itself is written on a [ZOOM_PUSH_MS] throttle. A held rocker walking the
+     * ladder must not become a queue of commands the camera answers long after the pilot let
+     * go; only the newest target matters, thus coalescing loses nothing.
+     */
+    private fun stepZoomOneLevel(direction: Int) {
+        val next = ZoomLadder.next(pendingZoomRaw, direction)
+            .coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
+        if (next == pendingZoomRaw) return          // already against the end of the ladder
         pendingZoomRaw = next
-        // Immediate feedback, ahead of the camera acknowledging: the pill and the AR overlay
-        // track the rocker, not the round-trip.
         zoomRaw = next
         zoomButton.text = zoomLabel(next)
         TakBridgeHolder.setLiveZoom(next / ZOOM_RAW_PER_X.toDouble())
@@ -2072,6 +2089,42 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 applyZoomRaw(pendingZoomRaw)
             }, ZOOM_PUSH_MS)
         }
+    }
+
+    /**
+     * Points the app's idea of the zoom at what the CAMERA actually holds.
+     *
+     * [TakBridgeHolder.currentZoomFactor] is an absolute ratio off the camera's own ~2Hz status
+     * push (AutelProductHolder), thus it needs NO new SDK listener — safety rule 2, listener
+     * slots hold one client, and this screen must not take one.
+     *
+     * Why it matters more now than it did: with a continuous rocker, starting from a wrong
+     * value only meant a wrong label, and the pilot zoomed until the picture looked right. With
+     * a ladder, the wrong starting value sends "one level up" to the wrong level. Autel
+     * Explorer leaves the camera zoomed, and on 2026-08-04 an app that assumed 1x at connect
+     * called a true 4x "1X" and could not zoom out at all.
+     *
+     * ⚠ IT DEFERS TO OUR OWN VALUE WHILE A WRITE IS STILL SETTLING. The camera's reading is a
+     * ~2Hz push, thus it lags a zoom this app just wrote by up to half a second. Without the
+     * [ZOOM_SEED_SETTLE_MS] guard, tapping twice in quick succession would re-seed the second
+     * press from the pre-first-press value and send the pilot to the SAME level twice — the
+     * control would appear stuck exactly when it is being used the way a ladder invites, which
+     * is a rapid tap. The guard costs nothing: the case this function exists for is a camera
+     * some OTHER app left zoomed, and that is never within a second of our own write.
+     *
+     * Silently does nothing if the reading is not usable — before the bridge has ever run it is
+     * the 1.0 default, which is also the honest answer when there is nothing better.
+     */
+    private fun seedZoomFromCamera() {
+        if (SystemClock.elapsedRealtime() - lastZoomWriteMs < ZOOM_SEED_SETTLE_MS) return
+        val ratio = TakBridgeHolder.currentZoomFactor
+        if (!ratio.isFinite() || ratio < 1.0) return
+        val raw = Math.round(ratio * ZOOM_RAW_PER_X).toInt().coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
+        if (raw == pendingZoomRaw) return
+        AppLog.i(TAG, "zoom re-seeded from the camera: ${zoomLabel(raw)} (raw=$raw)")
+        pendingZoomRaw = raw
+        zoomRaw = raw
+        zoomButton.text = zoomLabel(raw)
     }
 
     /** Log + toast-on-failure adapter for the camera's completion callbacks. */
@@ -2943,43 +2996,48 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private const val ZOOM_RAW_MIN = 100
     private const val ZOOM_RAW_MAX = 1600
 
-    /** Raw zoom units added per tick of the held rocker: 60 = 0.6x.
+    /** How many ticks a held rocker waits before it starts walking the ladder. Six ticks at the
+     *  rocker's ~200ms repeat is about 1.2 seconds.
      *
-     *  RATE MATCHED TO THE STOCK AUTEL APP, measured by the operator on a second aircraft
-     *  2026-08-06: a held rocker crosses 1x→16x in about five seconds. The arithmetic is
-     *  exactly that — the range is 1500 raw units, the controller repeats ~5 times a second,
-     *  so 1500 ÷ (5 s × 5 ticks/s) = 60. Matching it is deliberate: a pilot's muscle memory
-     *  comes from the stock app, and a control that moves at a different speed than the one
-     *  they learned on is a control they will overshoot. One constant to retune if the felt
-     *  rate is wrong; see [onZoomRocker]. */
-    private const val ZOOM_ROCKER_STEP_RAW = 60
-
-    /** Zoom values a held rocker parks at on its way past, raw units: 2x, 4x and 8x. These are
-     *  the pill's own steps plus 8x — the same framing points the pilot already knows by name,
-     *  so the button and the rocker agree about which values matter. MUST STAY ASCENDING: the
-     *  crossing test in [onZoomRocker] takes the first match in each direction. 16x is absent
-     *  on purpose; it is the end stop, and the accumulator already stops there. */
-    private val ZOOM_DETENTS_RAW = intArrayOf(200, 400, 800)
-
-    /** How many held ticks a detent swallows. The DWELL a pilot feels is one tick longer than
-     *  this — the tick that arrives on the detent moves the zoom and then stops there — so at
-     *  the rocker's ~200ms repeat the dwell is (4 + 1) × 200ms = one second, which is what the
-     *  operator asked for (2026-08-15). Long enough to be a deliberate stopping point, short
-     *  enough that a pilot crossing the whole range does not think the control has failed.
+     *  THIS IS WHAT SEPARATES A PRESS FROM A HOLD, and the number comes from measurement, not
+     *  from taste. The rocker is stiff and spring-loaded, and a press on it is NOT one tick: of
+     *  44 presses captured on hardware 2026-08-15, the commonest length was 4 to 5 ticks (0.8
+     *  to 1.0 second) and 19 of the 44 fell there. This was first written as 3 ticks, which
+     *  would have made those 19 presses climb TWO levels for one push.
      *
-     *  This was briefly 7, to outlast the rocker's trailing burst by brute force. That is no
-     *  longer this constant's job: the trailing events are now dropped where they arrive, on
-     *  keyValue 0 — see installHardwareButtonListener. Only held events reach the accumulator,
-     *  thus the pause is free to be a comfortable dwell again rather than a filter. */
-    private const val ZOOM_DETENT_HOLD_TICKS = 4
+     *  Six clears every press measured. The cost is 1.2s of dead time before a hold starts to
+     *  walk, which is the right way round: waiting is a nuisance, an unasked-for second level
+     *  is a wrong picture.
+     *
+     *  ⚠ THE MEASUREMENT IS BIASED LONG. It was taken while the rocker still drove a continuous
+     *  zoom, thus the pilot was deliberately holding to watch the value park. Real taps on a
+     *  ladder will be shorter. Re-measure before lowering this — the press length is in the log
+     *  as the count of ZOOM_IN/ZOOM_OUT events with keyValue above 0. See [onZoomRocker]. */
+    private const val ZOOM_LADDER_REPEAT_DELAY_TICKS = 6
+
+    /** How many ticks between levels once a held rocker is walking: two, about 400ms, thus the
+     *  nine levels of [ZoomLadder] take roughly four seconds end to end (operator, 2026-08-15).
+     *  Fast enough to cross the range without the control feeling stuck, slow enough to let go
+     *  on the level wanted. */
+    private const val ZOOM_LADDER_REPEAT_EVERY_TICKS = 2
 
     /** A gap longer than this means a NEW press, rather than one continuous hold. Two rocker
      *  repeats' worth: long enough not to trip on the jitter in the hardware capture
      *  (199-213ms), short enough to catch a real gap between presses.
      *
      *  This is no longer how a release is detected — keyValue 0 is, at the listener. All this
-     *  does now is cancel a detent park so a fresh press moves at once. */
+     *  does now is mark where one press ends and the next begins, which is when [onZoomRocker]
+     *  re-seeds from the camera and restarts the repeat delay. */
     private const val ZOOM_RELEASE_GAP_MS = 400L
+
+    /** How long after this app writes a zoom the camera's own reading is treated as stale.
+     *
+     *  The reading is a ~2Hz push (AutelProductHolder), thus up to about 500ms behind a write
+     *  we just made; 1500ms is three of those pushes and leaves room for the command round-trip
+     *  in front of them. Inside this window [seedZoomFromCamera] keeps this app's own value.
+     *  Outside it, the camera wins — which is the whole point, because some other application
+     *  may have moved it. */
+    private const val ZOOM_SEED_SETTLE_MS = 1500L
 
     /** How long rocker ticks are coalesced before the camera is written. Comfortably longer
      *  than the rocker's ~200ms repeat, because the point is to collapse a sustained HOLD — ten
