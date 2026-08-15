@@ -618,9 +618,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                         e: com.autel.common.remotecontroller.RemoteControllerNavigateButtonEvent?,
                     ) {
                         e ?: return
+                        // READ keyValue HERE AND NOWHERE ELSE. The event is an ENUM CONSTANT,
+                        // thus a process-wide singleton, and the SDK's packet parser mutates
+                        // this field on it (RCButtonPacket.parseBody -> setKeyValue) before
+                        // handing it over. Reading it after a thread hop would read whatever
+                        // the NEXT packet has since written. Captured now, passed by value.
+                        val keyValue = e.keyValue
                         // Logged unconditionally — this is how the button mapping gets confirmed,
                         // and how anyone later finds out what the other controls emit.
-                        AppLog.i(TAG, "controller button event: $e")
+                        AppLog.i(TAG, "controller button event: $e (keyValue=$keyValue)")
                         // SDK thread — everything below shows toasts and touches views.
                         when (e.name) {
                             // C2: markers, MIRRORING the crosshair exactly — short re-aims the one
@@ -657,10 +663,21 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                             // them. The left control is the gimbal and emits nothing here, so
                             // there is no ambiguity between the two.
                             //
+                            // keyValue IS THE DEFLECTION, 0 TO 225, AND ZERO MEANS RELEASED.
+                            // The rocker keeps emitting while the spring returns it to centre,
+                            // and those trailing events carry keyValue 0 — that is the whole
+                            // release signal, and dropping them is what stops the zoom running
+                            // on after the pilot lets go. Measured over 45 presses on hardware
+                            // 2026-08-15: every one ended in two or three keyValue-0 events and
+                            // NOT ONE had a zero among the held events, so the test is exact
+                            // rather than a heuristic. Before this the app read only e.name and
+                            // could not tell the two apart at all; replaying those 45 presses
+                            // shows the zoom ran on by as much as 1.8x past the release.
+                            //
                             // Deliberately NOT routed through applyZoom(step): the whole point
                             // is the values between the steps. See onZoomRocker.
-                            "ZOOM_IN" -> runOnUiThread { onZoomRocker(+1) }
-                            "ZOOM_OUT" -> runOnUiThread { onZoomRocker(-1) }
+                            "ZOOM_IN" -> if (keyValue > 0) runOnUiThread { onZoomRocker(+1) }
+                            "ZOOM_OUT" -> if (keyValue > 0) runOnUiThread { onZoomRocker(-1) }
                         }
                     }
                     override fun onFailure(error: AutelError?) {
@@ -1979,11 +1996,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *
      * ⚠ THE ROCKER IS SPRING-LOADED, NOT A FREE-SPINNING DETENTED WHEEL (operator,
      * 2026-08-06). It is pushed against a stop and held there; the controller then REPEATS the
-     * same event about every 200ms until it is released, and release is simply the events
-     * stopping. Confirmed in the hardware capture: 8 × ZOOM_IN at 199-213ms spacing, then 12 ×
-     * ZOOM_OUT at the same cadence. So each event is a TICK OF HELD TIME, not a countable
-     * detent. The accumulator stops moving when the events stop, and the throttled push below
-     * lands the final value.
+     * same event about every 200ms. Confirmed in the hardware capture: 8 × ZOOM_IN at 199-213ms
+     * spacing, then 12 × ZOOM_OUT at the same cadence. So each event is a TICK OF HELD TIME,
+     * not a countable detent.
+     *
+     * EVERY TICK THAT REACHES THIS FUNCTION IS A HELD ONE. The rocker goes on emitting while
+     * the spring returns it to centre, and for a while this function received those too and ran
+     * the zoom on past where the pilot let go — 1.8x at worst, three trailing ticks. The
+     * events carry keyValue 0 and are now dropped in installHardwareButtonListener, which is
+     * the only place that may read that field. Do not re-add release detection here.
      *
      * LINEAR, at the operator's explicit instruction (2026-08-06): holding the rocker moves the
      * zoom at a constant [ZOOM_ROCKER_STEP_RAW] per tick for the whole range, so a full 1x→16x
@@ -2002,9 +2023,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *
      * The pause is measured in TICKS OF HELD TIME, not wall clock, because that is the only
      * clock this control has. Two things cancel it, both meaning "the pilot changed their
-     * mind": a release (ticks stop for longer than [ZOOM_RELEASE_GAP_MS]) and a direction
-     * reversal. Without the release check, a pilot who let go at 2x and pressed again would
-     * find the first second of their new press swallowed.
+     * mind": a new press (ticks stop for longer than [ZOOM_RELEASE_GAP_MS], since a released
+     * rocker now sends nothing that gets this far) and a direction reversal. Without that
+     * check, a pilot who let go at 2x and pressed again would find the first second of their
+     * new press swallowed.
      *
      * The pill and the AR projection follow the ACCUMULATOR immediately, while the camera is
      * written on a [ZOOM_PUSH_MS] throttle. Each write is a command round-trip to the aircraft;
@@ -2941,24 +2963,22 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /** How many held ticks a detent swallows. The DWELL a pilot feels is one tick longer than
      *  this — the tick that arrives on the detent moves the zoom and then stops there — so at
-     *  the rocker's ~200ms repeat the dwell is (7 + 1) × 200ms, about 1.6 seconds.
+     *  the rocker's ~200ms repeat the dwell is (4 + 1) × 200ms = one second, which is what the
+     *  operator asked for (2026-08-15). Long enough to be a deliberate stopping point, short
+     *  enough that a pilot crossing the whole range does not think the control has failed.
      *
-     *  ⚠ THIS MUST STAY LONGER THAN THE ROCKER'S TRAILING BURST, which is the whole reason it
-     *  is not the one second the operator first asked for. THE ROCKER KEEPS EMITTING AFTER IT
-     *  IS RELEASED, as the spring returns it to centre: measured on hardware 2026-08-15 over
-     *  five releases at 2x, every one gave 7 ticks in 1.19-1.21s, of which FIVE arrived after
-     *  the pilot let go. The ±10ms spread across five trials is what proves it is mechanical
-     *  and not the pilot's finger. A trailing tick is indistinguishable from a held one — same
-     *  event, same ~200ms cadence — so the pause cannot filter them and can only outlast them.
-     *  At 4 the fifth trailing tick escaped and the zoom walked off the detent the moment the
-     *  pilot released, which is the opposite of what a detent is for.
-     *
-     *  Seven gives two ticks of margin over the measured five. Re-measure before lowering it. */
-    private const val ZOOM_DETENT_HOLD_TICKS = 7
+     *  This was briefly 7, to outlast the rocker's trailing burst by brute force. That is no
+     *  longer this constant's job: the trailing events are now dropped where they arrive, on
+     *  keyValue 0 — see installHardwareButtonListener. Only held events reach the accumulator,
+     *  thus the pause is free to be a comfortable dwell again rather than a filter. */
+    private const val ZOOM_DETENT_HOLD_TICKS = 4
 
-    /** A gap longer than this means the rocker was RELEASED and pressed again, rather than held
-     *  continuously. Two rocker repeats' worth: long enough not to trip on the jitter in the
-     *  hardware capture (199-213ms), short enough to catch a genuine release. */
+    /** A gap longer than this means a NEW press, rather than one continuous hold. Two rocker
+     *  repeats' worth: long enough not to trip on the jitter in the hardware capture
+     *  (199-213ms), short enough to catch a real gap between presses.
+     *
+     *  This is no longer how a release is detected — keyValue 0 is, at the listener. All this
+     *  does now is cancel a detent park so a fresh press moves at once. */
     private const val ZOOM_RELEASE_GAP_MS = 400L
 
     /** How long rocker ticks are coalesced before the camera is written. Comfortably longer
