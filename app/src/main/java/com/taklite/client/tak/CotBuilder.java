@@ -399,11 +399,11 @@ public class CotBuilder {
                                       String name, String remarks, String missionName) {
         long now = System.currentTimeMillis();
         String time = formatTime(now);
-        // 14 hours (operator's call, 2026-07-25): long enough that a dropped marker persists
-        // through an entire incident, short enough that it clears itself before the next
-        // shift so nobody inherits a map full of yesterday's pins. Deliberately unrelated to
-        // DRONE_STALE_DURATION_MS (2 min, live track) and the SPI stale (15s) — a static
-        // marker and a moving aircraft want completely different lifetimes.
+        // The lifetime is MARKER_STALE_DURATION_MS. Its declaration above holds the figure and
+        // the reason it was chosen; do not repeat the number here, because this comment already
+        // outlived one change of it. The value is deliberately unrelated to
+        // DRONE_STALE_DURATION_MS (a live track) and to SENSOR_POINT_STALE_MS — a static marker
+        // and a moving aircraft want completely different lifetimes.
         String stale = formatTime(now + MARKER_STALE_DURATION_MS);
 
         String cotType;

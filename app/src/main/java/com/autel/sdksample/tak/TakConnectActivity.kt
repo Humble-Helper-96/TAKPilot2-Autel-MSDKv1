@@ -100,14 +100,14 @@ class TakConnectActivity : AppCompatActivity() {
         // socket is not up — so the user never has to re-enter credentials / re-enroll.
         when {
             TakManager.getInstance().isConnected ->
-                setStatus("Connected. Sending the aircraft position to TAK.", Color.parseColor("#4CAF50"))
+                setStatus("Connected. Sending the aircraft position to TAK.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
             prefs.getBoolean(KEY_LOGGED_OUT, false) ->
-                setStatus("Logged out. Enter host, username and password to sign in.", Color.parseColor("#B0B0B0"))
+                setStatus("Logged out. Enter host, username and password to sign in.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             hasSavedCerts(prefs) -> {
-                setStatus("Reconnecting with saved enrollment …", Color.parseColor("#B0B0B0"))
+                setStatus("Reconnecting with saved enrollment …", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
                 reconnectFromSaved(prefs, callsign.text.toString().trim().ifEmpty { "TAKPilot2-EVO2" })
             }
-            else -> setStatus("Not connected.", Color.parseColor("#B0B0B0"))
+            else -> setStatus("Not connected.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
 
         findViewById<Button>(R.id.takConnectButton).setOnClickListener {
@@ -120,7 +120,7 @@ class TakConnectActivity : AppCompatActivity() {
             val cp = cotPort.text.toString().trim().toIntOrNull() ?: 8089
 
             if (TakManager.getInstance().isConnected) {
-                setStatus("Already connected.", Color.parseColor("#4CAF50"))
+                setStatus("Already connected.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
                 return@setOnClickListener
             }
             // Fail here, in words, when the controller has no route out — BEFORE the enroller
@@ -131,7 +131,7 @@ class TakConnectActivity : AppCompatActivity() {
             if (!NetworkStatus.hasInternet(this)) {
                 AppLog.w(TAG, "Connect blocked: no validated network")
                 setStatus("No network connection. Connect the controller to wifi first — " +
-                    "check the WIFI line on the home screen.", Color.parseColor("#F44336"))
+                    "check the WIFI line on the home screen.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
                 return@setOnClickListener
             }
             prefs.edit()
@@ -149,7 +149,7 @@ class TakConnectActivity : AppCompatActivity() {
             }
             if (h.isEmpty() || u.isEmpty() || p.isEmpty()) {
                 setStatus("Host, username and password are required for first enrollment.",
-                    Color.parseColor("#F44336"))
+                    androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
                 return@setOnClickListener
             }
             enrollAndConnect(h, ep, cp, u, p, cs)
@@ -175,7 +175,7 @@ class TakConnectActivity : AppCompatActivity() {
             runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
             runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
-                Color.parseColor("#B0B0B0"))
+                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
 
         setupVideoControls(prefs)
@@ -308,7 +308,7 @@ class TakConnectActivity : AppCompatActivity() {
         username: String, password: String, droneCallsign: String,
     ) {
         AppLog.v(TAG, "enrollAndConnect: host=$host enrollPort=$enrollPort cotPort=$cotPort user=$username")
-        setStatus("Enrolling with $host:$enrollPort …", Color.parseColor("#B0B0B0"))
+        setStatus("Enrolling with $host:$enrollPort …", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
 
         // Stable operator uid persisted across sessions.
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -330,14 +330,14 @@ class TakConnectActivity : AppCompatActivity() {
                             .putString(KEY_CLIENTCERT, clientCertPath)
                             .putBoolean(KEY_LOGGED_OUT, false)   // new enrollment → allow auto-reconnect again
                             .apply()
-                        runOnUiThread { setStatus("Enrolled. Connecting …", Color.parseColor("#B0B0B0")) }
+                        runOnUiThread { setStatus("Enrolled. Connecting …", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)) }
                         connectWithCerts(uid, username, droneUid, droneCallsign,
                             host, cotPort, trustStorePath, clientCertPath)
                     }
 
                     override fun onError(error: String) {
                         AppLog.w(TAG, "enrollment failed: $error")
-                        runOnUiThread { setStatus("Error: $error", Color.parseColor("#F44336")) }
+                        runOnUiThread { setStatus("Error: $error", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger)) }
                     }
                 })
         }.start()
@@ -360,7 +360,7 @@ class TakConnectActivity : AppCompatActivity() {
         )
         runOnUiThread {
             setStatus("Connected. Sending the aircraft position to TAK as \"$droneCallsign\".",
-                Color.parseColor("#4CAF50"))
+                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
             TakBridgeHolder.start(droneUid, droneCallsign)
             TakForegroundService.start(applicationContext, droneCallsign)
         }
@@ -379,7 +379,7 @@ class TakConnectActivity : AppCompatActivity() {
             prefs.edit().putString(KEY_UID, uid).apply()
         }
         if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) {
-            setStatus("Saved enrollment incomplete — enroll again.", Color.parseColor("#F44336"))
+            setStatus("Saved enrollment incomplete — enroll again.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
             return
         }
         Thread { connectWithCerts(uid, username, "$uid-DRONE", droneCallsign, host, cotPort, ts, cc) }.start()
@@ -436,11 +436,11 @@ class TakConnectActivity : AppCompatActivity() {
         val chanStatus = findViewById<TextView>(R.id.takChannelsStatus)
         if (!TakManager.getInstance().isConnected) {
             chanStatus.text = "Connect to TAK first, then pull channels."
-            chanStatus.setTextColor(Color.parseColor("#F44336"))
+            chanStatus.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
             return
         }
         chanStatus.text = "Pulling channels…"
-        chanStatus.setTextColor(Color.parseColor("#B0B0B0"))
+        chanStatus.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         TakMissionManager.listMyChannels { chans ->
             if (chans.isEmpty()) {
                 chanStatus.text = "No channels found for this login."
@@ -601,7 +601,7 @@ class TakConnectActivity : AppCompatActivity() {
                     status.setTextColor(androidx.core.content.ContextCompat.getColor(
                         this, when (report.state) {
                             FlightLimitsController.ReportState.CONFIRMED -> R.color.tp_state_go
-                            FlightLimitsController.ReportState.UNKNOWN -> R.color.tp_state_caution
+                            FlightLimitsController.ReportState.UNKNOWN -> R.color.tp_state_unknown
                             FlightLimitsController.ReportState.PROBLEM -> R.color.tp_state_danger
                         }))
                 }
@@ -958,7 +958,7 @@ class TakConnectActivity : AppCompatActivity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setBackgroundColor(Color.parseColor("#202020"))
+                setBackgroundColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_surface_dialog))
                 setPadding(12, 10, 12, 10)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -979,13 +979,13 @@ class TakConnectActivity : AppCompatActivity() {
                 val sizeStr = if (mb >= 1024) "%.1f GB".format(mb / 1024.0) else "%.0f MB".format(mb)
                 text = "Imported ${dtedDateFormat.format(java.util.Date(region.importedAtMs))} · " +
                     "${region.fileCount} file(s) · $sizeStr"
-                setTextColor(Color.parseColor("#909090"))
+                setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_tertiary))
                 textSize = 12f
             })
             row.addView(info)
             row.addView(TextView(this).apply {
                 text = "Delete"
-                setTextColor(Color.parseColor("#EF5350"))
+                setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_btn_danger_dialog))
                 textSize = 13f
                 setPadding(20, 8, 4, 8)
                 setOnClickListener {
@@ -1341,12 +1341,14 @@ class TakConnectActivity : AppCompatActivity() {
                 AutelAvoidance.systemEnabled == true -> "Obstacle avoidance is ON."
                 else -> "Obstacle avoidance is OFF."
             }
-            status.setTextColor(
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(this,
                 when {
-                    !connected || !known -> android.graphics.Color.parseColor("#FFB300")
-                    AutelAvoidance.systemEnabled == true -> android.graphics.Color.parseColor("#4CAF50")
-                    else -> android.graphics.Color.parseColor("#F44336")
-                })
+                    // Not connected, or the aircraft has not answered — the UNKNOWN amber,
+                    // which is a different fact from OFF and from a refusal. §6.1.
+                    !connected || !known -> R.color.tp_state_unknown
+                    AutelAvoidance.systemEnabled == true -> R.color.tp_state_go
+                    else -> R.color.tp_state_danger
+                }))
             // Set the boxes WITHOUT firing their listeners, or rendering the aircraft's state
             // would look like a pilot toggle and be pushed straight back at it.
             boxes.forEach { it.setOnCheckedChangeListener(null) }

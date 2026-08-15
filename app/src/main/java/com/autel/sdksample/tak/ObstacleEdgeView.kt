@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
+import androidx.core.content.ContextCompat
+import com.autel.sdksample.R
 
 /**
  * Obstacle proximity drawn as arcs on the edges of the FPV, one per aircraft face.
@@ -39,6 +41,11 @@ import android.view.View
 class ObstacleEdgeView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyle: Int = 0,
 ) : View(context, attrs, defStyle) {
+
+    // Flight-tuned HUD colours, resolved once per view. Were literals here until
+    // 2026-08-14 (conformance A1); the values are unchanged — see takpilot_colors.xml.
+    private val COLOR_DANGER = ContextCompat.getColor(context, R.color.tp_hud_obstacle_danger)
+    private val COLOR_WARN = ContextCompat.getColor(context, R.color.tp_hud_obstacle_warn)
 
     /** One edge's current state. Distance is in the raw sensor units. */
     private data class Edge(var cm: Int?)
@@ -261,8 +268,6 @@ class ObstacleEdgeView @JvmOverloads constructor(
 
         // Precomputed so onDraw never runs Color.parseColor (a string parse + allocation) per
         // edge per frame. Red inside DANGER_CM, amber beyond it.
-        private const val COLOR_DANGER = 0xFFFF3B30.toInt()
-        private const val COLOR_WARN = 0xFFFFCC00.toInt()
 
         /**
          * ⚠ THE ONE ASSUMPTION IN THIS FILE. Nothing in the SDK documents the radar's units;

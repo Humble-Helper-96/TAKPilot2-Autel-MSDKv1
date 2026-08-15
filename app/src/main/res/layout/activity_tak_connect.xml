@@ -144,7 +144,7 @@
             android:id="@+id/avoidStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@color/tp_state_caution"
+            android:textColor="@color/tp_state_unknown"
             android:textSize="14sp"
             android:textStyle="bold"
             android:text="The aircraft is not connected." />

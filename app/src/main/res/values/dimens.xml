@@ -590,8 +590,17 @@
 	<dimen name="distance_tv_text_size">22sp</dimen>
 	<dimen name="btn_waypoint_unread_width">60dp</dimen>
 
-	<!-- Locked flight mini-map. MUST match the DJI sibling's flight_map_size (130dp base,
-	     160dp via values-h440dp) — these are not arbitrary.
+	<!-- Locked flight mini-map. This value is PER-DEVICE — specification §7.
+
+	     Do NOT hold it equal to the DJI sibling's flight_map_size. The DJI MSDKv4 application
+	     runs on a phone and this one runs on a 1024x720dp controller, so a value that is right
+	     in one tree is wrong in the other. No dp value transfers between trees; the reasoning
+	     below transfers, the number does not. The two trees happen to share the base figure
+	     today, and that is a coincidence, not a rule to protect.
+
+	     flight_resource_row_margin_end is DERIVED from this value: map size + 14dp, where the
+	     14dp is the HUD column's paddingEnd. Change one and change the other, in EVERY bucket
+	     that overrides either.
 
 	     The HUD column is a fixed-height vertical LinearLayout: slider + EV scale + exposure
 	     readout + weighted spacer + 5-line readout + gimbal + FAA line + THIS MAP. The map is

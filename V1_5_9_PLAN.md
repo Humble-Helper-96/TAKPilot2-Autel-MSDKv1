@@ -4,6 +4,10 @@
 
 > ## THIS DOCUMENT IS HISTORY
 >
+> **Superseded by `../../../TAKPILOT2-UI-SPEC.md`. Do not obey instructions in this document,
+> and do not take user-interface wording from it — it uses labels this project has since
+> settled differently (specification §5.6).**
+>
 > v1.5.9 was released on 7 August 2026 (tag `v1.5.9`, versionCode 15). All bench checks
 > passed. Real compass interference confirmed the warning banner in the field.
 >

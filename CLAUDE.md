@@ -9,8 +9,20 @@ itself. The full reference is `TAKPILOT2_AUTEL_PORT_PLAN.md`; the current state 
 
 The TAK flight interface for the Autel EVO II 640T V3 on the Smart Controller V3
 (1024x720dp). It replaces Autel Explorer during TAK operations on a six-controller
-public-safety fleet. The DJI sibling application is the UI template: a pilot must be able to
-change aircraft and find the same screens.
+public-safety fleet. It is one of three TAKPilot2 applications, with the DJI MSDKv4 and DJI
+MSDKv5 siblings:
+
+> A pilot changes airframe and finds the same screens, the same controls in the same places,
+> and the same words.
+
+## The UI specification
+
+`../../../TAKPILOT2-UI-SPEC.md` is the single source of truth for the user interface of all
+three applications. It outranks any UI note in this file or in the documents in this tree.
+Read it before you change a screen, a layout, a colour or a readout format. This tree's
+gap list is in `../../../TAKPILOT2-UI-CONFORMANCE.md`.
+
+A UI change lands in all three applications, or it lands in none.
 
 ## Safety rules — these come from real incidents
 
@@ -53,13 +65,19 @@ change aircraft and find the same screens.
 - UI state must show what the AIRCRAFT holds, not what was requested. Unknown is its own
   state (amber), never collapsed into off.
 - Release notes are short and simple, one line per function, next to the APK.
-- Colours: prefer the tokens in `takpilot_colors.xml` over `Color.parseColor` in new code.
+- Colours come from the tokens in `res/values/takpilot_colors.xml`. Do not add a
+  `Color.parseColor` call site — specification §6.1. `res/values/colors.xml` belongs to the
+  vendor sample; leave it alone, and see the recorded exception in §6.1 before you change
+  the three chrome colours in it.
 
 ## Current work
 
-v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master, at versionName `1.6.0` /
-versionCode 16; it waits for flight-test feedback from the test users. The v1.6.0 finding
-list is in `REVIEW_2026-08-07_AUDIT.md` section 4.
+v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master and waits for flight-test
+feedback from the test users. The v1.6.0 finding list is in `REVIEW_2026-08-07_AUDIT.md`
+section 4.
+
+**The version numbers live in `app/build.gradle`. Read them there.** This paragraph carried a
+`versionCode` that was 13 builds out of date.
 
 In v1.6.0 so far: the CoT video advertisement now carries a nested `ConnectionEntry`, which
 is what makes the feed playable from the aircraft marker and the pilot marker. This was
@@ -71,3 +89,20 @@ The advertised url carries the video credentials (`user:pass@`). This is settled
 item: the `ConnectionEntry` shape has no separate credential field, so a url without them does
 not authenticate and the feed does not play. Do not raise it again and do not propose stripping
 them.
+
+Also in v1.6.0, from the 2026-08-14 documentation audit: the marker retention time that the
+app tells the pilot is corrected from "about 14 hours" to 3 days, in the Delete Marker dialog,
+the Clear All Markers dialog and the Field Guide. Only the text was wrong — the markers always
+expired at the correct time, which is `CotBuilder.MARKER_STALE_DURATION_MS`. **This is
+pilot-facing text that no test pilot has seen yet**, so it goes in the notes for the next
+development build.
+
+Also in v1.6.0: a refused marker now shows on the flight screen as an amber transient notice
+instead of a Toast. A Toast is not in the screen capture, so the team saw nothing while the
+pilot was told the marker was refused. `showNotice` takes a `refused` flag and owns the
+colour; do not set the notice colour at a call site. Both DJI siblings took the same change on
+the same day — specification §4.8.
+
+**Do not bump the version for either change.** v1.6.0 is open and takes them as they stand
+(operator, 2026-08-14). `BUILD_TIME` on the home screen identifies a build in the field, so a
+second test build at the same `versionCode` is still unambiguous.

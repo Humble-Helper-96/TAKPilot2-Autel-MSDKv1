@@ -8,4 +8,15 @@
          — genuinely wide screens like the V3 — goes bigger. -->
     <dimen name="flight_map_size">160dp</dimen>
     <dimen name="flight_map_height">160dp</dimen>
+
+    <!-- ⚠ DERIVED FROM flight_map_size, NOT A FREE NUMBER: map width + the HUD column's
+         paddingEnd of 14dp, which is what keeps the resource row's right edge level with the
+         map's left edge.
+
+         Missing until 2026-08-13. The same fault was found and fixed in values-w820dp on
+         2026-08-04, and this bucket was missed — so the base 144dp stayed in force here while
+         the map above grew to 160dp, leaving the row about 30dp short. This is the bucket the
+         Smart Controller SE lands in, which is stated above as one that must keep working.
+         Change the two together, in EVERY bucket that overrides either one. -->
+    <dimen name="flight_resource_row_margin_end">174dp</dimen>
 </resources>

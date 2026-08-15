@@ -122,10 +122,16 @@
         <activity android:name=".ZteLogActivity"></activity>
 
         <!-- ============ TAKPilot2-Autel components ============ -->
+        <!-- Home is the hub and the launcher. singleTask keeps exactly ONE Home in the task,
+             so a stacked second Home is impossible rather than merely avoided by remembering
+             the right intent flags at each call site — specification §2 and conformance V10.
+             Matches both DJI siblings. -->
         <activity
             android:name=".tak.TakPilotHomeActivity"
             android:theme="@style/AppTheme.NoActionBar.SolidStatusBar"
             android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -138,10 +144,12 @@
             android:theme="@style/AppTheme.NoActionBar" />
         <activity android:name=".tak.TakConnectActivity"
             android:label="Pre-Flight Setup"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize" />
         <activity android:name=".tak.DataSyncActivity"
             android:label="Data Sync"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize" />
         <!-- Hosts the MediaProjection for the outbound screen-capture stream. Android 10+
              requires a foreground service of this type to be running BEFORE the projection
              is used, so this cannot be folded into TakForegroundService (which is dataSync). -->
@@ -154,10 +162,12 @@
             android:exported="false" />
         <activity android:name=".tak.DebugActivity"
             android:label="Debug Log"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize" />
         <activity android:name=".tak.FieldGuideActivity"
             android:label="Field Guide"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

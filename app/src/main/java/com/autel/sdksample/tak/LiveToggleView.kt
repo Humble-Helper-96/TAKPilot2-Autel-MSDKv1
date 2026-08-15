@@ -10,6 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
 import android.view.View
+import androidx.core.content.ContextCompat
+import com.autel.sdksample.R
 
 /**
  * Live-stream badge — a "LIVE" pill with a fixed icon knob on the LEFT (matching
@@ -27,6 +29,12 @@ class LiveToggleView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
+
+    // Flight-tuned HUD colours, resolved once per view. Were literals here until
+    // 2026-08-14 (conformance A1); the values are unchanged — see takpilot_colors.xml.
+    private val COLOR_OFF_TRACK = ContextCompat.getColor(context, R.color.tp_hud_toggle_off)
+    private val COLOR_LIVE_TRACK = ContextCompat.getColor(context, R.color.tp_hud_toggle_active)
+    private val COLOR_RECONNECT_TRACK = ContextCompat.getColor(context, R.color.tp_hud_toggle_reconnect)
 
     enum class State { OFF, LIVE, RECONNECTING }
 
@@ -160,9 +168,6 @@ class LiveToggleView @JvmOverloads constructor(
     }
 
     companion object {
-        private val COLOR_OFF_TRACK = Color.parseColor("#3A3A3A")
-        private val COLOR_LIVE_TRACK = Color.parseColor("#E53935")
-        private val COLOR_RECONNECT_TRACK = Color.parseColor("#FFB74D")
         private const val BLINK_INTERVAL_MS = 500L
     }
 }

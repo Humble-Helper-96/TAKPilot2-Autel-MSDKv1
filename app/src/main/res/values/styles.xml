@@ -10,18 +10,22 @@
 
     <!-- No ActionBar — the TAKPilot2 screens draw their own chrome (the flight screen's
          instrument toolbar, the home screen's cards), so the platform bar is dead space that
-         also breaks the side-by-side match with the DJI blueprint. Mirrors DJI's styles of the
+         also breaks the side-by-side match with the DJI siblings. Mirrors DJI's styles of the
          same names.
 
-         The status bar is SOLID BLACK, not transparent. It was transparent, on the stated
-         premise that "the flight screen goes immersive/fullscreen" — it does not, and never
-         did: FlightActivity sets no system-UI flags at all. So the content was inset below the
-         bar, nothing painted that strip, and the platform's light default showed through as a
-         white band with unreadable icons over an otherwise black screen.
+         The status bar is SOLID, matching the flight background, not transparent.
 
-         This is the identical fault that AppTheme.NoActionBar.SolidStatusBar below was created
-         to fix for the home screen; the flight screen was simply missed. Black matches the
-         flight layout's own #000000 root, so the bar and the screen are continuous. -->
+         ⚠ THE REASON RECORDED HERE UNTIL 2026-08-13 WAS WRONG. It said the flight screen "does
+         not, and never did" go immersive and that FlightActivity "sets no system-UI flags at
+         all". FlightActivity.goFullScreen() sets SYSTEM_UI_FLAG_FULLSCREEN and
+         IMMERSIVE_STICKY and re-applies them in onWindowFocusChanged. There is no white band,
+         because the bar is hidden. That false note was taken at face value in the first UI
+         audit and produced a defect finding against the DJI trees that did not exist.
+
+         The real reason to keep it solid: IMMERSIVE_STICKY shows the bar transiently after a
+         swipe, and SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN makes the window draw under it, so a
+         transparent bar puts the system clock and icons straight onto live video where a bright
+         frame can make them unreadable. Same reasoning as the HUD panels. -->
     <style name="AppTheme.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
@@ -90,7 +94,7 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tp_text_primary</item>
-        <item name="android:textColorHint">@color/tp_text_hint</item>
+        <item name="android:textColorHint">@color/tp_text_disabled</item>
         <item name="android:background">@color/tp_surface_field</item>
         <item name="android:padding">12dp</item>
         <item name="android:textSize">15sp</item>
@@ -106,7 +110,7 @@
     <style name="homeCardTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:textColor">@color/tp_text_muted</item>
+        <item name="android:textColor">@color/tp_text_caption</item>
         <item name="android:textSize">12sp</item>
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>

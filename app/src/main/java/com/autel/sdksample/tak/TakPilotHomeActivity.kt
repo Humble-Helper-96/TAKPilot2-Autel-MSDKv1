@@ -2,7 +2,6 @@ package com.autel.sdksample.tak
 
 import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -246,12 +245,13 @@ class TakPilotHomeActivity : AppCompatActivity() {
             AutelAvoidance.systemEnabled == false -> "OBSTACLE AVOIDANCE: OFF"
             else -> "OBSTACLE AVOIDANCE: —"
         }
-        avoidance.setTextColor(
+        avoidance.setTextColor(androidx.core.content.ContextCompat.getColor(this,
             when (AutelAvoidance.systemEnabled) {
-                true -> Color.parseColor("#4CAF50")
-                false -> Color.parseColor("#F44336")
-                null -> Color.parseColor("#FFB300")
-            })
+                true -> R.color.tp_state_go
+                false -> R.color.tp_state_danger
+                // Not answered yet. Unknown is its own state and its own colour — §6.1.
+                null -> R.color.tp_state_unknown
+            }))
 
         // SIGNAL LOSS — a statement of what the airframe does, not a setting.
         //
@@ -277,7 +277,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         // be set to Continue. TAKPilot does not fly waypoint missions, so it cannot arise
         // from this app; revisit this line if that ever changes.
         signalLoss.text = if (product == null) "" else "SIGNAL LOSS: RETURNS HOME"
-        signalLoss.setTextColor(Color.parseColor("#4CAF50"))
+        signalLoss.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.tp_state_go))
 
         // Sticks and control feel. Both are enforced from Pre-Flight at connect, so these state
         // what the aircraft WILL do rather than what it happens to be set to.
@@ -309,9 +309,9 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 "BATTERY: WARN ${Math.round(warn)}% · CRIT ${Math.round(crit)}%"
             else -> "BATTERY: —"
         }
-        batteryLevels.setTextColor(
-            if (warn != null && crit != null) Color.parseColor("#9AC4FF")
-            else Color.parseColor("#FFB300"))
+        batteryLevels.setTextColor(androidx.core.content.ContextCompat.getColor(this,
+            if (warn != null && crit != null) R.color.tp_accent
+            else R.color.tp_state_unknown))
 
         // Camera storage — WHERE THE FOOTAGE GOES, and whether there is room for it. Follows the
         // avoidance line's three-state rule: unknown is amber and says so, rather than being
@@ -332,23 +332,26 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 "SD CARD: ${sd?.toString() ?: "—"}"
             else -> "STORAGE: —"
         }
-        storage.setTextColor(when {
-            h.recordingToInternal -> Color.parseColor("#F44336")
+        storage.setTextColor(androidx.core.content.ContextCompat.getColor(this, when {
+            h.recordingToInternal -> R.color.tp_state_danger
             h.storageTarget == com.autel.common.camera.media.SaveLocation.SD_CARD && sdReady ->
-                Color.parseColor("#4CAF50")
+                R.color.tp_state_go
             h.storageTarget == com.autel.common.camera.media.SaveLocation.SD_CARD ->
-                Color.parseColor("#F44336")
-            else -> Color.parseColor("#FFB300")
-        })
+                R.color.tp_state_danger
+            // "STORAGE: —" — the camera has not reported a target yet.
+            else -> R.color.tp_state_unknown
+        }))
 
         val settled = AutelControlRates.precisionActive != null
-        val infoColor = if (settled) Color.parseColor("#9AC4FF") else Color.parseColor("#FFB300")
+        val infoColor = androidx.core.content.ContextCompat.getColor(this,
+            if (settled) R.color.tp_accent else R.color.tp_state_unknown)
         stickMode.setTextColor(infoColor)
         controlResponse.setTextColor(infoColor)
         sdk.text = "Autel MSDK " + (runCatching { Autel.getSdkVersion() }.getOrNull() ?: "1.5")
 
         val connected = TakManager.getInstance().isConnected
-        val color = if (connected) Color.parseColor("#4CAF50") else Color.parseColor("#F44336")
+        val color = androidx.core.content.ContextCompat.getColor(this,
+            if (connected) R.color.tp_state_go else R.color.tp_state_danger)
         takStatus.text = if (connected) "TAK: Connected" else "TAK: Disconnected"
         takStatus.setTextColor(color)
         (takDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(color)
@@ -367,11 +370,11 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 "WIFI: ${net.ssid ?: "connected"} — NO INTERNET"
             NetworkStatus.State.OFF -> "WIFI: NOT CONNECTED"
         }
-        val wifiColor = when (net.state) {
-            NetworkStatus.State.CONNECTED -> Color.parseColor("#4CAF50")
-            NetworkStatus.State.NO_INTERNET -> Color.parseColor("#FFB300")
-            NetworkStatus.State.OFF -> Color.parseColor("#F44336")
-        }
+        val wifiColor = androidx.core.content.ContextCompat.getColor(this, when (net.state) {
+            NetworkStatus.State.CONNECTED -> R.color.tp_state_go
+            NetworkStatus.State.NO_INTERNET -> R.color.tp_state_caution
+            NetworkStatus.State.OFF -> R.color.tp_state_danger
+        })
         wifiStatus.setTextColor(wifiColor)
         (wifiDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(wifiColor)
             ?: wifiDot.background?.setTint(wifiColor)

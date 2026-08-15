@@ -52,16 +52,17 @@
         android:background="@color/tp_bg_screen"
         android:gravity="center"
         android:text="Waiting for aircraft…"
-        android:textColor="@color/tp_text_hint"
+        android:textColor="@color/tp_text_disabled"
         android:textSize="16sp"
         android:visibility="visible" />
 
-    <!-- Instrument toolbar: TAK status, battery, GPS, RTH — same instrument cluster as the
-         current DJI flight screen's toolbar, ported 2026-07-30. Signal-strength bars are
-         deliberately NOT here yet: the Autel SDK's signal data (EvoDsp/SignalInfo) is raw
-         RF metrics (RSRP/SNR/gain), not a 0-100% figure, and deriving one needs bench
-         calibration against real hardware (Phase 4) — showing a fabricated number would be
-         worse than not showing one. -->
+    <!-- Instrument toolbar: back, TAK status, battery, signal, GPS, RTH. The order is fixed
+         in all three applications — specification §4.2.
+
+         The signal bars WERE absent here, because the Autel SDK gives raw RF metrics
+         (EvoDsp/SignalInfo: RSRP/SNR/gain) and not a 0-100% figure, and a fabricated number
+         would be worse than none. That was resolved: SignalBarsView is below, with the
+         percent text beside it. -->
     <LinearLayout
         android:id="@+id/flightToolbar"
         android:layout_width="match_parent"
@@ -335,7 +336,7 @@
         android:paddingBottom="7dp"
         android:background="@drawable/bg_warning_banner"
         android:text=""
-        android:textColor="#FFFFFF"
+        android:textColor="@color/tp_text_primary"
         android:textSize="15sp"
         android:textStyle="bold"
         android:letterSpacing="0.03"

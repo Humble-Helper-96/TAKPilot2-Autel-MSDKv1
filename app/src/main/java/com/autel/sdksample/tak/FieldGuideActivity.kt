@@ -7,7 +7,9 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.annotation.ColorRes
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.autel.sdksample.R
 import com.taklite.util.AppLog
 
@@ -347,7 +349,7 @@ class FieldGuideActivity : AppCompatActivity() {
                 "If you move, rename or change the type of a marker, the app changes the " +
                     "same marker on the screens of your team. It does not make a second one.",
                 "If you delete a marker, the app removes it from your screen only. It stays " +
-                    "on the screens of your team for about 14 hours. Clear All is the same.",
+                    "on the screens of your team for 3 days. Clear All is the same.",
                 "MARKERS THAT YOUR TEAM SENDS TO YOU STAY ON YOUR MAP. The app keeps them for " +
                     "72 hours after the last time it receives them, and it keeps them when you " +
                     "start the app again.\n\n" +
@@ -833,7 +835,7 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun lede(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(Color.parseColor("#B0B0B0")); textSize = 14f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)); textSize = 14f
         setPadding(0, dp(6), 0, dp(4))
     })
 
@@ -849,7 +851,7 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun sub(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(Color.parseColor("#9AC4FF")); textSize = 15f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_accent)); textSize = 15f
         setTypeface(null, android.graphics.Typeface.BOLD)
         letterSpacing = 0.03f
         setPadding(0, dp(18), 0, dp(6))
@@ -857,39 +859,48 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun body(text: String) = content.addView(TextView(this).apply {
         this.text = text
-        setTextColor(Color.parseColor("#CFCFCF")); textSize = 14f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 14f
         setLineSpacing(dp(3).toFloat(), 1f)
         setPadding(0, 0, 0, dp(8))
     })
 
     private fun bullet(text: String) = content.addView(TextView(this).apply {
         this.text = "•  $text"
-        setTextColor(Color.parseColor("#CFCFCF")); textSize = 14f
+        setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 14f
         setLineSpacing(dp(3).toFloat(), 1f)
         setPadding(dp(8), 0, 0, dp(6))
     })
 
     /** Neutral aside — worth knowing, not a hazard. */
-    private fun note(text: String) = calloutView(text, "#9AC4FF", "#14202C")
+    private fun note(text: String) =
+        calloutView(text, R.color.tp_accent, R.color.tp_surface_guide_note)
 
     /** Something that can bite you in the air or on the ground. */
-    private fun warn(text: String) = calloutView(text, "#EF5350", "#2A1616")
+    private fun warn(text: String) =
+        calloutView(text, R.color.tp_btn_danger_dialog, R.color.tp_surface_guide_warn)
 
-    private fun calloutView(text: String, barColor: String, bgColor: String) {
+    /**
+     * Callout row: a coloured tint bar against a low-saturation background of the same hue.
+     *
+     * Takes colour RESOURCES, not hex strings. These four values were literals here until
+     * 2026-08-14 (conformance X1) — a literal in Kotlin is easy to reach for and easy to miss
+     * in review, which is why §6.1 puts this file inside the token rule.
+     */
+    private fun calloutView(text: String, @ColorRes barColor: Int, @ColorRes bgColor: Int) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor(bgColor))
+            setBackgroundColor(ContextCompat.getColor(applicationContext, bgColor))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
                 topMargin = dp(4); bottomMargin = dp(10)
             }
         }
         row.addView(View(this).apply {
-            setBackgroundColor(Color.parseColor(barColor))
+            setBackgroundColor(ContextCompat.getColor(applicationContext, barColor))
             layoutParams = LinearLayout.LayoutParams(dp(3), MATCH)
         })
         row.addView(TextView(this).apply {
             this.text = text
-            setTextColor(Color.parseColor("#D8D8D8")); textSize = 13f
+            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_dim)); textSize = 13f
             setLineSpacing(dp(3).toFloat(), 1f)
             setPadding(dp(12), dp(10), dp(12), dp(10))
         })
@@ -897,7 +908,7 @@ class FieldGuideActivity : AppCompatActivity() {
     }
 
     private fun divider() = content.addView(View(this).apply {
-        setBackgroundColor(Color.parseColor("#333333"))
+        setBackgroundColor(ContextCompat.getColor(applicationContext, R.color.tp_border))
         layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
             topMargin = dp(20); bottomMargin = dp(12)
         }
@@ -920,7 +931,7 @@ class FieldGuideActivity : AppCompatActivity() {
     ) {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#202024"))
+            setBackgroundColor(ContextCompat.getColor(applicationContext, R.color.tp_surface_guide))
             setPadding(dp(14), dp(12), dp(14), dp(12))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
             // Deep-link target — see EXTRA_SCROLL_TO. A tag rather than a generated view id
@@ -939,7 +950,7 @@ class FieldGuideActivity : AppCompatActivity() {
             for ((view, caption) in icons) {
                 val captionView = TextView(this@FieldGuideActivity).apply {
                     text = caption
-                    setTextColor(Color.parseColor("#9A9A9A")); textSize = 11f
+                    setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_muted)); textSize = 11f
                     gravity = Gravity.CENTER
                     setSingleLine(true)
                     setPadding(0, dp(5), 0, 0)
@@ -958,7 +969,7 @@ class FieldGuideActivity : AppCompatActivity() {
                     // Toolbar-dark chip behind each example: these icons are drawn to sit on
                     // the flight toolbar, and judging them against a lighter card would be
                     // misleading about how they actually read in the air.
-                    setBackgroundColor(Color.parseColor("#101014"))
+                    setBackgroundColor(ContextCompat.getColor(applicationContext, R.color.tp_surface_guide_code))
                     setPadding(dp(10), dp(8), dp(10), dp(8))
                     minimumWidth = captionWidth + dp(20)
                     layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
@@ -980,13 +991,13 @@ class FieldGuideActivity : AppCompatActivity() {
         })
         card.addView(TextView(this).apply {
             text = what
-            setTextColor(Color.parseColor("#CFCFCF")); textSize = 13f
+            setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_light)); textSize = 13f
             setLineSpacing(dp(3).toFloat(), 1f)
         })
         for (c in caveats) {
             card.addView(TextView(this).apply {
                 text = "!  $c"
-                setTextColor(Color.parseColor("#E8B04B")); textSize = 12f
+                setTextColor(ContextCompat.getColor(applicationContext, R.color.tp_text_warn)); textSize = 12f
                 setLineSpacing(dp(2).toFloat(), 1f)
                 setPadding(0, dp(8), 0, 0)
             })

@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- TAKPilot2 chrome, matched to the DJI blueprint's values so the two apps' action bars
-         and status bars read identically side by side. These were the stock Android-sample
-         purple/pink; the blueprint sets all three to the same navy. -->
+    <!-- This file belongs to the vendor sample application. Leave it alone — specification
+         §6.1.
+
+         These three chrome colours are the ONE recorded exception, and §6.1 names it. They
+         were the stock Android-sample purple and pink, and they were set to the same navy as
+         the DJI trees before the leave-it-alone rule existed. The value is on the fleet, so a
+         revert would change shipped pixels for no gain. Do not change them, and do not add
+         anything else to this file. -->
     <color name="colorPrimary">#314268</color>
     <color name="colorPrimaryDark">#314268</color>
     <color name="colorAccent">#314268</color>

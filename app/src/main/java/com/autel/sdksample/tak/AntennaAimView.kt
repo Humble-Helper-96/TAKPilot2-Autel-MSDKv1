@@ -10,6 +10,8 @@ import android.view.View
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.core.content.ContextCompat
+import com.autel.sdksample.R
 
 /**
  * BVLOS antenna-aim indicator (operator, 2026-08-13): a semicircular arc at the bottom
@@ -30,6 +32,10 @@ class AntennaAimView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
+
+    // Flight-tuned HUD colours, resolved once per view. Were literals here until
+    // 2026-08-14 (conformance A1); the values are unchanged — see takpilot_colors.xml.
+    private val ALIGNED_GREEN = ContextCompat.getColor(context, R.color.tp_state_go)
 
     /**
      * Aircraft bearing relative to the controller's facing, -180..+180 (0 = dead ahead).
@@ -122,6 +128,5 @@ class AntennaAimView @JvmOverloads constructor(
     }
 
     private companion object {
-        val ALIGNED_GREEN = Color.parseColor("#4CAF50")
     }
 }

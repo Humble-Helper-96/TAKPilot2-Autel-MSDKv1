@@ -296,7 +296,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Home→aircraft line, added before any marker so it renders underneath them. Empty and
         // hidden until both a home point and a live fix exist (see updateHud()).
         homeLine = Polyline(map).apply {
-            outlinePaint.color = Color.parseColor("#F44336")
+            outlinePaint.color = androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger)
             outlinePaint.strokeWidth = 2.5f * resources.displayMetrics.density
             isVisible = false
             infoWindow = null
@@ -489,7 +489,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                     aimTooPoorToDrop() -> refuseDropForAim()
                     gp == null -> {
                         AppLog.w(TAG, "drop refused — no look-point (GPS/gimbal not ready)")
-                        toast("Cannot drop the marker. Wait for GPS and the gimbal.")
+                        showNotice("Cannot place the marker. Wait for GPS and the gimbal.",
+                            refused = true)
                     }
                     else -> TakDropMarkers.placeAt(aff, gp.first, gp.second, gp.third)
                 }
@@ -755,8 +756,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             fpvWarningBanner.visibility = View.GONE
         } else {
             fpvWarningBanner.text = warning.text
-            fpvWarningBanner.background?.setTint(
-                Color.parseColor(if (warning.red) "#E6B71C1C" else "#E6C15D00"))
+            fpvWarningBanner.background?.setTint(androidx.core.content.ContextCompat.getColor(
+                this, if (warning.red) R.color.tp_warn_banner_red else R.color.tp_warn_banner_amber))
             fpvWarningBanner.visibility = View.VISIBLE
         }
 
@@ -765,7 +766,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val acOk = AutelProductHolder.isConnected
 
         // Instrument toolbar
-        val takColor = if (takOk) Color.parseColor("#4CAF50") else Color.parseColor("#F44336")
+        val takColor = if (takOk) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger)
         toolbarTakIcon.alpha = if (takOk) 1.0f else 0.4f
         // setColorFilter on the SRC drawable, not the background. The dot is an ImageView with
         // android:src and no background at all, so the previous background-tinting version was
@@ -873,7 +874,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // lat/lon and home are reference figures they look up only when asked for them.
             // The clock sits above this block in its own view — see fpvClock.
             append(TakManager.getInstance().callsign ?: "—")
-            append(if (hud != null) "   ${Units.mph(hud.speedMs)}" else "   — MPH")
+            append(if (hud != null) "   ${Units.mph(hud.speedMs)}" else "   — mph")
             append('\n')
             // "AGL" only when DTED actually corrected it to height-above-terrain-below;
             // otherwise "ALT", which is what the raw number really is (height above the takeoff
@@ -1476,7 +1477,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         val hint = TextView(this).apply {
             textSize = 13f
-            setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
+            setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
         fun refreshHint() {
             // Both directions spelled out for BOTH rows, at the operator's request after using
@@ -1508,7 +1509,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             val value = TextView(this).apply {
                 textSize = 18f; minWidth = (90 * resources.displayMetrics.density).toInt()
                 gravity = android.view.Gravity.CENTER
-                setTextColor(android.graphics.Color.parseColor("#9AC4FF"))
+                setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_accent))
             }
             fun show() { value.text = "%+.2f°".format(get()) }
             show()
@@ -1612,7 +1613,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
         )
         arButton.setTextColor(
-            if (on) Color.parseColor("#4CAF50") else Color.WHITE
+            if (on) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else Color.WHITE
         )
     }
 
@@ -1856,7 +1857,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         irButton.setBackgroundResource(
             if (irOn) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
         )
-        irButton.setTextColor(if (irOn) Color.parseColor("#4CAF50") else Color.WHITE)
+        irButton.setTextColor(if (irOn) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else Color.WHITE)
         irPaletteButton.visibility = if (irOn) View.VISIBLE else View.GONE
         // Spelled out, not "WHOT"/"BHOT": in the HUD column it has the full column width, and
         // the abbreviations only existed to fit a narrow toolbar pill.
@@ -2246,8 +2247,21 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /** Transient green notice over the video, upper-left (DJI's fpvNotice pattern). */
-    private fun showNotice(text: String) {
+    /**
+     * Transient notice over the video, auto-hidden.
+     *
+     * [refused] tells the pilot the app did NOT do the thing, and makes the text amber instead
+     * of green. The colour is set here and never at a call site, so a refusal cannot reach the
+     * screen wearing the acknowledgement colour — a pilot reads the colour before the words.
+     *
+     * This goes to the notice and never to a Toast, because the flight screen IS the TAK video
+     * feed: a Toast is not in the screen capture, so a refused marker would leave the team
+     * waiting for a mark that is never coming. Specification §4.8.
+     */
+    private fun showNotice(text: String, refused: Boolean = false) {
         fpvNotice.text = text
+        fpvNotice.setTextColor(androidx.core.content.ContextCompat.getColor(this,
+            if (refused) R.color.tp_state_caution else R.color.tp_state_go))
         fpvNotice.visibility = View.VISIBLE
         handler.removeCallbacks(hideNotice)
         handler.postDelayed(hideNotice, NOTICE_MS)
@@ -2303,8 +2317,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         val dtedAvailable = hud.hasFix &&
             DtedIndex.elevationAt(this, hud.lat, hud.lon) != null
-        if (CrosshairView.accuracyColorFor(pitch, dtedAvailable) ==
-            CrosshairView.accuracyPoorColor) {
+        if (CrosshairView.accuracyColorFor(this, pitch, dtedAvailable) ==
+            CrosshairView.accuracyPoorColor(this)) {
             return "look angle too shallow — tilt the gimbal down"
         }
         return null
@@ -2318,7 +2332,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun refuseDropForAim() {
         val why = dropRefusalReason() ?: return
         AppLog.w(TAG, "marker drop refused — $why")
-        toast("Cannot place the marker. $why")
+        showNotice("Cannot place the marker. $why", refused = true)
     }
 
     /**
@@ -2355,8 +2369,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun updateRthAltitude() {
         val known = FlightLimitsController.aircraftReturnHeightM != null
         fpvRthAltitude.text = FlightLimitsController.rthHudLabel()
-        fpvRthAltitude.setTextColor(
-            if (known) Color.parseColor("#B0B0B0") else Color.parseColor("#FFC107"))
+        fpvRthAltitude.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext,
+            if (known) R.color.tp_text_secondary else R.color.tp_state_unknown))
     }
 
     /**
@@ -2403,7 +2417,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             })
         if (pitch == null) {
             fpvGimbalPitch.text = "GIMBAL —"
-            fpvGimbalPitch.setTextColor(Color.parseColor("#B0B0B0"))
+            fpvGimbalPitch.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             return
         }
         // Sign dropped in favour of an explicit DOWN/UP word: "-20" reads as a negative number
@@ -2413,7 +2427,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             pitch >= 1.0 -> "GIMBAL %.0f° UP".format(pitch)
             else -> "GIMBAL LEVEL"
         }
-        fpvGimbalPitch.setTextColor(CrosshairView.accuracyColorFor(pitch, dtedAvailable))
+        fpvGimbalPitch.setTextColor(CrosshairView.accuracyColorFor(this, pitch, dtedAvailable))
     }
 
     /**
@@ -2438,7 +2452,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         if (hud == null || !hud.hasFix) {
             fpvFaaCeiling.visibility = View.VISIBLE
             fpvFaaCeiling.text = "FAA — no fix"
-            fpvFaaCeiling.setTextColor(Color.parseColor("#B0B0B0"))
+            fpvFaaCeiling.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             return
         }
 
@@ -2465,7 +2479,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             ceiling != null -> {
                 fpvFaaCeiling.text = "FAA $ceiling ft AGL$approx"
                 fpvFaaCeiling.setTextColor(
-                    if (aglFt > ceiling) Color.parseColor("#EF5350") else Color.WHITE
+                    if (aglFt > ceiling) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_btn_danger_dialog) else Color.WHITE
                 )
             }
             // Inside what was downloaded but in no cell: the FAA publishes no facility map here,
@@ -2475,7 +2489,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 val part107 = UasfmIndex.PART_107_DEFAULT_CEILING_FT
                 fpvFaaCeiling.text = "Class G · $part107 ft AGL$approx"
                 fpvFaaCeiling.setTextColor(
-                    if (aglFt > part107) Color.parseColor("#EF5350") else Color.parseColor("#B0B0B0")
+                    if (aglFt > part107) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_btn_danger_dialog) else androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)
                 )
             }
             // Outside the downloaded box entirely — we genuinely do not know. Shown identically
@@ -2493,7 +2507,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private fun showFaaUnknown() {
         fpvFaaCeiling.visibility = View.VISIBLE
         fpvFaaCeiling.text = "FAA --- ft AGL"
-        fpvFaaCeiling.setTextColor(Color.parseColor("#B0B0B0"))
+        fpvFaaCeiling.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
     }
 
     // ---- Markers list (drop-pin long-press) ----
@@ -2567,7 +2581,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Clear All in red, matching every other destructive control in the app. AlertDialog has
         // no per-button style, so it is tinted after show() — the button does not exist before.
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-            ?.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.tp_btn_danger_dialog))
+            ?.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_btn_danger_dialog))
     }
 
     /** A marker somebody else shared: local delete only. Moving, renaming or re-sending would
@@ -2625,8 +2639,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val field = android.widget.EditText(this).apply {
             setText(pin.name)
             setSelection(pin.name.length)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#8A93A0"))
+            setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_primary))
+            setHintTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_hint_dialog))
         }
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Rename Marker")
@@ -2653,7 +2667,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
             .setTitle("Delete Marker")
             .setMessage("Remove \"${pin.name}\" from your map? This is local-only — it stays " +
-                "on the TAK server until it goes stale (about 14 hours) and may still show on " +
+                "on the TAK server until it goes stale (3 days) and may still show on " +
                 "other clients until then.")
             .setPositiveButton("Delete") { _, _ ->
                 AppLog.i(TAG, "marker delete: ${pin.key}")
@@ -2682,7 +2696,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                     "· $ownCount that you dropped\n" +
                     "· $sharedCount that your team shared\n\n" +
                     "This changes this aircraft only. Your own markers stay on the screens of " +
-                    "your team until they go stale, about 14 hours. A marker that your team " +
+                    "your team until they go stale, 3 days. A marker that your team " +
                     "shares again will come back.")
             .setPositiveButton("Clear All Markers") { _, _ ->
                 AppLog.i(TAG, "markers: clear all confirmed ($ownCount own, $sharedCount shared)")

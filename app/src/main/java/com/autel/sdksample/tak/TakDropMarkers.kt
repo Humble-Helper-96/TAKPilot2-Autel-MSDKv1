@@ -493,7 +493,7 @@ object TakDropMarkers {
     /**
      * Clears every dropped pin from THIS map. Local-only, deliberately: there is no CoT
      * "delete" that reliably removes a marker from other clients, so each one stays on the
-     * server until it goes stale (14h — see CotBuilder's MARKER_STALE_DURATION_MS). The
+     * server until it goes stale — see CotBuilder's MARKER_STALE_DURATION_MS for the time. The
      * confirmation dialog says so rather than implying a team-wide wipe.
      */
     fun clearAll() {

@@ -125,10 +125,16 @@
          exceed the screen, after which the LAST child is pushed off the bottom and silently
          clipped (the v1.1 failure class — see TAKPilot2-Autel-HANDOFF.md). v1.2 had a 30sp
          title, an 84dp logo and a redundant 56dp "Enter Flight" button BELOW the already-
-         clickable card, which together needed ~362dp — over a 360dp landscape phone. Dropping
-         to the blueprint's 26sp/72dp and replacing the duplicate button with its tap hint
-         both matches DJI and buys back ~60dp. Don't reinstate the button: the card is the
-         tap target, so it was never doing anything the card didn't. -->
+         clickable card, which together needed ~362dp. Dropping to 26sp/72dp and replacing the
+         duplicate button with its tap hint buys back ~60dp. Don't reinstate the button: the
+         card is the tap target, so it was never doing anything the card didn't.
+
+         ⚠ THE BUDGET ABOVE WAS CHECKED AGAINST THE WRONG SCREEN. It was written against a
+         360dp landscape phone, which is the DJI sibling's class of device and not this one.
+         This application runs on the Smart Controller V3 at 1024x720dp, where 362dp is not
+         tight. The sizes are still correct and there is nothing to undo — but check any NEW
+         row against 720dp, and check it on the shortest controller this build reaches, not on
+         a phone. Specification §3.4 and §7. -->
     <LinearLayout
         android:id="@+id/homeEnterFlight"
         android:layout_width="0dp"

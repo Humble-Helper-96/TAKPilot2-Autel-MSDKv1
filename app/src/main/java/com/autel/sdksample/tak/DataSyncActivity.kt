@@ -196,8 +196,8 @@ class DataSyncActivity : AppCompatActivity() {
 
     /** Text colours for dialog content. Hint is deliberately lighter than the theme's #777777,
      *  which measured too dim against the dialog background on the RT3's screen. */
-    private val dialogTextColor = Color.parseColor("#FFFFFF")
-    private val dialogHintColor = Color.parseColor("#8A93A0")
+    private val dialogTextColor = androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_primary)
+    private val dialogHintColor = androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_hint_dialog)
 
     /** EditText with explicit dark-dialog colours. */
     private fun dialogEditText(): EditText = EditText(this).apply {

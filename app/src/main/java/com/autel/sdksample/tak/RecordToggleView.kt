@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
+import androidx.core.content.ContextCompat
+import com.autel.sdksample.R
 
 /**
  * Record-to-SD badge — a "REC" pill with a fixed dot on the left, same fixed-icon-badge
@@ -17,6 +19,11 @@ class RecordToggleView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
+
+    // Flight-tuned HUD colours, resolved once per view. Were literals here until
+    // 2026-08-14 (conformance A1); the values are unchanged — see takpilot_colors.xml.
+    private val COLOR_IDLE = ContextCompat.getColor(context, R.color.tp_hud_toggle_off)
+    private val COLOR_RECORDING = ContextCompat.getColor(context, R.color.tp_hud_toggle_active)
 
     private var isRecording: Boolean = false
 
@@ -70,7 +77,5 @@ class RecordToggleView @JvmOverloads constructor(
     }
 
     companion object {
-        private val COLOR_IDLE = Color.parseColor("#3A3A3A")
-        private val COLOR_RECORDING = Color.parseColor("#E53935")
     }
 }

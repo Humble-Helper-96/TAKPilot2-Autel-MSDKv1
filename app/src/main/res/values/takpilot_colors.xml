@@ -7,9 +7,21 @@
   colour by its ROLE so the same role always uses the same value, and a change is made in one
   place. Reference these as @color/tp_* from layouts and styles.
 
-  VALUES ARE PRESERVED from the pre-token palette — introducing tokens changed no pixels. The few
-  near-duplicate greys/ambers that the review flagged (#2) were folded onto one token per role;
-  those shifts are sub-perceptual (e.g. #AAAAAA→#B0B0B0) and are the intended consolidation.
+  VALUES WERE PRESERVED when the tokens were introduced on 2026-08-03 — that change moved no
+  pixel. The few near-duplicate greys/ambers that the review flagged (#2) were folded onto one
+  token per role; those shifts are sub-perceptual (e.g. #AAAAAA→#B0B0B0).
+
+  THREE VALUES CHANGED DELIBERATELY on 2026-08-13, and those ARE visible: tp_state_caution
+  #FFB300→#FF9800, tp_text_hint #666666→#777777, and the bg_dialog_field stroke #7A7A7A→#9A9A9A.
+  Four token names carried different colours in this tree and in the DJI trees, which is
+  invisible to review because the layouts read identically and render differently. Each Autel
+  value moved onto the DJI value for the same role. See TAKPILOT2-UI-CONFORMANCE.md.
+  Do not read this file's history as "tokens never change a pixel".
+
+  THE FIELD GUIDE WAS MIGRATED on 2026-08-14 (conformance X1). It held fifteen Color.parseColor
+  literals, every one already equal to a token's value, so naming them moved no pixel. Six
+  tokens were added to receive them. calloutView now takes @ColorRes, so a hex string does not
+  compile there any more.
 
   ⚠ NOT covered here yet: the flight-HUD custom views (ArOverlayView, CrosshairView,
   ObstacleEdgeView, BatteryGaugeView, etc.) still hold their own literals. Those colours are
@@ -27,16 +39,45 @@
     <color name="tp_surface_card">#1A1B1E</color>  <!-- raised card on the home screen -->
     <color name="tp_surface_field">#2A2A2A</color> <!-- text-input background -->
     <color name="tp_surface_dialog">#202020</color><!-- dialog background -->
+    <!-- Field Guide surfaces. Added 2026-08-14 with the literal migration (conformance X1);
+         the guide was already drawing these exact values through Color.parseColor, so naming
+         them moved no pixel. Values are the canonical ones in TAKPILOT2-UI-SPEC.md §6.1. -->
+    <color name="tp_surface_guide">#202024</color>      <!-- field-guide section block -->
+    <color name="tp_surface_guide_code">#101014</color> <!-- field-guide inset/example block -->
+    <color name="tp_surface_guide_note">#14202C</color> <!-- field-guide note callout background -->
+    <color name="tp_surface_guide_warn">#2A1616</color> <!-- field-guide warning callout background -->
     <color name="tp_border">#333333</color>        <!-- hairline borders / dim separators -->
     <color name="tp_divider">#33FFFFFF</color>     <!-- translucent-white divider -->
 
-    <!-- Text (a muted-grey scale, brightest first) -->
+    <!-- Text (a muted-grey scale, brightest first).
+
+         ⚠ THESE NAMES ARE SHARED WITH THE DJI TREES AND MUST NOT DIVERGE AGAIN.
+         Until 2026-08-13 this tree and the DJI trees used three of these names for DIFFERENT
+         values — tp_text_light, tp_text_muted and tp_text_hint. The layouts read identically in
+         both trees and rendered differently, which no compiler and no code review can catch.
+         The fix was a RENAME, not a value edit: each use moved to the token that already held
+         its colour. See TAKPILOT2-UI-SPEC.md section 6.1 for the canonical table. -->
     <color name="tp_text_primary">#FFFFFF</color>
-    <color name="tp_text_light">#DDDDDD</color>    <!-- slightly dimmed body (debug labels) -->
+    <color name="tp_text_bright">#DDDDDD</color>   <!-- slightly dimmed body (debug labels) -->
+    <color name="tp_text_light">#CFCFCF</color>
     <color name="tp_text_secondary">#B0B0B0</color>
     <color name="tp_text_tertiary">#909090</color>
-    <color name="tp_text_muted">#7A7A7A</color>    <!-- card titles, captions -->
-    <color name="tp_text_hint">#666666</color>     <!-- input hint / disabled -->
+    <color name="tp_text_muted">#9A9A9A</color>    <!-- dim outline / stroke -->
+    <color name="tp_text_hint">#777777</color>     <!-- input hint -->
+    <!-- Hint text inside a DIALOG, lighter than tp_text_hint on purpose: #777777
+         measured too dim against the dialog background on the controller screen.
+         Consumed by the Autel tree today; defined in all three so the name cannot
+         come to mean two colours. -->
+    <color name="tp_text_hint_dialog">#8A93A0</color>
+    <color name="tp_text_caption">#7A7A7A</color>  <!-- card titles, captions -->
+    <color name="tp_text_disabled">#666666</color> <!-- disabled / placeholder cover -->
+    <!-- Added 2026-08-14 with the Field Guide literal migration (conformance X1). The guide
+         was already drawing both values through Color.parseColor, so naming them moved no
+         pixel. tp_text_warn is also the colour specification §5.3 requires for the Pre-Flight
+         refusal line, which this tree does not have yet — see conformance A3. -->
+    <color name="tp_text_dim">#D8D8D8</color>      <!-- callout body text -->
+    <color name="tp_text_warn">#E8B04B</color>     <!-- amber caution text -->
+    <color name="tp_text_cool">#9AA4B2</color>     <!-- cool-grey secondary (no consumer yet) -->
 
     <!-- Accent — the one "interactive / link" blue -->
     <color name="tp_accent">#9AC4FF</color>
@@ -52,11 +93,50 @@
 
     <!-- Status indicators (bright, used for text/dots that report a state) -->
     <color name="tp_state_go">#4CAF50</color>       <!-- connected / on / accepted -->
-    <color name="tp_state_caution">#FFB300</color>  <!-- caution / unknown-waiting -->
+    <color name="tp_state_caution">#FF9800</color>  <!-- caution (was #FFB300; matched to the DJI trees 2026-08-13) -->
     <color name="tp_state_danger">#F44336</color>   <!-- off / rejected / danger -->
+    <!-- UNKNOWN IS ITS OWN STATE, not a shade of caution. Added 2026-08-14 (conformance
+         A3): this tree expressed "the aircraft has not answered" with the caution colour,
+         so "we do not know" and "be careful" looked identical. Specification §4.6. -->
+    <color name="tp_state_unknown">#FFB74D</color>
     <color name="tp_state_go_soft">#CCFFCC</color>  <!-- pale confirmation text (debug) -->
 
     <!-- Effects -->
     <color name="tp_shadow">#CC000000</color>       <!-- HUD text drop-shadow -->
+    <!-- Wash behind the flight-screen HUD text panels. 40% black: enough to lift the
+         readouts off snow or wet asphalt, light enough to see movement through it.
+         Flight-tuned (operator, 2026-08-04) — do not re-tune without the aircraft. -->
+    <color name="tp_hud_panel_scrim">#66000000</color>
+    <!-- Warning-banner severity tints. The banner sits on live video, so these are
+         near-opaque: white text must stay legible over an arbitrary bright scene.
+         Specification §4.8 names both values. -->
+    <color name="tp_warn_banner_red">#E6B71C1C</color>
+    <color name="tp_warn_banner_amber">#E6C15D00</color>
+
+    <!-- FLIGHT-TUNED HUD COLOURS — specification §6.1. These were chosen against live video
+         with the aircraft flying. Tokenising them must not re-tune them, and changing one
+         needs the aircraft in front of you.
+
+         Roles that share a value today are still separate tokens on purpose: the battery
+         gauge's good band and the accuracy ring's good band are both #4CAF50 and are not the
+         same decision. -->
+    <color name="tp_hud_accuracy_good">#4CAF50</color>
+    <color name="tp_hud_accuracy_fair">#FFEB3B</color>
+    <color name="tp_hud_accuracy_poor">#F44336</color>
+    <color name="tp_hud_battery_good">#4CAF50</color>
+    <color name="tp_hud_battery_warn">#FFB74D</color>
+    <color name="tp_hud_battery_critical">#F44336</color>
+    <color name="tp_hud_signal_good">#4CAF50</color>
+    <color name="tp_hud_signal_fair">#FFEB3B</color>
+    <color name="tp_hud_signal_poor">#F44336</color>
+    <color name="tp_hud_obstacle_warn">#FFCC00</color>
+    <color name="tp_hud_obstacle_danger">#FF3B30</color>
+    <color name="tp_hud_toggle_off">#3A3A3A</color>
+    <color name="tp_hud_toggle_active">#E53935</color>
+    <color name="tp_hud_toggle_reconnect">#FFB74D</color>
+    <!-- NOT free to re-tune: it matches the magenta the ADS-B gateway tags its own tracks
+         with, so the marker and the gateway's tracks read as the same thing. This token said
+         #E91E63 until 2026-08-14 and no code used it; every tree drew #FF00FF. -->
+    <color name="tp_ar_aircraft">#FF00FF</color>
 
 </resources>

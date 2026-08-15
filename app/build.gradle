@@ -290,6 +290,54 @@ android {
         //        sensor/url attributes went on the wire and no client offered a play control
         //        (proved on the DJI sibling's 2026-08-12 flight). One stream, one uid: both
         //        markers reference the same feed entry.
+        //
+        //        Also in 1.6.0: the marker retention time that the app TELLS the pilot is
+        //        corrected. The Delete Marker dialog, the Clear All Markers dialog and the
+        //        Field Guide each said a deleted marker leaves the team's screens in "about
+        //        14 hours". The true figure has been 3 days since 2026-08-02, when the
+        //        operator raised CotBuilder.MARKER_STALE_DURATION_MS to 72 hours. Only the
+        //        text was wrong; the markers always expired at the correct time. Found in the
+        //        2026-08-14 documentation audit — see TAKPILOT2-UI-CONFORMANCE.md.
+        //
+        //        Also in 1.6.0: A REFUSED MARKER NOW SHOWS ON THE VIDEO FEED. The refusal was
+        //        a Toast, and a Toast is not in the screen capture, so the pilot saw "cannot
+        //        place the marker" and the team saw nothing and kept waiting for a mark that
+        //        was never coming. It is now the transient notice, in amber — the notice takes
+        //        a refused state so an acknowledgement stays green. Both DJI siblings took the
+        //        same change on the same day (spec §4.8).
+        //
+        //        Also in 1.6.0, and invisible: the Field Guide's fifteen hardcoded colours are
+        //        now colour tokens. Every literal already held its token's exact value, so no
+        //        pixel changed. Six tokens were added to receive them (conformance X1, A3).
+        //
+        //        Also in 1.6.0, and VISIBLE: the caution amber is one colour again. Six places
+        //        on the home and Pre-Flight screens still hardcoded the retired #FFB300 after
+        //        the token moved to #FF9800 on 2026-08-13, so the same "caution" state drew in
+        //        two slightly different ambers on one screen. They now use tp_state_caution
+        //        (conformance A11). TakPilotHomeActivity holds no colour literal at all now.
+        //
+        //        The rest of that migration followed the same day: all four pilot-facing
+        //        activities are now free of hardcoded colours. Two visible corrections came
+        //        with it. The RTH readout shows an UNKNOWN return height in the proper unknown
+        //        amber (#FFC107 -> tp_state_unknown #FFB74D) instead of a colour that existed
+        //        only at that one site, and one stray dialog hint moved onto the standard
+        //        secondary grey. Everything else was a rename onto a token that already held
+        //        the same value. New tokens: tp_text_hint_dialog (all three trees) and
+        //        tp_state_unknown (this tree — the last one conformance A3 was missing).
+        //
+        //        And with it, UNKNOWN IS NOW ITS OWN COLOUR (conformance A3). Seven places that
+        //        mean "the aircraft has not answered yet" — avoidance, battery levels, storage,
+        //        stick mode, control response, the Pre-Flight read-back and the avoidance
+        //        status — used the caution amber, so "we do not know" and "be careful" looked
+        //        the same. They now use tp_state_unknown. The rule that decides which amber
+        //        applies is in spec 6.1: a refusal is caution, because a refusal is an answer.
+        //
+        //        Also in 1.6.0: PRE-FLIGHT NO LONGER LOSES WHAT YOU TYPED. Five of the six
+        //        TAKPilot activities did not declare android:configChanges, so Android
+        //        destroyed and rebuilt them on a keyboard or screen-size change — on the
+        //        settings form that discards a half-entered value. Only FlightActivity had it;
+        //        both DJI siblings had it everywhere (spec 2, conformance V10). Home also
+        //        declares launchMode=singleTask now, matching the siblings.
         versionCode 29
         versionName "1.6.0"
         multiDexEnabled true

@@ -39,7 +39,7 @@
                 <CheckBox android:id="@+id/debugLoggingToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Logging enabled" android:textColor="@color/tp_text_light" android:textSize="15sp" />
+                    android:text="Logging enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -49,7 +49,7 @@
                 <CheckBox android:id="@+id/debugVerboseToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_light" android:textSize="15sp" />
+                    android:text="Detailed (all app functions)" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -59,14 +59,14 @@
                 <CheckBox android:id="@+id/debugTakToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_light" android:textSize="15sp" />
+                    android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
                 android:text="Clear this box to hide the TAK messages and show only the app."
-                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -75,14 +75,14 @@
                 <CheckBox android:id="@+id/debugRadarToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Include obstacle radar logs" android:textColor="@color/tp_text_light" android:textSize="15sp" />
+                    android:text="Include obstacle radar logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
                 android:text="The radar fills the log. Select this box only to examine obstacle avoidance. Avoidance changes and warnings stay in the log."
-                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -91,14 +91,14 @@
                 <CheckBox android:id="@+id/debugResourceMonitorToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_light" android:textSize="15sp" />
+                    android:text="Show system resources on flight screen" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
                 android:text="Adds a small panel on the flight screen with memory and contact-count numbers. Use it to watch the system before a crash."
-                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
             <!-- Autel Explorer watchdog — a single on/off toggle. Kills Explorer's background
                  process when it tries to take the aircraft link. No permanent change to the
@@ -116,7 +116,7 @@
                 <CheckBox android:id="@+id/debugExplorerToggle" android:layout_width="wrap_content"
                     android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Close Explorer if it takes the aircraft link" android:textColor="@color/tp_text_light"
+                    android:text="Close Explorer if it takes the aircraft link" android:textColor="@color/tp_text_bright"
                     android:textSize="15sp" />
             </LinearLayout>
 
@@ -124,13 +124,13 @@
                 android:id="@+id/debugExplorerStatus"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="2dp"
-                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
             <TextView
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:paddingStart="8dp" android:paddingTop="4dp"
                 android:text="Autel Explorer can start on its own and stop the video with no warning. This option prevents that. It does not change Explorer."
-                android:textColor="@color/tp_text_muted" android:textSize="12sp" />
+                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
             <!-- RF power probe (2026-08-07, for Autel support): exercises the ONLY transmit
                  power control the SDK exposes (setRFPower FCC/CE) with read-backs, and logs
