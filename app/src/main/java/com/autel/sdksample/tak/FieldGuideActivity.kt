@@ -331,12 +331,18 @@ class FieldGuideActivity : AppCompatActivity() {
             "This button puts a marker on the ground at the center of the camera image. " +
                 "Point the camera at the target, then touch the button. The app opens the " +
                 "\"Drop Marker at Crosshair\" window. Select the type (Friendly, Hostile, " +
-                "Neutral or Unknown) and type a name. The app then sends the marker to your " +
+                "Neutral or Unknown). The app gives the marker a name and sends it to your " +
                 "team.\n\n" +
-                "Touch and hold the button to open the \"Dropped Markers\" list. Each marker " +
-                "shows its distance and direction from the aircraft. Touch a marker to move " +
-                "it to the camera position, change its name, change its type, send it again, " +
-                "or delete it. Clear All deletes all the markers.",
+                "Touch and hold the button to open the \"Markers\" list. It shows your markers " +
+                "and the markers of your team. Each marker shows its distance and direction " +
+                "from the aircraft.\n\n" +
+                "Touch a marker in the list to select it. A check shows in the box. Select as " +
+                "many markers as you want, then use one of these buttons:\n" +
+                "- Resend: sends the markers to your team again.\n" +
+                "- Delete: removes the markers from this aircraft.\n\n" +
+                "Touch and hold a marker in the list to change one marker. You can move it to " +
+                "the camera position, change its name, change its type, send it again, or " +
+                "delete it. Clear All removes all the markers.",
             listOf(
                 "If the aircraft does not have a GPS position and a gimbal position, the app " +
                     "does not put the marker.",
@@ -348,6 +354,9 @@ class FieldGuideActivity : AppCompatActivity() {
                     "marker would go to the position of the aircraft. Climb higher.",
                 "If you move, rename or change the type of a marker, the app changes the " +
                     "same marker on the screens of your team. It does not make a second one.",
+                "Delete removes a marker from THIS aircraft only. Your markers stay on the " +
+                    "screens of your team for 3 days. A marker that your team sends again " +
+                    "comes back.",
                 "If you delete a marker, the app removes it from your screen only. It stays " +
                     "on the screens of your team for 3 days. Clear All is the same.",
                 "MARKERS THAT YOUR TEAM SENDS TO YOU STAY ON YOUR MAP. The app keeps them for " +
@@ -368,6 +377,8 @@ class FieldGuideActivity : AppCompatActivity() {
             "This function draws the markers on the live image near their positions. You " +
                 "can then see which general area a marker is in. The button becomes green " +
                 "when the function is on.\n\n" +
+                "The function is ON when you open the flight screen. Touch the button to " +
+                "turn it off.\n\n" +
                 "USE THIS FOR GENERAL AWARENESS OF AN AREA. Do not use it for an exact " +
                 "point. See the first note below.\n\n" +
                 "A marker outside the camera image shows as a small arrow at the edge of the " +

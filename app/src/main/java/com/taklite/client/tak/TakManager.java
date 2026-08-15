@@ -434,12 +434,35 @@ public class TakManager implements TakClient.TakClientListener {
     public String sendMarkerWithUid(String markerUid, double lat, double lon, double alt,
                                     String affiliation, String name, String remarks,
                                     String missionName) {
+        return sendMarkerWithCotType(markerUid, lat, lon, alt,
+                CotBuilder.cotTypeForAffiliation(affiliation), name, remarks, missionName,
+                affiliation);
+    }
+
+    /**
+     * Send a marker CoT under a caller-supplied uid AND a caller-supplied CoT type.
+     *
+     * Same uid contract as {@link #sendMarkerWithUid} — the uid is the marker's identity, so
+     * re-sending one updates the marker rather than spawning a second.
+     *
+     * USE THIS TO RE-BROADCAST A MARKER THIS APP DID NOT CREATE. A marker received from the
+     * team carries its own CoT type, and that type must go back out unchanged: deriving one
+     * from an affiliation can only ever produce {@code a-{f,h,n,u}-G}, which would rewrite an
+     * ATAK marker point ({@code b-m-p-*}) as a friendly ground marker on every screen in the
+     * team.
+     *
+     * @param affiliationForLog only for the log line; it does not reach the XML.
+     * @return the uid that was sent, or null if not connected.
+     */
+    public String sendMarkerWithCotType(String markerUid, double lat, double lon, double alt,
+                                        String cotType, String name, String remarks,
+                                        String missionName, String affiliationForLog) {
         if (client == null || !connected) return null;
-        String xml = CotBuilder.buildMarker(uid, callsign, markerUid, affiliation, lat, lon, alt,
-                name, remarks, missionName);
+        String xml = CotBuilder.buildMarkerWithType(uid, callsign, markerUid, cotType,
+                lat, lon, alt, name, remarks, missionName, affiliationForLog);
         sendCot(xml);
         AppLog.d(TAG, "Marker sent" + (missionName != null ? " to mission " + missionName : "")
-                + ": " + affiliation + " @ " + lat + "," + lon + " id=" + markerUid);
+                + ": " + cotType + " @ " + lat + "," + lon + " id=" + markerUid);
         return markerUid;
     }
 

@@ -17,8 +17,11 @@
         android:layout_height="match_parent" />
 
     <!-- AR marker overlay. BELOW the crosshair deliberately: the crosshair is the aiming
-         reference for marker drops and must never be occluded by a projected marker. Hidden
-         until the pilot turns it on. -->
+         reference for marker drops and must never be occluded by a projected marker.
+
+         Starts gone and is made visible by ArOverlayView.start(), which FlightActivity now
+         calls as the screen opens (operator, 2026-08-15). The overlay is therefore ON by
+         default; this attribute is only the state before the first frame, not the default. -->
     <com.autel.sdksample.tak.ArOverlayView
         android:id="@+id/flightArOverlay"
         android:layout_width="match_parent"

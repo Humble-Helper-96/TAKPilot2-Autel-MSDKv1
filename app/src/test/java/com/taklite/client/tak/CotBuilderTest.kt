@@ -152,4 +152,56 @@ class CotBuilderTest {
         true, 300,
         7100, 4686, 15.9,
         "PILOT-1")
+
+    // ---- Marker type fidelity (v1.6.0) ----
+
+    /**
+     * The four affiliations this application places must still map exactly as they did. This is
+     * the regression guard for the refactor that put a type-preserving builder underneath
+     * buildMarker: the affiliation path is now a delegation, and a wrong table here would
+     * change the icon every teammate sees.
+     */
+    @Test
+    fun affiliationsStillMapToTheirBareGroundTypes() {
+        val cases = mapOf(
+            "Friendly" to "a-f-G", "Hostile" to "a-h-G",
+            "Neutral" to "a-n-G", "Unknown" to "a-u-G")
+        for ((aff, type) in cases) {
+            val xml = CotBuilder.buildMarker(
+                "PILOT-1", "EVO2-B2", "marker-1", aff, 61.1, -149.9, 30.0, "M-01", "", null)
+            assertTrue("$aff should send $type", "type=\"$type\"" in xml)
+        }
+        // An unrecognised affiliation falls back to friendly rather than emitting nothing.
+        val odd = CotBuilder.buildMarker(
+            "PILOT-1", "EVO2-B2", "marker-1", "Banana", 61.1, -149.9, 30.0, "M-01", "", null)
+        assertTrue("type=\"a-f-G\"" in odd)
+    }
+
+    /**
+     * A marker RE-BROADCAST from the team keeps its own CoT type.
+     *
+     * b-m-p-w-GOTO is the case that made this necessary: it is an ATAK marker point, it is
+     * accepted into the shared store, and it has no affiliation to derive a type from. Sent
+     * through the affiliation path it would have gone out as a friendly ground marker on every
+     * screen in the team.
+     */
+    @Test
+    fun aResentMarkerKeepsItsOwnCotType() {
+        for (type in listOf("b-m-p-w-GOTO", "a-h-G", "b-m-p-s-m")) {
+            val xml = CotBuilder.buildMarkerWithType(
+                "PILOT-1", "EVO2-B2", "shared-uid-9", type,
+                61.1, -149.9, 30.0, "Team marker", "", null, type)
+            assertTrue("$type must survive", "type=\"$type\"" in xml)
+            assertTrue("uid must be reused", "uid=\"shared-uid-9\"" in xml)
+            assertFalse("must not fall back to friendly", "type=\"a-f-G\"" in xml)
+        }
+    }
+
+    /** The uid is the marker's identity: a re-send must not mint a new one. */
+    @Test
+    fun cotTypeForAffiliationIsTheSameTableTheBuilderUses() {
+        assertTrue(CotBuilder.cotTypeForAffiliation("hostile") == "a-h-G")
+        assertTrue(CotBuilder.cotTypeForAffiliation("HOSTILE") == "a-h-G")
+        assertTrue(CotBuilder.cotTypeForAffiliation(null) == "a-f-G")
+    }
 }

@@ -397,6 +397,46 @@ public class CotBuilder {
     public static String buildMarker(String senderUid, String senderCallsign, String markerUid,
                                       String affiliation, double lat, double lon, double alt,
                                       String name, String remarks, String missionName) {
+        return buildMarkerWithType(senderUid, senderCallsign, markerUid,
+                cotTypeForAffiliation(affiliation), lat, lon, alt, name, remarks, missionName,
+                affiliation);
+    }
+
+    /**
+     * The CoT type this application emits for one of its four affiliations.
+     *
+     * Every marker THIS app places is a bare affiliation-plus-domain type. The trailing
+     * qualifiers other clients use (…-G-E-V and the like) say equipment or platform, which a
+     * dropped point is not.
+     */
+    public static String cotTypeForAffiliation(String affiliation) {
+        switch (affiliation == null ? "" : affiliation.toLowerCase()) {
+            case "hostile":  return "a-h-G";
+            case "unknown":  return "a-u-G";
+            case "neutral":  return "a-n-G";
+            case "friendly":
+            default:         return "a-f-G";
+        }
+    }
+
+    /**
+     * Build a marker CoT under an EXPLICIT CoT type, rather than deriving one from an
+     * affiliation.
+     *
+     * WHY THIS EXISTS: a marker this app RE-BROADCASTS was not necessarily made by this app.
+     * A marker received from the team can be a bare {@code a-{f,h,n,u}-G} — which the
+     * affiliation switch reproduces exactly — or a {@code b-m-p-*} marker point, which it does
+     * NOT: every affiliation maps to an {@code a-*} type, so re-sending an ATAK waypoint
+     * through the affiliation path would quietly turn it into a friendly ground marker on every
+     * screen in the team. The type has to be carried, not re-derived.
+     *
+     * {@code affiliationForLog} is only for the log line; it has no effect on the XML.
+     */
+    public static String buildMarkerWithType(String senderUid, String senderCallsign,
+                                      String markerUid, String cotType,
+                                      double lat, double lon, double alt,
+                                      String name, String remarks, String missionName,
+                                      String affiliationForLog) {
         long now = System.currentTimeMillis();
         String time = formatTime(now);
         // The lifetime is MARKER_STALE_DURATION_MS. Its declaration above holds the figure and
@@ -405,15 +445,7 @@ public class CotBuilder {
         // DRONE_STALE_DURATION_MS (a live track) and to SENSOR_POINT_STALE_MS — a static marker
         // and a moving aircraft want completely different lifetimes.
         String stale = formatTime(now + MARKER_STALE_DURATION_MS);
-
-        String cotType;
-        switch (affiliation.toLowerCase()) {
-            case "hostile":  cotType = "a-h-G"; break;
-            case "unknown":  cotType = "a-u-G"; break;
-            case "neutral":  cotType = "a-n-G"; break;
-            case "friendly":
-            default:         cotType = "a-f-G"; break;
-        }
+        String affiliation = affiliationForLog;
 
         String callsign = (name != null && !name.isEmpty()) ? name : affiliation;
         String remarksText = (remarks != null && !remarks.isEmpty()) ? remarks

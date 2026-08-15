@@ -357,6 +357,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         arButton.setOnClickListener { onArToggleTapped() }
         // Same long-press idiom as RTH (reset home) and drop-pin (markers list).
         arButton.setOnLongClickListener { onArOptionsTapped(); true }
+        // ON WHEN THE SCREEN OPENS (operator, 2026-08-15). Started here rather than in onResume
+        // deliberately: onDestroy stops the overlay, thus each entry to the flight screen brings
+        // it up on, while a mere pause — a dialog, the Field Guide — leaves it as the pilot set
+        // it. Turning it off and returning to the screen does bring it back; that is the
+        // operator's choice of "always on" over "remember my last setting".
+        arOverlay.start()
         refreshArButton()
         shootPhotoButton = findViewById(R.id.flightShootPhotoButton)
         shootPhotoButton.setOnClickListener {
@@ -1400,9 +1406,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     // ---- AR overlay ----
 
-    /** AR on/off. Off by default every time the flight screen opens — it draws over the video,
-     *  so it should be something the pilot switches on deliberately rather than something they
-     *  inherit from a previous session and have to notice. */
+    /** AR on/off.
+     *
+     *  ON by default every time the flight screen opens (operator, 2026-08-15). It was OFF by
+     *  default until then, on the reasoning that an overlay drawn over the video should be
+     *  switched on deliberately rather than inherited. The operator overruled that after flying
+     *  it: the overlay is wanted on nearly every sortie, and starting each one by reaching for
+     *  this button was the greater nuisance.
+     *
+     *  The accuracy limit stays where it was, in the AR options dialog and the Field Guide
+     *  (operator's call, same day). A pilot can now see the overlay without having opened the
+     *  dialog that states it — that is known and accepted for a trained fleet. */
     private fun onArToggleTapped() {
         if (arOverlay.isRunning) arOverlay.stop() else arOverlay.start()
         AppLog.v(TAG, "tap: AR overlay -> ${if (arOverlay.isRunning) "ON" else "OFF"}")
@@ -2601,9 +2615,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * not care who placed it, and a list that showed only their own made the shared ones look
      * absent when they were on the map the whole time.
      *
-     * The two are not interchangeable, though: only an own marker can be moved, renamed, retyped
-     * or re-sent, because those edit the marker on every other client. A shared one offers a local
-     * delete only. [ownPin] being null is what marks a row as shared.
+     * The two are not interchangeable, though: only an own marker can be moved, renamed or
+     * retyped, because those edit the marker on every other client. A shared one can be removed
+     * from this map and RE-SENT — re-broadcasting a received marker is ordinary TAK behaviour
+     * and goes out under that marker's own uid and type. [ownPin] being null marks a row shared.
      */
     private data class MarkerRow(
         val label: String,
@@ -2639,19 +2654,115 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         return own + shared
     }
 
+    /**
+     * The markers list, with a check box on every row and bulk Delete / Resend
+     * (operator, 2026-08-15).
+     *
+     * SHORT TAP TICKS THE BOX, LONG PRESS EDITS. The five-action edit menu is unchanged; it
+     * simply moved from the tap to the long press, so the short tap could become the selection
+     * gesture that a check-box list needs.
+     *
+     * This replaced an AlertDialog.setAdapter list. That call offers no long-press hook and no
+     * room for a check box, thus the list had to become a custom view — see dialog_markers.xml.
+     *
+     * The rows are rebuilt in place after an action rather than the dialog being closed and
+     * reopened, so a pilot clearing several markers keeps their place.
+     */
     private fun onMarkersListTapped() {
-        val rows = buildMarkerRows()
+        // Themed inflater, per specification §6.3. A view built with the ACTIVITY's context
+        // inherits the activity theme, not the dialog's, and the row label lands white on white.
+        val themed = android.view.ContextThemeWrapper(this, R.style.TakDialogTheme)
+        val view = android.view.LayoutInflater.from(themed)
+            .inflate(R.layout.dialog_markers, null)
+        val container = view.findViewById<android.widget.LinearLayout>(R.id.markersContainer)
+        val empty = view.findViewById<TextView>(R.id.markersEmpty)
+        val resendButton = view.findViewById<android.widget.Button>(R.id.markersResendButton)
+        val deleteButton = view.findViewById<android.widget.Button>(R.id.markersDeleteButton)
+
+        // Selection lives only as long as the dialog. It holds the ROW KEY — a pin key for an
+        // own marker, a CoT uid for a shared one — because a list position stops being valid
+        // the moment a row is deleted underneath it.
+        val selected = mutableSetOf<String>()
+
+        fun rowKey(row: MarkerRow): String? = row.ownPin?.key ?: row.sharedUid
+
+        fun refreshButtons() {
+            val any = selected.isNotEmpty()
+            for (b in listOf(resendButton, deleteButton)) {
+                b.isEnabled = any
+                b.alpha = if (any) 1f else 0.45f
+            }
+        }
+
+        fun populate() {
+            container.removeAllViews()
+            val rows = buildMarkerRows()
+            // A key that no longer exists — its marker was deleted — must not stay selected, or
+            // the next Delete would act on nothing and the count would lie.
+            selected.retainAll(rows.mapNotNull { rowKey(it) }.toSet())
+            empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+            for (row in rows) {
+                val key = rowKey(row) ?: continue
+                val item = android.view.LayoutInflater.from(themed)
+                    .inflate(R.layout.row_marker_select, container, false)
+                val check = item.findViewById<android.widget.CheckBox>(R.id.markerRowCheck)
+                item.findViewById<android.widget.ImageView>(R.id.markerRowIcon)
+                    .setImageResource(row.iconRes)
+                item.findViewById<TextView>(R.id.markerRowLabel).text = row.label
+                check.isChecked = selected.contains(key)
+                item.setOnClickListener {
+                    if (!selected.add(key)) selected.remove(key)
+                    check.isChecked = selected.contains(key)
+                    refreshButtons()
+                }
+                item.setOnLongClickListener {
+                    if (row.ownPin != null) onMarkerRowTapped(row.ownPin)
+                    else onSharedMarkerRowTapped(row)
+                    true
+                }
+                container.addView(item)
+            }
+            refreshButtons()
+        }
+        populate()
 
         val dialog = AlertDialog.Builder(this, R.style.TakDialogTheme)
-            .setTitle(if (rows.isEmpty()) "Markers (none)" else "Markers")
-            .setAdapter(iconRowAdapter(rows.map { it.iconRes to it.label })) { _, i ->
-                val row = rows[i]
-                if (row.ownPin != null) onMarkerRowTapped(row.ownPin)
-                else onSharedMarkerRowTapped(row)
-            }
+            .setTitle("Markers")
+            .setView(view)
             .setNegativeButton("Close", null)
             .setNeutralButton("Clear All") { _, _ -> onClearAllMarkersTapped() }
-            .show()
+            .create()
+
+        // NO CONFIRMATION ON BULK DELETE (operator, 2026-08-15). It is local-only: there is no
+        // delete CoT in this application, thus the markers stay on the server until they go
+        // stale and a shared one the team sends again comes straight back. Nothing here reaches
+        // another operator's screen.
+        deleteButton.setOnClickListener {
+            val rows = buildMarkerRows().filter { rowKey(it) in selected }
+            AppLog.i(TAG, "markers: bulk delete of ${rows.size}")
+            for (row in rows) {
+                val pin = row.ownPin
+                // deleteShared, NOT clearAllShared's path: the per-uid delete also marks the uid
+                // hidden, without which the next inbound copy would put the marker straight back.
+                if (pin != null) TakDropMarkers.delete(pin.key)
+                else row.sharedUid?.let { TakMapMarkers.deleteShared(it) }
+            }
+            selected.clear()
+            populate()
+        }
+
+        // SILENT (operator, 2026-08-15) — no notice, no toast.
+        resendButton.setOnClickListener {
+            val rows = buildMarkerRows().filter { rowKey(it) in selected }
+            AppLog.i(TAG, "markers: bulk re-send of ${rows.size}")
+            for (row in rows) {
+                val pin = row.ownPin
+                if (pin != null) TakDropMarkers.resend(pin.key)
+                else row.sharedUid?.let { TakMapMarkers.resendShared(it) }
+            }
+        }
+
+        dialog.show()
 
         // Clear All in red, matching every other destructive control in the app. AlertDialog has
         // no per-button style, so it is tinted after show() — the button does not exist before.
@@ -2659,19 +2770,35 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             ?.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_btn_danger_dialog))
     }
 
-    /** A marker somebody else shared: local delete only. Moving, renaming or re-sending would
-     *  edit THEIR marker on every client, which is not this pilot's to do. */
+    /**
+     * A marker somebody else shared: remove it from this map, or send it again.
+     *
+     * RE-SENDING A RECEIVED MARKER IS NORMAL (operator, 2026-08-15) — every TAK client can do
+     * it, and it is how a marker that went stale on one screen is brought back for the team.
+     * This comment used to say re-sending "is not this pilot's to do", which was simply wrong.
+     * It goes out under the marker's OWN uid and OWN CoT type, thus it updates that marker
+     * rather than making a second one — see [TakMapMarkers.resendShared].
+     *
+     * Rename, retype and move are still absent: [TakMapMarkers] has no mutators for them, and
+     * editing another operator's marker is a larger question than re-broadcasting one.
+     */
     private fun onSharedMarkerRowTapped(row: MarkerRow) {
         val uid = row.sharedUid ?: return
         AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle(row.label.substringAfter("Team: ").substringBefore("  ·"))
-            .setMessage("Your team shared this marker. You can remove it from this aircraft. " +
-                "It stays on the screens of your team.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Remove from my map") { _, _ ->
-                TakMapMarkers.deleteShared(uid)
-                onMarkersListTapped()
+            .setItems(arrayOf("Re-send", "Remove from my map")) { _, index ->
+                when (index) {
+                    0 -> {
+                        AppLog.i(TAG, "shared marker re-send: $uid")
+                        TakMapMarkers.resendShared(uid)
+                    }
+                    1 -> {
+                        TakMapMarkers.deleteShared(uid)
+                        onMarkersListTapped()
+                    }
+                }
             }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
