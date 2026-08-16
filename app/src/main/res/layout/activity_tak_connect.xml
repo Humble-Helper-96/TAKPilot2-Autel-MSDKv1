@@ -72,55 +72,82 @@
             android:textSize="12sp"
             android:paddingTop="4dp" />
 
-        <!-- Battery levels and the signal-loss failsafe share a row: all three describe things
-             the AIRCRAFT does on its own, so they read as one group.
-
-             The battery pair are LABELLED AS THE PARAMETERS THEY ARE — Warning and Critical —
-             not as the behaviour they produce (operator, 2026-08-04). "Return home at" / "Land
-             at" was a conclusion about what the aircraft does with them, and conclusions drift:
-             the Warning action is deferrable with the RTH button, so calling it "return home at"
-             was already an overstatement. See FlightLimitsController.savedLowBatteryPct.
-
-             Signal-loss: RETURN TO HOME IS THE ONLY OPTION (operator, 2026-08-02). Hover and
-             Land were removed deliberately — this app cannot verify any of them took.
+        <!-- "If the signal is lost" WAS a control here until 2026-08-13, and it must not
+             come back. RETURN TO HOME IS THE ONLY OPTION (operator, 2026-08-02). Hover and Land
+             were removed deliberately: this app cannot verify that any of them took.
              doEmergencyAction() emits MAV_CMD_SET_MSN_EMERGENCY, that write is NOT acknowledged
              on this firmware (10s timeout on a clean channel), and the SDK exposes no getter to
-             read it back. Offering three choices implied a control we do not have. Flight
-             testing confirmed the aircraft returns home on link loss of its own accord. -->
+             read it back. Offering a picker implied a control we do not have. Flight testing
+             confirmed the aircraft returns home on link loss of its own accord, and the pilot
+             now reads the real state — unknown, check Explorer — on the Enter Flight card. -->
+
+        <!-- Control feel and stick mode, side by side. Both live on the REMOTE CONTROLLER rather
+             than the aircraft and both are read live, so they belong together and neither is
+             saved or pushed at connect.
+
+             Control response: "Normal" is LEARNED from the controller rather than hard-coded —
+             there is no documented default and the pilot may have tuned it in Autel's own app,
+             so a hard-coded number would quietly overwrite their setting.
+
+             Stick mode is READ-ONLY. The SDK names these USA/CHINA/JAPAN and the mapping to
+             "Mode 1/2/3" is convention, not something confirmed on this aircraft. A wrong mode
+             number in front of a pilot swaps throttle and pitch, so the app reports what the
+             controller says and changes nothing. -->
         <LinearLayout style="@style/takFormRow"
             android:paddingTop="12dp">
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Battery Warning (%)" />
-                <EditText
-                    android:id="@+id/limitLowBattery"
-                    style="@style/takFieldStyle"
-                    android:hint="e.g. 15"
-                    android:inputType="number" />
+                <TextView style="@style/takLabelStyle" android:text="Control response" />
+                <RadioGroup
+                    android:id="@+id/ratesGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <RadioButton
+                        android:id="@+id/ratesNormal"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Normal" />
+                    <RadioButton
+                        android:id="@+id/ratesPrecision"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Precision" />
+                </RadioGroup>
             </LinearLayout>
 
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Battery Critical (%)" />
-                <EditText
-                    android:id="@+id/limitCriticalBattery"
-                    style="@style/takFieldStyle"
-                    android:hint="e.g. 10"
-                    android:inputType="number" />
+                <TextView style="@style/takLabelStyle" android:text="Stick mode" />
+                <RadioGroup
+                    android:id="@+id/stickModeGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <RadioButton
+                        android:id="@+id/stickMode1"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Mode 1" />
+                    <RadioButton
+                        android:id="@+id/stickMode2"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Mode 2" />
+                    <RadioButton
+                        android:id="@+id/stickMode3"
+                        style="@style/takColumnRadio"
+                        android:enabled="false"
+                        android:text="Mode 3" />
+                </RadioGroup>
+                <TextView
+                    android:id="@+id/stickModeStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/tp_text_tertiary"
+                    android:textSize="12sp"
+                    android:paddingTop="4dp"
+                    android:text="" />
             </LinearLayout>
-
-            <!-- "If the signal is lost" was a control here until 2026-08-13. It is gone
-                 because it was never a choice: the firmware refuses the write, the SDK has no
-                 getter, and offering a picker implied the app could set something it cannot.
-                 The pilot now reads the real state — unknown, check Explorer — on the Enter
-                 Flight card, which is the screen they pass through before takeoff. -->
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/limitBatteryStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:paddingTop="4dp" />
 
         <!-- Obstacle avoidance. DIFFERENT FROM EVERYTHING ELSE ON THIS SCREEN, deliberately.
              Every other control here stores a value and PUSHES it to the aircraft on connect.
@@ -212,73 +239,64 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Control feel and stick mode, side by side. Both live on the REMOTE CONTROLLER rather
-             than the aircraft and both are read live, so they belong together and neither is
-             saved or pushed at connect.
+        <!-- The two battery percentages and their lock, together, directly above Apply.
+             They sit here and not with the numeric limits because they are the last thing a
+             pilot sets before they send the section, and the lock belongs beside what it locks
+             — a lock at the far bottom of the section was a reach away from the fields it
+             governs (operator, 2026-08-16).
 
-             Control response: "Normal" is LEARNED from the controller rather than hard-coded —
-             there is no documented default and the pilot may have tuned it in Autel's own app,
-             so a hard-coded number would quietly overwrite their setting.
+             Three columns. The lock column takes layout_gravity="bottom" so the check box sits
+             level with the two fields: the field columns are taller by one label, and without
+             it the box floats at the top of the row.
 
-             Stick mode is READ-ONLY. The SDK names these USA/CHINA/JAPAN and the mapping to
-             "Mode 1/2/3" is convention, not something confirmed on this aircraft. A wrong mode
-             number in front of a pilot swaps throttle and pitch, so the app reports what the
-             controller says and changes nothing. -->
+             The label is "Lock battery levels" and nothing more. "(fields read-only)" said
+             what a locked check box next to two fields already says.
+
+             The pair are LABELLED AS THE PARAMETERS THEY ARE — Warning and Critical — not as
+             the behaviour they produce (operator, 2026-08-04). "Return home at" / "Land at" was
+             a conclusion about what the aircraft does with them, and conclusions drift: the
+             Warning action is deferrable with the RTH button, so calling it "return home at"
+             was already an overstatement. See FlightLimitsController.savedLowBatteryPct. -->
         <LinearLayout style="@style/takFormRow"
             android:paddingTop="12dp">
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Control response" />
-                <RadioGroup
-                    android:id="@+id/ratesGroup"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <RadioButton
-                        android:id="@+id/ratesNormal"
-                        style="@style/takColumnRadio"
-                        android:enabled="false"
-                        android:text="Normal" />
-                    <RadioButton
-                        android:id="@+id/ratesPrecision"
-                        style="@style/takColumnRadio"
-                        android:enabled="false"
-                        android:text="Precision" />
-                </RadioGroup>
+                <TextView style="@style/takLabelStyle" android:text="Battery Warning (%)" />
+                <EditText
+                    android:id="@+id/limitLowBattery"
+                    style="@style/takFieldStyle"
+                    android:hint="e.g. 15"
+                    android:inputType="number" />
             </LinearLayout>
 
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Stick mode" />
-                <RadioGroup
-                    android:id="@+id/stickModeGroup"
+                <TextView style="@style/takLabelStyle" android:text="Battery Critical (%)" />
+                <EditText
+                    android:id="@+id/limitCriticalBattery"
+                    style="@style/takFieldStyle"
+                    android:hint="e.g. 10"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn"
+                android:layout_gravity="bottom">
+                <CheckBox
+                    android:id="@+id/limitBatteryLock"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <RadioButton
-                        android:id="@+id/stickMode1"
-                        style="@style/takColumnRadio"
-                        android:enabled="false"
-                        android:text="Mode 1" />
-                    <RadioButton
-                        android:id="@+id/stickMode2"
-                        style="@style/takColumnRadio"
-                        android:enabled="false"
-                        android:text="Mode 2" />
-                    <RadioButton
-                        android:id="@+id/stickMode3"
-                        style="@style/takColumnRadio"
-                        android:enabled="false"
-                        android:text="Mode 3" />
-                </RadioGroup>
-                <TextView
-                    android:id="@+id/stickModeStatus"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/tp_text_tertiary"
-                    android:textSize="12sp"
-                    android:paddingTop="4dp"
-                    android:text="" />
+                    android:buttonTint="@color/tp_accent"
+                    android:text="Lock battery levels"
+                    android:textColor="@color/tp_text_primary"
+                    android:textSize="14sp" />
             </LinearLayout>
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/limitBatteryStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp"
+            android:paddingTop="4dp" />
 
         <!-- LAST in the section, after every value it sends. Resends everything above and then
              READS BACK what the aircraft actually holds: editing a field only saves it locally,
@@ -315,21 +333,6 @@
             android:paddingTop="4dp"
             android:text="Not sent yet." />
 
-        <!-- LAST in the section, the same position every section's lock holds (v1.5.9): the
-             locks live at the bottom of their section so a pilot always knows where to look.
-             Covers the two battery percentages ONLY — the label says so. The numeric limits
-             and Apply to Aircraft stay live, so a locked configuration can still be pushed to
-             a freshly connected aircraft. -->
-        <CheckBox
-            android:id="@+id/limitBatteryLock"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock battery levels (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
-
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -346,6 +349,41 @@
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
 
+        <!-- QUALITY FIRST, above the server configuration. It is the control a pilot reaches
+             for in the air — dropping to Low on a marginal link — and the one setting in this
+             section that is NOT behind the lock, for that reason. Everything below it is set
+             once and then left alone. Putting the thing you touch often above the thing you
+             touch once is the point (operator, 2026-08-16). -->
+        <TextView style="@style/takLabelStyle" android:text="Video quality (on-device transcode)" />
+        <RadioGroup
+            android:id="@+id/videoProfileGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/videoProfileLow"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Low" />
+
+            <RadioButton
+                android:id="@+id/videoProfileStandard"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Standard" />
+
+            <RadioButton
+                android:id="@+id/videoProfileHigh"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="High" />
+
+        </RadioGroup>
+
         <!-- TWO MEDIA SERVERS, ONE ACTIVE. A fleet flies on an internal mediaMTX on one callout
              and an external one on the next, and re-typing a host on a tailgate is how a stream
              gets lost. Each server keeps its own complete settings, including the encoding: an
@@ -358,27 +396,45 @@
              The names come from the pilot and label the buttons, so the choice reads as
              "MMTX01 or MMTX03" and not "Server 1 or Server 2". -->
         <TextView style="@style/takLabelStyle" android:text="Active server" />
-        <RadioGroup
-            android:id="@+id/videoServerGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+        <!-- Three columns: the two servers and the lock that guards the choice. The lock rides
+             with the toggle instead of sitting at the foot of the section, because it is the
+             toggle a pilot is most likely to hit by accident. Two thirds go to the servers so
+             a long name still fits. -->
+        <LinearLayout style="@style/takFormRow">
+            <RadioGroup
+                android:id="@+id/videoServerGroup"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:orientation="horizontal">
 
-            <RadioButton
-                android:id="@+id/videoServer1"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Server 1" />
+                <RadioButton
+                    android:id="@+id/videoServer1"
+                    style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info"
+                    android:textSize="12sp"
+                    android:text="Server 1" />
 
-            <RadioButton
-                android:id="@+id/videoServer2"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Server 2" />
+                <RadioButton
+                    android:id="@+id/videoServer2"
+                    style="@style/takColumnRadio"
+                    android:buttonTint="@color/tp_btn_info"
+                    android:textSize="12sp"
+                    android:text="Server 2" />
 
-        </RadioGroup>
+            </RadioGroup>
+
+            <LinearLayout style="@style/takColumn">
+                <CheckBox
+                    android:id="@+id/videoLockConfig"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/tp_accent"
+                    android:text="Lock configuration"
+                    android:textColor="@color/tp_text_primary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout style="@style/takFormRow">
             <LinearLayout style="@style/takColumn">
@@ -437,36 +493,6 @@
                     android:inputType="textPassword" />
             </LinearLayout>
         </LinearLayout>
-
-        <TextView style="@style/takLabelStyle" android:text="Video quality (on-device transcode)" />
-        <RadioGroup
-            android:id="@+id/videoProfileGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/videoProfileLow"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Low" />
-
-            <RadioButton
-                android:id="@+id/videoProfileStandard"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Standard" />
-
-            <RadioButton
-                android:id="@+id/videoProfileHigh"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="High" />
-
-        </RadioGroup>
 
         <TextView style="@style/takLabelStyle" android:text="Video codec" />
         <RadioGroup
@@ -537,20 +563,6 @@
             android:fontFamily="monospace"
             android:text="rtsp://…" />
 
-        <!-- LAST in the section, the same position every section's lock holds (v1.5.9) — and
-             below EVERYTHING it locks, which the old placement was not once codec and TCP
-             transport joined the locked set (1.5.7/1.5.8). Quality stays editable: that is a
-             link decision a pilot legitimately makes in the field, not server configuration. -->
-        <CheckBox
-            android:id="@+id/videoLockConfig"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock configuration (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
-
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -569,12 +581,36 @@
 
 
 
-        <TextView style="@style/takLabelStyle" android:text="Server host" />
-        <EditText
-            android:id="@+id/takHost"
-            style="@style/takFieldStyle"
-            android:hint="tak.example.com"
-            android:inputType="textUri" />
+        <!-- The host and the lock share a row. The lock is at the TOP of the section, beside
+             the first field it guards, rather than at the foot: it was a long scroll away from
+             everything it governs. It still disables Log Out further down — see takLockedFields
+             — which is the destructive control it exists to stand in front of.
+
+             The lock column takes layout_gravity="bottom" so the box sits level with the field,
+             which is one label lower than the top of the row. -->
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn"
+                android:layout_weight="2">
+                <TextView style="@style/takLabelStyle" android:text="Server host" />
+                <EditText
+                    android:id="@+id/takHost"
+                    style="@style/takFieldStyle"
+                    android:hint="tak.example.com"
+                    android:inputType="textUri" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn"
+                android:layout_gravity="bottom">
+                <CheckBox
+                    android:id="@+id/takLockConfig"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/tp_accent"
+                    android:text="Lock configuration"
+                    android:textColor="@color/tp_text_primary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -671,22 +707,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Log Out (switch user)" />
-
-        <!-- LAST in the section, the same position every section's lock holds (v1.5.9), and
-             directly below Log Out — which it disables. Log Out CLEARS the saved enrollment:
-             destructive, and exactly the kind of thing a lock should stand in front of.
-             Enroll & Connect stays live: reconnecting is safe, and needing to reconnect is
-             when a pilot must not be fighting a lock. My Channels below is its own block and
-             is not covered. -->
-        <CheckBox
-            android:id="@+id/takLockConfig"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:buttonTint="@color/tp_accent"
-            android:text="Lock configuration (fields read-only)"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/takStatus"
