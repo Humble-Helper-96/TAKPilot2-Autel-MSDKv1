@@ -112,8 +112,9 @@ Both of those changes shipped in v1.6.0. **v1.6.0 is now RELEASED** — tag `v1.
 versionCode 30, on the fleet from 2026-08-15. The earlier instruction here not to bump the
 version applied only while v1.6.0 was open; it is spent. New work takes a new version.
 
-v1.6.1 is open: versionCode 31, versionName 1.6.1. It carries the Field Guide rewrite AND the
-removal of channel selection.
+v1.6.1 is RELEASED. v1.6.2 is open: versionCode 33, versionName 1.6.2, on branch
+`channels-feature`. v1.6.1 carried the Field Guide rewrite AND the removal of channel
+selection.
 
 **CHANNEL SELECTION IS GONE, and this is the important part of v1.6.1.** TAK Setup let a pilot
 pick channels, and `TakManager` then put `<marti><dest group="…"/></marti>` on every CoT that
@@ -126,9 +127,37 @@ alerts were being dropped; that was inferred from the code path without checking
 caller, and it was wrong. The feature also never applied to the drone PLI or the
 camera point, which call `sendMessage` directly — so a pilot who picked channels to LIMIT who
 saw the aircraft still broadcast its position to everyone. It failed in both directions, and it
-had done so since the v1.2 baseline. Routing is the certificate's group membership now. Do not
-re-add `<dest group>` without testing a marker AND an alert end to end on a real server; the
-mechanism a TAK Server actually accepts is an open question and is the work this defers.
+had done so since the v1.2 baseline. **That open question is now answered — see v1.6.2 below.**
+`<dest group>` is not the mechanism a TAK Server accepts, and it must never come back.
+
+**v1.6.2 BRINGS CHANNELS BACK, by the method a real TAK client uses.** The pilot picks channels
+on TAK Setup, or from the flight screen with a touch-and-hold on the TAK badge. The application
+holds NO channel state: it reads `GET /Marti/api/groups/all?useCache=true&sendLatestSA=true` and
+writes `PUT /Marti/api/groups/activebits`. The server then applies the scope to EVERYTHING that
+certificate sends — the markers, the pilot position, the aircraft position and the camera point.
+The old feature never touched the aircraft position, thus this is the first version where a
+pilot who limits the channels really limits who sees the aircraft. That was the operator's
+requirement of 2026-08-16.
+
+Rules that came from the tests, and that must not be lost:
+
+1. **No `<dest group>` on any message, ever.** That attribute is the v1.6.0 fault. One
+   receive-only channel in the list made the server refuse the WHOLE message, silently.
+2. **`activebits` is ABSOLUTE.** Send the complete active set every time, never a change. An
+   empty list switches every channel off.
+3. **Never write to a server that returned no channels.** Cory Foy (TAK Aware) reported that a
+   channel change sent to a server without channels can do real damage server side.
+   `pushActiveChannels` refuses an empty list for this reason. Do not remove that guard.
+4. **The server pushes `t-x-g-c` when the channels change.** Both screens listen and re-read.
+   The event is a NOTICE and carries no list. Do not replace this with a timer.
+5. **Locked is not disabled.** The lock stops a CHANGE, never the reading. The rows keep full
+   contrast and stop taking touches. A pilot must always be able to see the scope of the
+   aircraft (operator, 2026-08-16).
+6. ⚠ **The active channels belong to the CERTIFICATE.** Two controllers enrolled as one user
+   share one set. An aircraft that needs its own scope needs its own certificate.
+
+The evidence is in `CHANNELS-FINDINGS.md`; `CHANNELS-FOR-OTHER-DEVS.md` is what went to Rick
+(TAKPilot) and Cory (TAK Aware).
 
 ⚠ **BOTH DJI TREES STILL HAVE IT** — `withChannelDest` and `setChannels` are in each. Any pilot
 on those airframes who selected a channel is silently losing markers. Check whether those trees

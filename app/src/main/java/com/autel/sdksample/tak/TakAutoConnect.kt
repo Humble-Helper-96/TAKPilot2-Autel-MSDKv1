@@ -129,8 +129,10 @@ object TakAutoConnect {
                 uid, callsign, "Cyan", "Team Member",
                 host, cotPort, ts, "atakatak", cc, "atakatak",
             )
-            // No channel routing is re-applied: channel selection was removed 2026-08-15
-            // because it silently destroyed markers and alerts. See TakManager.
+            // NOTHING IS RE-APPLIED, and no channel list is read. A controller that ran
+            // v1.6.0 or older can still hold one, and feeding it to the old setChannels path
+            // would put <dest group> back on every message and destroy the markers again. The
+            // channels live on the server — see CHANNELS-FINDINGS.md.
             TakBridgeHolder.start("$uid-DRONE", callsign)
             TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
             TakForegroundService.start(context.applicationContext, callsign)

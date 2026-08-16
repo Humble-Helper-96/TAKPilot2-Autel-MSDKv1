@@ -397,8 +397,17 @@ android {
         //        versionName moves even though nothing is on the wire: v1.6.0 shipped to the
         //        fleet today (tag v1.6.0, versionCode 30), so the fleet must be able to tell
         //        the two builds apart in the Connected Users panel.
-        versionCode 31
-        versionName "1.6.1"
+        //
+        // v1.6.2 — CHANNELS COME BACK, by the method a real TAK client uses. The pilot picks
+        //        channels on Pre-Flight or from the flight screen, and the app PUTs the active
+        //        set to the server (/Marti/api/groups/activebits). It puts no <dest group> on
+        //        any message — that attribute is what made the server drop every marker in
+        //        v1.6.0, and it is what v1.6.1 removed. The server enforces the scope on
+        //        EVERYTHING this certificate sends, thus the aircraft position obeys it too,
+        //        which the old feature never did. Proved on hardware 2026-08-16 in both
+        //        directions; the evidence is in CHANNELS-FINDINGS.md.
+        versionCode 33
+        versionName "1.6.2"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

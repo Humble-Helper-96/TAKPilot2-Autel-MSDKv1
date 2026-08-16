@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.taklite.client.tak.CotBuilder
 import com.taklite.client.tak.TakCertEnroller
+import com.taklite.client.tak.TakMissionClient
 import com.taklite.client.tak.TakManager
 import com.autel.sdksample.R
 import com.taklite.util.AppLog
@@ -35,6 +36,10 @@ class TakConnectActivity : AppCompatActivity() {
         // A debounced write must not outlive the screen that scheduled it — leaving the pilot's
         // half-typed value to land on the aircraft after they navigated away.
         cancelPendingSettingPushes()
+        // The listener holds this Activity. TakManager outlives the screen, thus leaving it
+        // attached leaks the whole Activity and repaints views that are gone.
+        runCatching { TakManager.getInstance().removeGroupChangeListener(groupChangeListener) }
+        runCatching { TakManager.getInstance().removeListener(connectionListener) }
         super.onDestroy()
     }
 
@@ -90,6 +95,19 @@ class TakConnectActivity : AppCompatActivity() {
         }
         TakBridgeHolder.setCameraPointEnabled(cameraPoint.isChecked)
 
+        // My Channels. The channels come from the server and go back to the server, and no
+        // <dest group> goes on any message — that attribute is what made the server drop every
+        // marker in v1.6.0. The evidence is in CHANNELS-FINDINGS.md.
+        refreshChannels()
+        // The server pushes t-x-g-c when the channels change, from this controller or from an
+        // administrator in TAK Portal. Listening beats a timer: the screen follows in about a
+        // second, and it asks the server nothing while nothing changes.
+        TakManager.getInstance().addGroupChangeListener(groupChangeListener)
+        // AND read them again when TAK connects. The refresh above needs a connection, so a
+        // screen opened before TAK is up would otherwise show an empty list for ever — the
+        // "Pull Channels" button used to be the only way out of that, and it is gone
+        // (operator, 2026-08-16).
+        TakManager.getInstance().addListener(connectionListener)
 
         // Reflect live state on open, and silently reconnect with saved certs if the
         // socket is not up — so the user never has to re-enter credentials / re-enroll.
@@ -165,6 +183,11 @@ class TakConnectActivity : AppCompatActivity() {
             // Reset the UI fields so it's clearly a fresh login.
             username.setText("")
             password.setText("")
+            // Nothing local to clear: the channels live on the server now. Logging out does
+            // not change them, which is correct — they belong to the certificate.
+            latestChannels = emptyList()
+            runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
+            runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
                 androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
@@ -391,8 +414,9 @@ class TakConnectActivity : AppCompatActivity() {
             .remove(KEY_CLIENTCERT)
             .remove(KEY_UID)
             .remove(KEY_USERNAME)
-            // Channel selection was removed 2026-08-15, but controllers that had one still hold
-            // the stored list. Clearing it here keeps a logout from leaving dead state behind.
+            // Controllers that ran v1.6.0 or older still hold a stored channel list. Nothing
+            // reads it — the channels live on the server — so clearing it stops dead state
+            // outliving a logout.
             .remove(KEY_CHANNELS)
             .putBoolean(KEY_LOGGED_OUT, true)   // block auto-reconnect until a fresh enroll
             .apply()
@@ -412,14 +436,151 @@ class TakConnectActivity : AppCompatActivity() {
         status.setTextColor(color)
     }
 
-    // ---- My Channels: REMOVED 2026-08-15 ----
-    //
-    // The screen let a pilot pick channels, and every marker and alert they then sent was
-    // DROPPED BY THE SERVER. See the note on TakManager, which holds the evidence. Routing is
-    // the certificate's group membership now.
-    //
-    // TakMissionManager.listMyChannels is left in place: it is a plain wrapper on the server's
-    // channel API and is what a correct implementation will need.
+    // ---- My Channels ----
+
+
+    /**
+     * The channels, as the SERVER holds them.
+     *
+     * This is not a local preference any more. The check box shows the server's `active` state,
+     * and a change PUTs the new set to the server — the method a real TAK client uses. Nothing
+     * is stored on the controller, thus nothing here can disagree with the server.
+     *
+     * EVERY CHANNEL CAN BE SWITCHED ON AND OFF, including a receive-only one. The check box is
+     * the `active` flag, and `active` governs RECEIVE as well as send. A first version disabled
+     * the box on a receive-only channel, which confused "cannot publish to it" with "cannot use
+     * it" — and left a channel that could be switched off from TAK Portal with no way to switch
+     * it back on from the controller (operator, 2026-08-16). ADS-B is exactly the channel a
+     * pilot wants to turn off and on: it is noisy, and switching it off stops the traffic.
+     *
+     * The direction is shown as text instead. It tells the pilot what the channel will and will
+     * not carry, and it takes nothing away from them.
+     */
+    private fun renderChannels(channels: List<TakMissionClient.Channel>) {
+        val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
+        list.removeAllViews()
+        latestChannels = channels
+        if (channels.isEmpty()) {
+            // A server with channels turned off returns none. Say so, and offer no control:
+            // writing to such a server is reported to cause real trouble on it.
+            findViewById<TextView>(R.id.takChannelsStatus).text =
+                "This server has no channels."
+            return
+        }
+        for (ch in channels) {
+            val row = android.widget.CheckBox(this).apply {
+                // Two-way is the normal case and gets no label — a note on every row is
+                // noise, and the exception is what a pilot needs to see (operator,
+                // 2026-08-16).
+                text = when {
+                    ch.canSend && ch.canReceive -> ch.name
+                    ch.canReceive -> "${ch.name} - Rx Only"
+                    ch.canSend -> "${ch.name} - Tx Only"
+                    else -> "${ch.name} - no direction"
+                }
+                // Secondary text is the only hint that the row is locked. The tick stays
+                // full contrast, because the tick is the information.
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    applicationContext,
+                    if (takConfigLocked()) R.color.tp_text_secondary else R.color.tp_text_primary))
+                // Enabled for every channel. See the note above: the box is `active`, and a
+                // receive-only channel is still one a pilot may want on or off.
+                // ⚠ THE LOCK STOPS A CHANGE, NOT THE READING. The rows still follow the
+                // server while locked — a pilot must always be able to SEE the scope of this
+                // aircraft. The lock exists to stop an accidental change, not to hide the truth
+                // (operator, 2026-08-16).
+                //
+                // ⚠ LOCKED IS NOT DISABLED. isEnabled=false greys the tick as well as the row,
+                // and a pilot then cannot tell a checked box from an unchecked one — which
+                // defeats the paragraph above. The row stays at full contrast and stops taking
+                // touches instead. The check box keeps its own tint for the same reason.
+                isChecked = ch.active
+                isClickable = !takConfigLocked()
+                isFocusable = !takConfigLocked()
+                buttonTintList = android.content.res.ColorStateList.valueOf(
+                    androidx.core.content.ContextCompat.getColor(
+                        applicationContext, R.color.tp_accent))
+                setOnCheckedChangeListener { _, checked ->
+                    if (updatingChannels) return@setOnCheckedChangeListener
+                    ch.active = checked
+                    pushActiveChannels()
+                }
+            }
+            list.addView(row)
+        }
+    }
+
+    /**
+     * Sends the COMPLETE set of active channels to the server.
+     *
+     * ⚠ activebits is ABSOLUTE. Anything not in this list is switched off, thus the whole set
+     * goes every time and never a change. ⚠ It applies to the CERTIFICATE — every controller
+     * enrolled as this user gets this set.
+     */
+    private fun pushActiveChannels() {
+        // ⚠ NEVER WRITE TO A SERVER THAT HAS NO CHANNELS. Cory Foy (TAK Aware) reported
+        // 2026-08-16 that a channel change sent to a server which does not have channels
+        // enabled can do real damage server side — days of debugging on one deployment. No row
+        // exists when the list is empty, thus no toggle can fire this, but the guard is here
+        // so that stays true if a caller is ever added.
+        if (latestChannels.isEmpty()) {
+            AppLog.w(TAG, "channel write refused — this server returned no channels")
+            return
+        }
+        val bits = latestChannels.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
+        val status = findViewById<TextView>(R.id.takChannelsStatus)
+        status.text = "Sending ${bits.size} active channel(s) to the server…"
+        TakMissionManager.setActiveChannels(bits) { ok ->
+            status.text = if (ok) "Server accepted ${bits.size} active channel(s)."
+                          else "The server refused the change. See the log."
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext,
+                if (ok) R.color.tp_state_go else R.color.tp_state_danger))
+            // Read it back. The server is the truth, not what was just tapped.
+            refreshChannels()
+        }
+    }
+
+    /** Re-reads the channels from the server and repaints. The server can be changed from TAK
+     *  Portal by an administrator, thus the screen must follow it and not a local copy. */
+    private fun refreshChannels() {
+        TakMissionManager.listChannels { chans ->
+            updatingChannels = true
+            renderChannels(chans)
+            updatingChannels = false
+        }
+    }
+
+    /** The server told us the channels changed. Read them again — the event carries a notice,
+     *  not a list. */
+    private val groupChangeListener = TakManager.GroupChangeListener {
+        AppLog.i(TAG, "channels changed on the server — re-reading")
+        refreshChannels()
+        findViewById<TextView>(R.id.takChannelsStatus)?.text =
+            "The server changed the channels. The list is up to date."
+    }
+
+    /** Reads the channels again when TAK connects. Nothing else here needs contact events. */
+    private val connectionListener = object : TakManager.TakUserListener {
+        override fun onTakUserUpdated(user: com.taklite.client.tak.TakUser) {}
+        override fun onTakUserRemoved(uid: String) {}
+        override fun onTakUserDeleted(uid: String) {}
+        override fun onTakConnectionChanged(connected: Boolean) {
+            if (connected) {
+                AppLog.i(TAG, "TAK connected — reading the channels")
+                refreshChannels()
+            }
+        }
+    }
+
+    /** The TAK configuration lock. The channel rows read it each time they are painted, thus a
+     *  lock or unlock takes effect without leaving the screen. */
+    private fun takConfigLocked(): Boolean =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TAK_LOCKED, false)
+
+    private var latestChannels: List<TakMissionClient.Channel> = emptyList()
+    /** True while the check boxes are being set from server data, so the listener does not
+     *  treat a repaint as a pilot's tap and PUT it straight back. */
+    private var updatingChannels = false
 
     // ---- 1. Aircraft Settings ----
 
@@ -751,6 +912,9 @@ class TakConnectActivity : AppCompatActivity() {
             "Unlock TAK server settings?",
             "The lock prevents an accidental change to a server that works. " +
                 "A wrong value stops the aircraft sending data to your team.",
+            // The channel rows are built in code, thus applyLock cannot reach them by id. They
+            // are painted again instead, and each row reads the lock as it is built.
+            afterChange = { renderChannels(latestChannels) },
         )
         setupOneLock(
             R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
@@ -772,6 +936,8 @@ class TakConnectActivity : AppCompatActivity() {
         fieldIds: List<Int>,
         confirmTitle: String,
         confirmBody: String,
+        /** Run after the lock state settles, for controls that applyLock cannot reach by id. */
+        afterChange: (Boolean) -> Unit = {},
     ) {
         val box = findViewById<android.widget.CheckBox>(checkBoxId)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -780,11 +946,13 @@ class TakConnectActivity : AppCompatActivity() {
         val locked = prefs.getBoolean(prefKey, false)
         box.isChecked = locked
         applyLock(fieldIds, locked)
+        afterChange(locked)
 
         box.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 prefs.edit().putBoolean(prefKey, true).apply()
                 applyLock(fieldIds, true)
+                afterChange(true)
                 AppLog.v(TAG, "config locked: $prefKey")
                 return@setOnCheckedChangeListener
             }
@@ -832,6 +1000,7 @@ class TakConnectActivity : AppCompatActivity() {
                     if (pw.text.toString() == UNLOCK_PASSWORD) {
                         prefs.edit().putBoolean(prefKey, false).apply()
                         applyLock(fieldIds, false)
+                        afterChange(false)
                         // The entered text is never logged, right or wrong — same rule as
                         // every other credential in this app (security review 2026-08-03).
                         AppLog.i(TAG, "config UNLOCKED: $prefKey")
@@ -1212,10 +1381,11 @@ class TakConnectActivity : AppCompatActivity() {
         private const val APPLY_TICK_MS = 200L
         private const val REQUEST_CODE_DTED_PICK = 4301
         private const val REQUEST_CODE_LOCATION = 4302
-        private const val PREFS = "takpilot2_tak"
+        /** Shared with FlightActivity, which reads the TAK lock to gate the channel dialog. */
+        internal const val PREFS = "takpilot2_tak"
 
         /** Per-section configuration locks — see setupConfigLocks(). */
-        private const val KEY_TAK_LOCKED = "tak_config_locked"
+        internal const val KEY_TAK_LOCKED = "tak_config_locked"
         private const val KEY_VIDEO_LOCKED = "video_config_locked"
         private const val KEY_BATTERY_LOCKED = "battery_levels_locked"
 
@@ -1232,7 +1402,7 @@ class TakConnectActivity : AppCompatActivity() {
          *
          * The entered attempt is never logged, right or wrong.
          */
-        private const val UNLOCK_PASSWORD = "takpilot"
+        internal const val UNLOCK_PASSWORD = "takpilot"
 
         private const val KEY_HOST = "host"
         private const val KEY_ENROLL_PORT = "enroll_port"
