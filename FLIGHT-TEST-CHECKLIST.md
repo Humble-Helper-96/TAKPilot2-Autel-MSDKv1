@@ -27,6 +27,15 @@ the avoidance function.
 2. A second TAK client. Use ATAK on a telephone or WinTAK. It must use the same server. You then
    see what the team sees.
 
+**For the channel tests (section 7B) you also need:**
+
+3. A TAK server that HAS channels, and a login to TAK Portal for it.
+4. A user with a minimum of two channels. Make one of them receive-only. `ADSB` is usually
+   receive-only and is a good example.
+
+> ⚠ **Do not do the channel tests against a server that does not have channels.** A channel
+> change sent to such a server can damage it (Cory Foy, TAK Aware, 16 August 2026).
+
 > **Safety.** Fly in an open area. Keep the aircraft in sight. Obey the limits that you set in
 > Pre-Flight. The RTH test and the link-loss test put the aircraft into an automatic mode. Keep your
 > hands at the sticks. You can then take control again. This checklist does not replace your
@@ -180,9 +189,11 @@ First go to a stable hover at 10 ft to 20 ft. Confirm the basic functions. Then 
       **Pass:** TAK connects again without help. The aircraft link stays up. You do not start the
       application again.
 
-- [ ] **R5 · RC button codes.** Press each button on the Smart Controller V3 that you can map.
-      **Do:** Look at the Debug log for `onKeyDown` codes. Write down which button gives which code.
-      This test collects data. It does not have a pass condition.
+- [ ] **R5 · RC buttons.** The buttons are mapped now, thus this test has a pass condition.
+      Press C1. Then press and hold C1.
+      **Pass:** A press changes the lens between IR and RGB. A press and hold moves to the next IR
+      colour palette. The flight screen shows the name of the palette.
+      **If you map a new button:** look at the Debug log for `onKeyDown` codes.
 
 - [ ] **R6 · Recovery after a memory failure.** You cannot cause this condition. If the system stops
       the application for memory during a flight, look at the result.
@@ -238,6 +249,149 @@ You can do these checks on the ground. The aircraft does not have to fly. You ne
       **Pass:** The log gives `evicted 1 marker(s) unseen for 72h`, that marker goes away, and the
       others stay.
 
+## 7B. Channels
+
+**New in v1.6.2.** These checks are on the ground. Read section 2 first for what you need.
+
+The server holds the channels. The controller shows them and changes them, but it does not hold
+them. ⚠ The channels belong to the CERTIFICATE: if two controllers enroll as one user, a change
+on one controller changes both.
+
+- [ ] **C1 · The list is correct.** Open Pre-Flight. Look at My Channels. Compare it with TAK
+      Portal.
+      **Pass:** Each channel of your user is in the list, and the ticks agree with TAK Portal.
+      A receive-only channel shows `- Rx Only`. A send-only channel shows `- Tx Only`. A two-way
+      channel shows its name only.
+      **If each channel shows `- Rx Only`:** the request lost its parameters. See
+      `TakMissionClient.listChannels`.
+
+- [ ] **C2 · A change on the controller goes to the server.** Switch one channel on. Look at TAK
+      Portal.
+      **Pass:** TAK Portal shows the change in approximately 2 seconds. The status line says the
+      server accepted it.
+
+- [ ] **C3 · A change on the server comes to the controller.** Keep Pre-Flight open. Change a
+      channel in TAK Portal.
+      **Pass:** The controller list agrees in approximately 2 seconds. You do not touch the
+      controller. This is the `t-x-g-c` event. The log gives
+      `channels changed on the server — re-reading`.
+
+- [ ] **C4 · The channels control the markers.** ⚠ **This is the most important check in this
+      section.** Select one two-way channel only. Drop a marker.
+      **Pass:** The marker arrives on the second client.
+      Now select a receive-only channel as well. Drop a second marker.
+      **Pass:** The marker arrives. Before v1.6.1 it reached no one, and nothing said so.
+
+- [ ] **C5 · The channels control the aircraft position.** Switch every channel off.
+      **Pass:** The aircraft and the pilot go away on the second client in approximately 2
+      seconds. **This is new in v1.6.2.** The old channel control never applied to the position.
+      Switch one channel on again. **Pass:** They come back.
+
+- [ ] **C6 · The lock stops a change and not the reading.** Set Lock configuration in the TAK
+      section. Look at My Channels.
+      **Pass:** You can READ which channels are on. The ticks are not grey and not faint. A touch
+      on a channel does nothing.
+
+- [ ] **C7 · Channels in flight.** On the flight screen, touch and hold the TAK connection icon.
+      **Pass:** The channel screen opens over the video. The video does not stop.
+      With the configuration locked, touch **Unlock…**, give the password, and change a channel.
+      **Pass:** You change the channel WITHOUT leaving the flight screen.
+      Leave the flight screen and come back. Touch and hold the icon again.
+      **Pass:** It is locked again. The unlock is for one visit only.
+
+- [ ] **C8 · A server with no channels.** Only if you have such a server.
+      **Pass:** The screen says "This server has no channels." There is no control to touch, and
+      the log has no channel write.
+
+## 7C. Two video servers
+
+**New in v1.6.2.**
+
+- [ ] **V1 · The old configuration is not lost.** Install v1.6.2 over an older build. Open
+      Pre-Flight.
+      **Pass:** Your video settings are in "Server 1". Nothing is empty.
+
+- [ ] **V2 · The names label the buttons.** Give each server a name.
+      **Pass:** The names are on the two Active server buttons as you type them.
+
+- [ ] **V3 · The video goes to the selected server.** Configure both servers. Select the first.
+      Start the stream. Then stop it, select the second, and start it again.
+      **Pass:** Each stream arrives at the correct media server.
+
+- [ ] **V4 · Each server keeps its own settings.** Give the two servers a different quality and a
+      different codec. Change between them.
+      **Pass:** Every field changes with the server, and the encoding as well.
+
+- [ ] **V5 · The team gets the correct address.** With the stream in operation, look at the
+      aircraft marker on the second client.
+      **Pass:** The video plays from the marker, and the address is the ACTIVE server. Swap the
+      server, start the stream again, and look again. **Pass:** The address changed.
+
+- [ ] **V6 · The lock stops a swap and not the reading.** Set Lock configuration in the video
+      section.
+      **Pass:** You can SEE which server is selected. The buttons do not answer a touch.
+
+## 7D. Zoom, markers and the screen
+
+- [ ] **Z1 · The zoom ladder.** Push the zoom rocker and release it.
+      **Pass:** The zoom moves ONE step: 1, 2, 3, 4, 6, 8, 10, 12, 16x. It does not go past the
+      step when you release the rocker.
+      Hold the rocker. **Pass:** It moves through the steps and stops on a step when you release.
+
+- [ ] **Z2 · Augmented reality starts on.** Start the application and open the flight screen.
+      **Pass:** The AR overlay is on. You do not have to switch it on.
+
+- [ ] **Z3 · The markers menu.** Open the markers list. Select more than one marker.
+      **Pass:** You can delete them together and send them together. Touch and hold one marker.
+      **Pass:** The edit screen opens.
+
+- [ ] **Z4 · A refused marker.** Try to drop a marker below 25 ft above the ground.
+      **Pass:** The flight screen shows an amber notice. There is no Toast. The notice is in the
+      screen capture, thus the team sees the same thing.
+
+## 7E. Stress test — the full session
+
+Do this test before a release. It looks for the faults that only a long session finds: memory
+growth, a listener that was lost, and state that drifts.
+
+**Run the application for a minimum of 90 minutes with TAK connected and the ADS-B feed on.**
+
+- [ ] **S1 · The contact count does not grow.** Read `contacts held:` in the log at the start, at
+      45 minutes and at the end.
+      **Pass:** `total` moves up and down. It does not increase for the full time. `persistent`
+      does not increase. See M4.
+
+- [ ] **S2 · Change the channels 20 times.** Use both screens: Pre-Flight and the flight-screen
+      dialog.
+      **Pass:** Each change reaches the server. The list never disagrees with TAK Portal at the
+      end. No channel write goes out with an empty list.
+
+- [ ] **S3 · Change the video server 10 times, with a stream between the changes.**
+      **Pass:** Each stream arrives at the correct server. The advertised address is never the
+      previous server.
+
+- [ ] **S4 · Go in and out of the flight screen 10 times.**
+      **Pass:** The video stops and starts each time. TAK stays connected. The RC signal reading
+      on the HUD is never lost. ⚠ **Watch this one.** A null listener on this channel kills the
+      RC signal for the whole process, and only a restart brings it back.
+
+- [ ] **S5 · Lock and unlock every section 5 times.**
+      **Pass:** The channel rows and the server buttons stay readable at every step. Nothing
+      becomes grey and unreadable.
+
+- [ ] **S6 · Interrupt the network 5 times.**
+      **Pass:** TAK connects again each time without help. The channels are read again on each
+      connection.
+
+- [ ] **S7 · Read the log at the end.**
+      **Pass:** There is no password and no `user:pass@` in the file. Search for `://` and read
+      each result. `OutboundLogRedactionTest` protects this, and this check confirms it on real
+      data.
+
+- [ ] **S8 · Memory.** Look for a stop of the application by the system.
+      **Pass:** The application is in operation at the end. If the system stopped it, keep the log
+      and see R6.
+
 ## 8. After the flight
 
 - [ ] Go to Debug Log. Touch **Export**. The application also puts a copy in
@@ -262,6 +416,13 @@ You can do these checks on the ground. The aircraft does not have to fly. You ne
 | A marker that your team shared goes away | The sender must set `archived`. Look for `persistent=` in the `rx type=` line of the log. | `CotParser.isPersistentType` | Yes |
 | The number of contacts increases for the full session | A retention fault. Read `contacts held:` in the log. | `CotParser.isPersistentType` | Yes |
 | A METAR weather station is on the map | It must not arrive. Examine the uid prefix test. | `CotParser` | Yes |
+| A marker does not arrive, and nothing says so | A channel you cannot SEND to. Look for `- Rx Only`. | Pre-Flight, My Channels | No |
+| The aircraft is not on the team map | Every channel is off. | Pre-Flight or touch and hold the TAK icon | No |
+| Each channel shows `- Rx Only` | The request lost its parameters. | `TakMissionClient.listChannels` | Yes |
+| A channel change does not reach the server | Another controller shares this certificate, or an administrator stopped the change. | TAK Portal | No |
+| The video goes to the wrong media server | The wrong Active server. | Pre-Flight, section 2 | No |
+| The video settings look empty after an update | The move to Server 1 did not run. Look for `video config migrated to slot 1`. | `migrateVideoSlots` | Yes |
+| The RC signal reading goes away and does not come back | A listener was set to null. Start the application again. | `AutelTakBridge` | Yes |
 
 ## 10. Items that this checklist does not cover
 
@@ -274,3 +435,9 @@ These items are settled:
   the codec.
 - RF power. A regulatory refusal was corrected in the region settings of Explorer. It is not an
   application fault.
+
+⚠ **These items are NOT settled and are NOT in this checklist:**
+
+- More than one aircraft on one certificate. Section 7B says what happens. Nobody tested it.
+- The behaviour when the server REFUSES a channel write. Only HTTP 200 was seen.
+- A server that does not have channels. C8 is written, but no such server was available.
