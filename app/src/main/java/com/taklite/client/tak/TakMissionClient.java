@@ -142,10 +142,28 @@ public class TakMissionClient {
             JSONObject root = new JSONObject(body);
             JSONArray data = root.optJSONArray("data");
             if (data == null) return new ArrayList<>();
+            // RESEARCH BUILD: the whole record for every group, not just its name.
+            //
+            // This method has always kept the name and thrown the rest away, and "the rest" is
+            // what decides whether a marker survives. TAK Server validates a <dest group> with
+            // Direction.IN — the sender must be able to SEND to that group — and rejects the
+            // WHOLE message if it cannot (StreamingEndpointRewriteFilter). A group this
+            // certificate can only receive from, or a server input group such as ADSB with no
+            // human members, therefore destroys every marker the pilot drops.
+            //
+            // Nothing here filters yet. The point of this build is to see what the server
+            // actually returns for this certificate, so the real implementation can filter on
+            // fact instead of on a guess.
+            AppLog.i(TAG, "GROUPS RAW: " + body);
             for (int i = 0; i < data.length(); i++) {
                 JSONObject g = data.getJSONObject(i);
                 String name = g.optString("name", null);
                 if (name == null || name.isEmpty()) continue;
+                AppLog.i(TAG, "GROUP: name=" + name
+                        + " direction=" + g.optString("direction", "(absent)")
+                        + " type=" + g.optString("type", "(absent)")
+                        + " bitpos=" + g.optString("bitpos", "(absent)")
+                        + " active=" + g.optString("active", "(absent)"));
                 if ("__ANON__".equals(name)) continue;
                 set.add(name);
             }

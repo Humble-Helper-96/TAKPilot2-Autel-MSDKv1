@@ -373,8 +373,21 @@ android {
         //        silently stopped publication, which takes the marker off the team's map a few
         //        minutes later with no trace in the log; a fix that stops refreshing keeps the
         //        marker alive but stationary. Both now log, once, on the transition.
-        versionCode 30
-        versionName "1.6.0"
+        // ⚠ RESEARCH BUILD, NOT A RELEASE. Branch channels-research, off tag v1.6.0.
+        //
+        // It exists to answer ONE question: which TAK groups can this certificate SEND to. It
+        // keeps the "My Channels" control that v1.6.1 deleted, because you cannot study a
+        // control you have removed, and it logs the full /Marti/api/groups/all record plus every
+        // CoT it puts on the wire.
+        //
+        // SELECTING A CHANNEL IN THIS BUILD WILL STOP YOUR MARKERS REACHING THE TEAM. That is
+        // the fault under study, not a regression. Do not fly this build on a live callout.
+        //
+        // versionCode is 32 and not 30 so it installs over the released 1.6.1 (31). The number
+        // is internal and orders builds for install -r; it carries no semver meaning. The
+        // versionName is what a TAK server shows, and it says plainly what this is.
+        versionCode 32
+        versionName "1.6.0-channels-research"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
