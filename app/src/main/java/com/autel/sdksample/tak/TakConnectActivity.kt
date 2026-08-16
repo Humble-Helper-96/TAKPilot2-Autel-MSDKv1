@@ -432,8 +432,15 @@ class TakConnectActivity : AppCompatActivity() {
      * and a change PUTs the new set to the server — the method a real TAK client uses. Nothing
      * is stored on the controller, thus nothing here can disagree with the server.
      *
-     * A channel the certificate cannot SEND to is shown and disabled. It is not hidden: a pilot
-     * must be able to see that the channel exists and that this aircraft cannot publish to it.
+     * EVERY CHANNEL CAN BE SWITCHED ON AND OFF, including a receive-only one. The check box is
+     * the `active` flag, and `active` governs RECEIVE as well as send. A first version disabled
+     * the box on a receive-only channel, which confused "cannot publish to it" with "cannot use
+     * it" — and left a channel that could be switched off from TAK Portal with no way to switch
+     * it back on from the controller (operator, 2026-08-16). ADS-B is exactly the channel a
+     * pilot wants to turn off and on: it is noisy, and switching it off stops the traffic.
+     *
+     * The direction is shown as text instead. It tells the pilot what the channel will and will
+     * not carry, and it takes nothing away from them.
      */
     private fun renderChannels(channels: List<TakMissionClient.Channel>) {
         val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
@@ -443,15 +450,16 @@ class TakConnectActivity : AppCompatActivity() {
             val row = android.widget.CheckBox(this).apply {
                 val role = when {
                     ch.canSend && ch.canReceive -> "send + receive"
-                    ch.canReceive -> "receive only — cannot publish"
+                    ch.canReceive -> "receive only — your markers do NOT go here"
                     ch.canSend -> "send only"
                     else -> "no direction"
                 }
                 text = "${ch.name}  ($role)"
                 setTextColor(androidx.core.content.ContextCompat.getColor(
-                    applicationContext,
-                    if (ch.canSend) R.color.tp_text_primary else R.color.tp_text_secondary))
-                isEnabled = ch.canSend
+                    applicationContext, R.color.tp_text_primary))
+                // Enabled for every channel. See the note above: the box is `active`, and a
+                // receive-only channel is still one a pilot may want on or off.
+                isEnabled = true
                 isChecked = ch.active
                 setOnCheckedChangeListener { _, checked ->
                     if (updatingChannels) return@setOnCheckedChangeListener
