@@ -469,17 +469,28 @@ class TakConnectActivity : AppCompatActivity() {
                     ch.canSend -> "${ch.name} - Tx Only"
                     else -> "${ch.name} - no direction"
                 }
+                // Secondary text is the only hint that the row is locked. The tick stays
+                // full contrast, because the tick is the information.
                 setTextColor(androidx.core.content.ContextCompat.getColor(
-                    applicationContext, R.color.tp_text_primary))
+                    applicationContext,
+                    if (takConfigLocked()) R.color.tp_text_secondary else R.color.tp_text_primary))
                 // Enabled for every channel. See the note above: the box is `active`, and a
                 // receive-only channel is still one a pilot may want on or off.
-                // ⚠ THE LOCK STOPS A CHANGE, NOT THE READING. The rows below still follow the
+                // ⚠ THE LOCK STOPS A CHANGE, NOT THE READING. The rows still follow the
                 // server while locked — a pilot must always be able to SEE the scope of this
                 // aircraft. The lock exists to stop an accidental change, not to hide the truth
                 // (operator, 2026-08-16).
-                isEnabled = !takConfigLocked()
-                alpha = if (takConfigLocked()) 0.55f else 1f
+                //
+                // ⚠ LOCKED IS NOT DISABLED. isEnabled=false greys the tick as well as the row,
+                // and a pilot then cannot tell a checked box from an unchecked one — which
+                // defeats the paragraph above. The row stays at full contrast and stops taking
+                // touches instead. The check box keeps its own tint for the same reason.
                 isChecked = ch.active
+                isClickable = !takConfigLocked()
+                isFocusable = !takConfigLocked()
+                buttonTintList = android.content.res.ColorStateList.valueOf(
+                    androidx.core.content.ContextCompat.getColor(
+                        applicationContext, R.color.tp_accent))
                 setOnCheckedChangeListener { _, checked ->
                     if (updatingChannels) return@setOnCheckedChangeListener
                     ch.active = checked

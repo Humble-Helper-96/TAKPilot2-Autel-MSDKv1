@@ -2264,11 +2264,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                         ch.canSend -> "${ch.name} - Tx Only"
                         else -> "${ch.name} - no direction"
                     }
+                    // ⚠ LOCKED IS NOT DISABLED — see the same note in TakConnectActivity.
+                    // Disabling greys the tick, and the tick is what the pilot came to read.
                     setTextColor(androidx.core.content.ContextCompat.getColor(
-                        applicationContext, R.color.tp_text_primary))
+                        applicationContext,
+                        if (locked) R.color.tp_text_secondary else R.color.tp_text_primary))
                     isChecked = ch.active
-                    isEnabled = !locked
-                    alpha = if (locked) 0.55f else 1f
+                    isClickable = !locked
+                    isFocusable = !locked
+                    buttonTintList = android.content.res.ColorStateList.valueOf(
+                        androidx.core.content.ContextCompat.getColor(
+                            applicationContext, R.color.tp_accent))
                     setOnCheckedChangeListener { _, checked ->
                         if (painting) return@setOnCheckedChangeListener
                         ch.active = checked
