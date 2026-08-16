@@ -344,7 +344,36 @@ android {
         //        styling moves into reusable styles and loses its last #FFFFFF literal, and the
         //        flight/home themes stay in values/ where the DJI siblings have now joined them
         //        (conformance A4, A6, A7).
-        versionCode 29
+        //
+        //        Also in 1.6.0, from the 2026-08-15 bench day: THE C1 BUTTON IS THE THERMAL
+        //        BUTTON. A short press changes visible/thermal, a long press changes the IR
+        //        colours. It drove zoom before; zoom stays on the pill and the rocker.
+        //
+        //        THE ZOOM ROCKER STEPS THROUGH SET LEVELS — 1, 2, 3, 4, 6, 8, 10, 12, 16x. One
+        //        press moves one level; hold to walk them. It moved continuously before, and
+        //        the values between the levels were not what a pilot frames with. Two hardware
+        //        findings made it work: the rocker is a spring-return ROCKER and not a wheel,
+        //        and its events carry a deflection (keyValue) that reads 0 while the spring
+        //        returns. Reading that field is what stopped the zoom running on past the
+        //        release by as much as 1.8x — the app had been acting on the trailing events
+        //        for as long as the rocker has existed.
+        //
+        //        THE AR OVERLAY IS ON WHEN THE FLIGHT SCREEN OPENS. It was off by default.
+        //
+        //        THE MARKERS LIST TAKES MORE THAN ONE MARKER AT A TIME. Every row has a check
+        //        box, with Delete and Resend. A short touch ticks the box; a touch and hold
+        //        opens the same edit menu as before. A marker the TEAM shared can now be sent
+        //        again, under its own uid and its own CoT type — deriving a type would have
+        //        rewritten an ATAK marker point as a friendly ground marker for everyone.
+        //
+        //        The HUD wash is lighter, 40% black to 20%, so more of the video shows through
+        //        the readouts. Flight-checked against a bright sky.
+        //
+        //        And the pilot marker now says why it stopped. Losing the controller position
+        //        silently stopped publication, which takes the marker off the team's map a few
+        //        minutes later with no trace in the log; a fix that stops refreshing keeps the
+        //        marker alive but stationary. Both now log, once, on the transition.
+        versionCode 30
         versionName "1.6.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
