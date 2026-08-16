@@ -86,9 +86,11 @@ The body is a list of `bitpos` numbers. The server compares it with each channel
 ⚠ **THE LIST IS ABSOLUTE. It replaces all of the active channels.** Send the complete list
 each time. An empty list turns off every channel. Do not send a change only.
 
-Related calls: `PUT /groups/active` takes `Group[]` objects; `PUT /groups/activeForce` is for
-an administrator and pushes to each client of a user; `GET/POST /groups/update/{username}` tells
-the clients that the channels changed.
+Three related calls exist:
+
+- `PUT /groups/active` takes `Group[]` objects in place of numbers.
+- `PUT /groups/activeForce` is for an administrator. It pushes to each client of a user.
+- `GET/POST /groups/update/{username}` tells the clients that the channels changed.
 
 ### To keep the list correct
 
@@ -98,9 +100,10 @@ channels changed on the device 50 seconds after the change in TAK Portal.
 
 ## 4. What this gives you
 
-The server applies the active channels to **everything** for that certificate — the aircraft
-position, the camera point, the pilot position, the markers and the video address. This is what
-the operator asked for on 16 August: an aircraft on a sensitive mission must not send to a
+The server applies the active channels to **everything** for that certificate. This includes
+the aircraft position, the camera point, the pilot position, the markers and the video address.
+
+The operator asked for this on 16 August. An aircraft on a sensitive mission must not send to a
 channel that must not see it.
 
 It also costs nothing for each message. The message does not change. Thus there is no more
