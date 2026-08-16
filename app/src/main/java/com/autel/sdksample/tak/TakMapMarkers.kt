@@ -231,7 +231,31 @@ object TakMapMarkers {
     private fun upsert(user: TakUser) {
         val m = map ?: return
         if (user.lat == 0.0 && user.lon == 0.0) return
-        if (hidden.contains(user.uid)) return
+        // A LOCAL DELETE LASTS UNTIL THE SENDER SHARES THE MARKER AGAIN.
+        //
+        // Reaching this line with a hidden uid means a NEW inbound message arrived for it:
+        // hideInbound calls forgetUser, thus nothing re-drives an old contact through here.
+        // A teammate sharing it again is a deliberate act, and it must get through. The pilot
+        // deleted one marker from their own map; they did not ask never to be told about it
+        // again.
+        //
+        // ⚠ Before v1.6.2 the delete was permanent, and a re-share was dropped in silence. A
+        // teammate could re-send a hazard marker to a pilot who had cleared it an hour before,
+        // and that pilot never saw it and got no indication (operator, 2026-08-16).
+        //
+        // This also makes the two delete paths agree at last. clearAllShared already refused to
+        // add uids to [hidden], for exactly this reason — "A marker that IS shared again
+        // returns, which is the correct outcome" — while a single delete did the opposite.
+        //
+        // The cost: a client that re-broadcasts on a timer would bring a deleted marker back.
+        // CloudTAK and TAK Aware send on placement and on edit, not on a cycle — measured over
+        // 30 minutes on 2026-08-04 and confirmed again on 2026-08-16, where one marker arrived
+        // 4 times in 33 minutes and every arrival was a deliberate send.
+        if (hidden.contains(user.uid)) {
+            AppLog.i(TAG, "shared again — showing a marker deleted here: ${user.uid}")
+            hidden.remove(user.uid)
+            saveSavedMarkers()
+        }
         val pos = GeoPoint(user.lat, user.lon, user.alt)
         val iconKey = iconKeyFor(user)
         try {
@@ -333,15 +357,14 @@ object TakMapMarkers {
     /**
      * Clears every shared marker from this aircraft.
      *
-     * ⚠ **These are NOT added to the locally-deleted set.** A single deliberate delete adds a uid
-     * to [hidden] and suppresses it for good, which is right for "I do not want to see this one".
-     * Applying that to a bulk clear would silently blind the pilot to every one of those uids for
-     * the life of the install — including any the team shares again later. "Clear my map now" is
-     * the intent here, not "never show me these".
+     * These are NOT added to the locally-deleted set. "Clear my map now" is the intent here.
      *
      * In practice they stay gone: CloudTAK and TAK Aware send a marker when it is placed, not on
      * a repeating cycle (measured over 30 minutes, 2026-08-04). A marker that IS shared again
      * returns, which is the correct outcome.
+     *
+     * Since v1.6.2 a single delete behaves the same way — see [upsert]. The two paths used to
+     * disagree about the same question, and this one had the right answer.
      */
     fun clearAllShared(): Int {
         val uids = savedMarkers.keys.toList()
@@ -370,6 +393,8 @@ object TakMapMarkers {
         return true
     }
 
+    /** Hides one inbound marker on THIS map. It comes back if the sender shares it again —
+     *  see the note in [upsert]. It does not go to the server or to any other client. */
     private fun hideInbound(uid: String) {
         AppLog.v(TAG, "inbound marker hidden locally: $uid")
         hidden.add(uid)
@@ -502,7 +527,8 @@ object TakMapMarkers {
         val team = (user.team ?: "Cyan").lowercase()
         val stale = if (user.isStale) "S" else "A"
         val drone = if (user.isDrone) "D" else "U"
-        val mil = milMarkerRes(user.type) ?: 0
+        // A live client never takes a 2525 frame, whatever its type says — see iconFor.
+        val mil = if (user.isLiveClient) 0 else milMarkerRes(user.type) ?: 0
         // Air tracks bake their course into the bitmap (see makeAirIcon), so the key has to
         // include it — but BUCKETED to COURSE_BUCKET_DEG. Keying on the raw course would mint a
         // fresh bitmap on every position report, since ADS-B course jitters by fractions of a
@@ -585,6 +611,14 @@ object TakMapMarkers {
                 else R.drawable.ic_air_track_nocourse,
                 if (user.hasCourse()) courseBucket(user.course).toDouble() else null,
             )
+            // ⚠ A LIVE CLIENT IS ALWAYS A TEAM DOT, whatever its CoT type says.
+            //
+            // CloudTAK reports its own users as `a-f-G-E-V-C`. That is not the `-G-U-` unit
+            // form, so the type test in milMarkerRes accepts it and drew a CloudTAK operator
+            // with a 2525 marker frame while every other TAK client got a dot (operator,
+            // 2026-08-16). The type cannot answer this question; `takv`/`endpoint` can, and
+            // the parser has always known.
+            user.isLiveClient -> makeIcon(user.callsign ?: user.uid, user.team, user.isStale)
             res != null -> makeMilIcon(res, user.callsign ?: user.uid)
             else -> makeIcon(user.callsign ?: user.uid, user.team, user.isStale)
         }

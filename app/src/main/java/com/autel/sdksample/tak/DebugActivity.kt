@@ -1,7 +1,5 @@
 package com.autel.sdksample.tak
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -11,14 +9,13 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
 import com.autel.sdksample.BuildConfig
 import com.autel.sdksample.R
 import com.taklite.util.AppLog
 import java.io.RandomAccessFile
 
 /**
- * Debug screen (handoff §9): toggle file logging on/off, export/clear/delete the active
+ * Debug screen (handoff §9): toggle file logging on/off, clear/delete the active
  * log, and watch it fill live. Only reads/writes AppLog's own file sink — no full logcat.
  */
 class DebugActivity : AppCompatActivity() {
@@ -126,10 +123,6 @@ class DebugActivity : AppCompatActivity() {
         findViewById<android.widget.Button>(R.id.debugRfPowerProbe).setOnClickListener {
             AppLog.i(TAG, "RF power probe tapped")
             runRfPowerProbe()
-        }
-        findViewById<android.widget.Button>(R.id.debugExportButton).setOnClickListener {
-            AppLog.v(TAG, "export tapped")
-            exportLog()
         }
         findViewById<android.widget.Button>(R.id.debugClearButton).setOnClickListener {
             AppLog.clearActive()
@@ -276,9 +269,9 @@ class DebugActivity : AppCompatActivity() {
                         get("4/6 10s-after-fccMode") {
                             set("5/6 setRFPower(FCC) retry", com.autel.common.remotecontroller.RFPower.FCC) {
                                 get("6/6 final") {
-                                    AppLog.i(TAG, "RF probe DONE — export the log for Autel")
+                                    AppLog.i(TAG, "RF probe DONE — the log is in Downloads/TAKPilot2 Logs")
                                     android.widget.Toast.makeText(this,
-                                        "RF probe done. Use Export Log.",
+                                        "RF probe done. The log is in Downloads/TAKPilot2 Logs.",
                                         android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
@@ -291,20 +284,6 @@ class DebugActivity : AppCompatActivity() {
 
     private val STEP_DELAY_MS = 2000L
 
-    private fun exportLog() {
-        val file = AppLog.activeLogFile()
-        if (!file.exists() || file.length() == 0L) {
-            toast("Nothing to export yet")
-            return
-        }
-        val uri: Uri = FileProvider.getUriForFile(this, "${BuildConfig.APPLICATION_ID}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(intent, "Export debug log"))
-    }
 
     /**
      * Autel Explorer watchdog control — a single on/off toggle. The watchdog kills Explorer's

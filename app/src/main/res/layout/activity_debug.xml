@@ -143,13 +143,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="RF Power Probe (bench)" />
-            <Button
-            style="@style/TakButton.Primary"
-                android:id="@+id/debugExportButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="Export Log" />
+            <!-- "Export Log" was here until 2026-08-16. Every log is already written to
+                 Downloads/TAKPilot2 Logs as it is produced, so the button offered a second
+                 route to a file the pilot already has (operator). -->
             <Button
             style="@style/TakButton.Neutral"
                 android:id="@+id/debugClearButton"
