@@ -286,8 +286,18 @@ object VideoStreamerHolder {
             codec = p.getString("video_codec", VideoCodec.H264.prefValue)
                 ?: VideoCodec.H264.prefValue,
         )
-        // Only advertise the URL in the drone CoT if the push actually started — telling the
-        // team where to watch a stream that never began is worse than saying nothing.
+        // Advertise the CONFIGURED address once a start is attempted.
+        //
+        // ⚠ This fires on the ATTEMPT, not on a connected stream: start() reports
+        // onStatus(true, "Starting RTSP push") immediately after client.connect(), and a
+        // failing connection then retries without reporting false. So the address is on the
+        // wire while the push is still trying, and it stays there through the retries.
+        //
+        // THIS IS DELIBERATE (operator, 2026-08-16). The CoT carries the address the pilot
+        // entered, which is what it should carry, and an RTSP viewer retries against a server
+        // that comes up a moment later. An earlier version of this comment claimed the URL was
+        // published only after the push succeeded. It never was, and the behaviour it described
+        // is not the behaviour that is wanted.
         val ok = start(context, cfg, { st, msg ->
             if (st) TakBridgeHolder.setVideoUrl(cfg.advertiseUrl())
             onStatus(st, msg)
