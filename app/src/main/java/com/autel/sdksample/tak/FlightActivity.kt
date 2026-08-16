@@ -2396,6 +2396,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * being judged.
      */
     private fun dropRefusalReason(): String? {
+        // ⚠ RESEARCH BUILD ONLY — the height and look-angle gates are OFF (branch
+        // channels-research). The channel work has to drop markers with the aircraft on the
+        // ground, and both gates refuse exactly that.
+        //
+        // WHAT THIS COSTS: a marker placed from the ground has a MEANINGLESS POSITION. The
+        // slant solve degenerates onto the aircraft itself, or lands anywhere at a shallow
+        // look angle. Those markers still go to the TAK server and still appear on your
+        // team's screens — this bypass makes the app place them, not keep them private.
+        //
+        // Use a callsign your team knows is a test, and clear the markers afterwards. The
+        // gates below exist because of real incidents; they come back before anything merges.
+        if (RESEARCH_NO_DROP_LIMITS) {
+            val hud0 = TakBridgeHolder.hud() ?: return "waiting on GPS + gimbal"
+            if (hud0.gimbalPitch == null) return "waiting on GPS + gimbal"
+            return null
+        }
+
         val hud = TakBridgeHolder.hud() ?: return "waiting on GPS + gimbal"
         val pitch = hud.gimbalPitch ?: return "waiting on GPS + gimbal"
 
@@ -3007,6 +3024,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // thermal, a long press changes the thermal colours. It was the zoom button before
         // v1.6.0 (operator, 2026-08-15); zoom stays on the pill and the right zoom rocker.
         private const val IR_BUTTON = "A"             // physical C1
+
+        /**
+         * ⚠ RESEARCH BUILD SWITCH — branch channels-research only, and NEVER true on master.
+         *
+         * True turns off BOTH marker-drop gates: the minimum height above ground and the
+         * shallow look-angle refusal. The channel routing work needs to drop markers with the
+         * aircraft sitting on the ground, and the gates refuse precisely that case.
+         *
+         * The markers it then places have no useful position and they DO reach the team. The
+         * gates are not cosmetic — [MIN_DROP_AGL_FT] exists because below it the slant solve
+         * collapses onto the aircraft's own position. Turn this off before anything from this
+         * branch goes anywhere near a release.
+         */
+        private const val RESEARCH_NO_DROP_LIMITS = true
 
         /** Minimum height above ground for a marker drop, feet. Below this the slant
          *  solve degenerates onto the aircraft's own position — see dropRefusalReason. */
