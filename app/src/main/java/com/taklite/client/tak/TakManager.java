@@ -225,8 +225,36 @@ public class TakManager implements TakClient.TakClientListener {
      * channels selected, the CoT is sent unchanged (server default routing).
      */
     private void sendCot(String xml) {
-        if (client == null || !connected) return;
-        client.sendMessage(withChannelDest(xml));
+        if (client == null || !connected) {
+            AppLog.w(TAG, "CoT NOT SENT — client=" + (client == null ? "null" : "present")
+                    + " connected=" + connected);
+            return;
+        }
+        String wire = withChannelDest(xml);
+        // THE EXACT BYTES, AFTER withChannelDest, so the log shows any injected <marti> block
+        // rather than what the builder produced. Added 2026-08-15: markers were reported as not
+        // arriving while the PLI did, and there was no way to tell a message that never left the
+        // socket from one the server rejected — the application logged nothing it sent.
+        //
+        // VERBOSE, not debug. This runs several times a second; the operator turns Detailed on
+        // in Debug Log to diagnose, which is the convention the flight-test checklist already
+        // uses. AppLog.v only reaches the file when that is set.
+        AppLog.v(TAG, "CoT OUT: " + redactCredentials(wire));
+        client.sendMessage(wire);
+    }
+
+    /**
+     * Masks {@code user:pass@} in any url inside a string bound for the log.
+     *
+     * ⚠ EVERY OUTBOUND LOG LINE GOES THROUGH THIS. The pilot PLI carries the video url, and that
+     * url carries the media-server password — which is why {@link #sendPilotPLI} deliberately
+     * logs no XML at all. The security review of 2026-08-03 recorded this application as not
+     * writing a credential to the log or to logcat, and a blanket outbound log would have undone
+     * that silently. Do not log a CoT without it.
+     */
+    static String redactCredentials(String s) {
+        if (s == null) return null;
+        return s.replaceAll("://[^:/@\\s\"]+:[^@\\s\"]+@", "://<user>:<pass>@");
     }
 
     private String withChannelDest(String xml) {
@@ -461,7 +489,12 @@ public class TakManager implements TakClient.TakClientListener {
         String xml = CotBuilder.buildMarkerWithType(uid, callsign, markerUid, cotType,
                 lat, lon, alt, name, remarks, missionName, affiliationForLog);
         sendCot(xml);
-        AppLog.d(TAG, "Marker sent" + (missionName != null ? " to mission " + missionName : "")
+        // "QUEUED", not "sent". sendCot hands the message to a fire-and-forget writer thread and
+        // this line runs whatever that thread then does with it. Saying "sent" here cost an hour
+        // on 2026-08-15: the log said every marker was sent while none arrived. The truth about
+        // the wire is in the CoT OUT line above and in TakClient's failure lines.
+        AppLog.d(TAG, "Marker queued for send"
+                + (missionName != null ? " to mission " + missionName : "")
                 + ": " + cotType + " @ " + lat + "," + lon + " id=" + markerUid);
         return markerUid;
     }
