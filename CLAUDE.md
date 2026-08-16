@@ -112,10 +112,16 @@ Both of those changes shipped in v1.6.0. **v1.6.0 is now RELEASED** — tag `v1.
 versionCode 30, on the fleet from 2026-08-15. The earlier instruction here not to bump the
 version applied only while v1.6.0 was open; it is spent. New work takes a new version.
 
-v1.6.1 is RELEASED. v1.6.2 is open ON MASTER: versionCode 33, versionName 1.6.2, merged from
-`channels-feature` 2026-08-16. It is NOT released — no bench pass, no signed APK, no tag, and
-neither the channels nor the two video servers have flown. v1.6.1 carried the Field Guide
-rewrite AND the removal of channel selection.
+v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
+
+**v1.6.2 IS RELEASED** — tag `v1.6.2`, versionCode 33, 2026-08-16. Bench and flight tested the
+same day; the results are `FLIGHT-TEST-CHECKLIST.md` section 4A. New work takes a new version.
+
+⚠ Section 4A also records TWO BEHAVIOURS CONFIRMED CORRECT. Do not re-diagnose either as a
+fault: the aircraft marker and the SPI stay after a channel change until they go stale (they are
+marker-type CoT, unlike the pilot position), and the video address goes on the wire when a push
+STARTS rather than when it connects (the CoT carries the address the pilot entered — operator,
+2026-08-16).
 
 **CHANNEL SELECTION IS GONE, and this is the important part of v1.6.1.** TAK Setup let a pilot
 pick channels, and `TakManager` then put `<marti><dest group="…"/></marti>` on every CoT that
