@@ -79,6 +79,41 @@ aircraft. Then do test A4 again.
 The projection mathematics is correct. The drawn position of three markers was calculated again from
 known coordinates. The result agreed with the application to one pixel.
 
+## 4A. Results of the v1.6.2 test (16 August 2026)
+
+**Build 1.6.2, versionCode 33. About 30 minutes with the aircraft flying and ADS-B on.**
+
+Passed on hardware: channels on both screens (C1 to C7), the in-flight unlock, obstacle
+avoidance stopping the aircraft on all sides, RTH altitude set and enforced, exterior lights,
+more than one controller on one certificate, the zoom ladder, and the marker height gate.
+
+Measurements:
+
+- **Contacts.** 50 at the start, 47 at the end, peak 64. `persistent` peaked at 1. No growth.
+- **RC signal.** 784 reports, **the largest gap was 0 s** through 3 flight-screen exits. The
+  listener teardown is clean.
+- **Credentials.** 29 addresses in the log, each one `://tak:***@`. No leak.
+- **Network.** A real DNS failure of about 100 seconds. TAK connected again 4 times with no help.
+- **Channels.** 4 `t-x-g-c` events, each one followed by a re-read. One
+  `PUT activebits` → HTTP 200.
+
+Three faults were found and corrected the same day:
+
+1. **A deleted marker did not come back when it was shared again.** A local delete suppressed
+   the uid for ever. It now returns when a teammate shares it again. **Re-tested: passed.**
+2. **A CloudTAK user drew as a 2525 marker.** CloudTAK reports its users as `a-f-G-E-V-C`, and
+   the type test accepted it. A live client (`takv` or `endpoint`) is now always a team dot.
+   **Re-tested: passed.**
+3. **The Debug screen kept an Export Log button.** The logs are already in
+   `Downloads/TAKPilot2 Logs`. Removed.
+
+Two behaviours were CONFIRMED CORRECT and are not faults:
+
+- The aircraft marker and the SPI stay after a channel change until they go stale. They are
+  marker-type CoT. The pilot marker is a position report and goes at once.
+- The video address goes on the wire when a push STARTS, not when it connects. The CoT carries
+  the address the pilot entered.
+
 ## 5. Ground checks
 
 Do these checks when the aircraft has power and is on the ground.
@@ -380,8 +415,10 @@ growth, a listener that was lost, and state that drifts.
       becomes grey and unreadable.
 
 - [ ] **S6 · Interrupt the network 5 times.**
-      **Pass:** TAK connects again each time without help. The channels are read again on each
-      connection.
+      **Pass:** TAK connects again each time without help.
+      **Note:** the channels are read again on a connection ONLY when a channel screen is open.
+      The listener belongs to those screens. No re-read with the screens closed is correct, not
+      a fault — nothing is displaying them, and the server enforces the channels anyway.
 
 - [ ] **S7 · Read the log at the end.**
       **Pass:** There is no password and no `user:pass@` in the file. Search for `://` and read
