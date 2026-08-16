@@ -346,7 +346,50 @@
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
 
+        <!-- TWO MEDIA SERVERS, ONE ACTIVE. A fleet flies on an internal mediaMTX on one callout
+             and an external one on the next, and re-typing a host on a tailgate is how a stream
+             gets lost. Each server keeps its own complete settings, including the encoding: an
+             external server often needs a different profile from an internal one.
 
+             The fields below edit whichever server is selected here. Selecting a server also
+             makes it the live one — see setupVideoControls for what that costs and why it is
+             acceptable (the stream is stopped whenever this screen is showing).
+
+             The names come from the pilot and label the buttons, so the choice reads as
+             "MMTX01 or MMTX03" and not "Server 1 or Server 2". -->
+        <TextView style="@style/takLabelStyle" android:text="Active server" />
+        <RadioGroup
+            android:id="@+id/videoServerGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/videoServer1"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Server 1" />
+
+            <RadioButton
+                android:id="@+id/videoServer2"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Server 2" />
+
+        </RadioGroup>
+
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Server name" />
+                <EditText
+                    android:id="@+id/videoName"
+                    style="@style/takFieldStyle"
+                    android:hint="MMTX01"
+                    android:inputType="text" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout style="@style/takFormRow">
             <LinearLayout style="@style/takColumn">

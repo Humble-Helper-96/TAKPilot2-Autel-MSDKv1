@@ -17,7 +17,7 @@ KDoc on FieldGuideActivity for the rule set to hold edits to.
 The quick-marker name shows as E419 here. The app draws one callsign per install
 from a pool of 24, so each controller shows its own.
 
-App version: 1.6.1
+App version: 1.6.2
 -->
 
 # TAKPilot2 Field Guide
@@ -48,11 +48,17 @@ Max altitude, max distance and RTH altitude, in feet. The app sends them to the 
 
 Optional. Type the address of the video server of your team, the port, the broadcast ID and the login. Then select the quality. Select Standard. If the connection is weak, select Low. Select the codec H.264 for compatibility.
 
+You can keep two video servers, for example one on your local network and one outside it. Give each server a name. The names show on the "Active server" buttons at the top of the section.
+
+Touch a name to select that server. The fields below then show that server, and the video goes to it. Each server keeps its own address, login, quality and codec.
+
 ### 3. TAK Server Connection
 
 Type the address of the TAK server, your username, your password and the callsign of the aircraft. Then touch Enroll & Connect.
 
-Select the "Pull Channels" button to adjust the channels the aircraft data is published to.
+The channels of your certificate show below. Touch a channel to switch it on or off. The TAK server holds the channels, and a change goes to the server. A channel marked "Rx Only" receives data but does not send yours.
+
+You can also change the channels in flight. Touch and hold the TAK button on the flight screen.
 
 ### 4. Elevation Data (DTED)
 
