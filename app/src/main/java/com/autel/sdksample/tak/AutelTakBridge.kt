@@ -597,8 +597,54 @@ class AutelTakBridge(
      * connect already sits at 0,0, and refreshing it with more zeros would keep a false marker
      * alive on the team's map for ever instead of letting it go stale and disappear.
      */
+    /** Latches for the two lines below. Transition-only: this runs at 2Hz, so a line on every
+     *  tick would be useless as a diagnostic and would flood the log. */
+    private var pilotFixMissing = false
+    private var pilotFixOldLogged = false
+
     private fun pushPilotPli() {
-        val fix = OperatorLocation.latest ?: return
+        val fix = OperatorLocation.latest
+        if (fix == null) {
+            // ⚠ THE ONE LINE THAT EXPLAINS A DISAPPEARING PILOT MARKER. Publishing stops here,
+            // and nothing else in the application says so. Silence at this point is what makes
+            // the marker go stale on the team's map a few minutes later, and until 2026-08-15
+            // this return was silent — an operator reported exactly that failure and there was
+            // no trace of it anywhere in the log.
+            if (!pilotFixMissing) {
+                pilotFixMissing = true
+                AppLog.w(TAG, "pilot marker SUSPENDED — the controller has no position fix. " +
+                    "Nothing more is published for it, thus it goes stale on the team's map. " +
+                    "See OperatorLocation for what feeds this.")
+            }
+            return
+        }
+        if (pilotFixMissing) {
+            pilotFixMissing = false
+            AppLog.i(TAG, "pilot marker resumed — the controller has a fix again")
+        }
+
+        // AGE OF THE FIX, not just its presence. A fix that stops refreshing keeps being
+        // republished at the same point: the marker stays on the map and does NOT follow the
+        // pilot, which is the other half of the failure reported on 2026-08-15 and looks
+        // nothing like the case above.
+        //
+        // Measured against elapsedRealtime, never the wall clock — a clock correction mid-flight
+        // must not read as an hour-old fix.
+        val ageMs = (android.os.SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000L
+        if (ageMs > PILOT_FIX_OLD_MS) {
+            if (!pilotFixOldLogged) {
+                pilotFixOldLogged = true
+                AppLog.w(TAG, "pilot position is %.0fs old (provider=%s) — the marker still "
+                    .format(ageMs / 1000.0, fix.provider) +
+                    "publishes, thus it will NOT go stale, but it stops following the pilot. " +
+                    "This is normal if the pilot has not moved: the receiver only reports a new " +
+                    "fix after a small distance.")
+            }
+        } else if (pilotFixOldLogged) {
+            pilotFixOldLogged = false
+            AppLog.i(TAG, "pilot position is fresh again")
+        }
+
         runCatching {
             // No team argument — the pilot marker's colour is TakManager's PILOT_TEAM, always.
             tak.sendPilotPLI(fix, droneCallsign, "Team Member",
@@ -744,6 +790,20 @@ class AutelTakBridge(
 
         /** How long one controller-battery reading serves the pilot PLI — see pilotBatteryPct. */
         private const val BATTERY_CACHE_MS = 30_000L
+
+        /** How old the controller's fix may get before [pushPilotPli] says so, once.
+         *
+         *  FIVE MINUTES, WHICH IS THE PLI'S OWN STALE TIME (CotBuilder.STALE_DURATION_MS — it is
+         *  private there, thus the figure is mirrored and not read). The threshold is chosen to
+         *  mean something rather than to be round: past it, the team is looking at a position
+         *  that would already have expired had the application stopped publishing, so the marker
+         *  is now more confident than the data behind it.
+         *
+         *  It must stay WELL ABOVE a normal stationary hold. The receiver only reports a new fix
+         *  after MIN_DISTANCE_M, so a pilot standing still legitimately holds one position for
+         *  minutes — measured at 100s on the bench 2026-08-15. A lower threshold would fire on
+         *  ordinary standing about and teach the reader to ignore the line. */
+        private const val PILOT_FIX_OLD_MS = 5 * 60_000L
 
         /** True once the aircraft is off the ground, by the same test the PLI reports.
          *

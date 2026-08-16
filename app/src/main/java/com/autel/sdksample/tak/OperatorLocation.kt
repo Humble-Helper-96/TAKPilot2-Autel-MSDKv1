@@ -80,11 +80,21 @@ object OperatorLocation {
             }
         }
 
-        // Required by the API on older levels. Deliberately empty: a provider going briefly
-        // unavailable should not discard a good fix — a slightly old pilot position is far more
-        // useful than none, and the fix carries its own timestamp for anyone who cares.
-        override fun onProviderEnabled(provider: String) {}
-        override fun onProviderDisabled(provider: String) {}
+        // STILL NO BEHAVIOUR HERE, ON PURPOSE: a provider going briefly unavailable must not
+        // discard a good fix — a slightly old pilot position is far more useful than none, and
+        // the fix carries its own timestamp for anyone who cares.
+        //
+        // They log now (2026-08-15). If the receiver is turned off mid-flight the fix simply
+        // stops refreshing, the pilot marker keeps publishing the last known point, and nothing
+        // said why. These two lines are the difference between "the marker stopped following
+        // me" and knowing the receiver went away underneath it.
+        override fun onProviderEnabled(provider: String) {
+            AppLog.i(TAG, "provider $provider is back")
+        }
+        override fun onProviderDisabled(provider: String) {
+            AppLog.w(TAG, "provider $provider went away — the last fix is kept and the pilot " +
+                "marker goes on publishing it, thus the marker stops following the pilot")
+        }
         @Deprecated("Required by LocationListener below API 29")
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
     }
