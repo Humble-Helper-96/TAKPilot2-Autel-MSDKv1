@@ -149,8 +149,8 @@ controller its own user before you use this function for security.
 
 **Let the pilot switch every channel, including a receive-only one.** The check box is the
 `active` flag, and `active` governs receive as well as send. A first version disabled the box on
-a receive-only channel. That confused "cannot publish to it" with "cannot use it", and it left
-`ADSB` switchable off from TAK Portal with no way to switch it on from the controller.
+a receive-only channel. That confused "cannot publish to it" with "cannot use it". It also left
+`ADSB` switchable off from TAK Portal, with no way to switch it on from the controller.
 
 **Read the channels when TAK connects, and not only when the screen opens.** The read needs a
 connection. A screen opened before TAK is up shows an empty list, and there is no button to
