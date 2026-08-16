@@ -489,13 +489,17 @@ class FieldGuideActivity : AppCompatActivity() {
         body("Do this one time for each aircraft. Do it again after a hard landing, after a " +
             "repair of the gimbal or the camera, or when you use a different aircraft.")
 
+        body("You need a second device with iTAK, ATAK, TAK Aware or CloudTAK that can see " +
+            "the markers of the aircraft.")
+
         sub("Before you start")
-        bullet("Select a target that you see clearly in the video and can find on the map. " +
-            "Center the reticle on it. A mark on a road or a corner of a building is good. " +
-            "The aircraft sends its camera look point to TAK about two times each second. On " +
-            "a second TAK device, find that point (its name ends with \"-SPI\") and watch it " +
-            "while you change the offsets. Change the offsets until the SPI on the map lines " +
-            "up with the object the reticle points at in the video.")
+        bullet("Select a target that you see clearly in the video and can find on the map of " +
+            "the second device. Center the reticle of the controller on that object. A mark " +
+            "on a road or a corner of a building is good. The aircraft sends its camera look " +
+            "point to TAK about two times each second. On the second TAK device, find that " +
+            "point. Its name ends with \"-SPI\" and its icon looks like the reticle. Watch " +
+            "the SPI while you change the offsets on the controller. Change the offsets until " +
+            "the SPI on the map lines up with the object the reticle points at in the video.")
         bullet("The point moves a few seconds after each change. Change one control at a " +
             "time. Stop when the point is on the target.")
     }
