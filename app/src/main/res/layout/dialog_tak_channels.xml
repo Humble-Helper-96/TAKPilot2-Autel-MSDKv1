@@ -42,7 +42,7 @@
             android:textColor="@color/tp_state_caution"
             android:textSize="13sp"
             android:visibility="gone"
-            android:text="Locked. Open Pre-Flight and unlock the TAK configuration to change a channel." />
+            android:text="Locked. Touch Unlock to change a channel." />
 
         <!-- Filled in code, one row for each channel. -->
         <LinearLayout
