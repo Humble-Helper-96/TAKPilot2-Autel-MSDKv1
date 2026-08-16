@@ -418,6 +418,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 runOnUiThread { toast(msg) }
             }
         }
+        // Same long-press idiom as the AR button and drop-pin: the short press does the common
+        // thing, the long press opens what belongs to it.
+        findViewById<View>(R.id.toolbarTakButton).setOnLongClickListener {
+            AppLog.v(TAG, "long-press: TAK channels")
+            onTakChannelsTapped()
+            true
+        }
 
         mapZoomButton.setOnClickListener {
             mapWide = !mapWide
@@ -2141,6 +2148,94 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         zoomButton.text = zoomLabel(raw)
     }
 
+    /**
+     * The TAK channels, from the flight screen.
+     *
+     * A pilot must be able to change the scope of this aircraft IN FLIGHT. Pre-Flight can do it,
+     * but going there stops the video to the team, which is the wrong thing to do in the middle
+     * of a sortie.
+     *
+     * THE SERVER HOLDS THE STATE. This screen reads it, writes to it and follows it. It is not
+     * the control — an administrator can change the same thing from TAK Portal, and the rows
+     * follow that within about a second because of the t-x-g-c listener below.
+     *
+     * LOCKED BY THE TAK CONFIGURATION LOCK. When the lock is on, the rows show the channels and
+     * refuse a change. Reading is never locked: a pilot must always be able to SEE the scope of
+     * the aircraft, and the lock exists to stop an accidental change and not to hide the truth
+     * (operator, 2026-08-16).
+     */
+    private fun onTakChannelsTapped() {
+        if (!TakManager.getInstance().isConnected) {
+            showNotice("TAK is not connected. The channels are on the server.", refused = true)
+            return
+        }
+        val themed = android.view.ContextThemeWrapper(this, R.style.TakDialogTheme)
+        val view = android.view.LayoutInflater.from(themed)
+            .inflate(R.layout.dialog_tak_channels, null)
+        val list = view.findViewById<android.widget.LinearLayout>(R.id.takChanList)
+        val status = view.findViewById<TextView>(R.id.takChanStatus)
+        val locked = getSharedPreferences(TAK_PREFS, MODE_PRIVATE)
+            .getBoolean(TAK_CONFIG_LOCKED, false)
+        if (locked) view.findViewById<TextView>(R.id.takChanLocked).visibility = View.VISIBLE
+
+        var channels: List<com.taklite.client.tak.TakMissionClient.Channel> = emptyList()
+        var painting = false
+
+        fun paint(chans: List<com.taklite.client.tak.TakMissionClient.Channel>) {
+            channels = chans
+            painting = true
+            list.removeAllViews()
+            for (ch in chans) {
+                val row = android.widget.CheckBox(themed).apply {
+                    val role = when {
+                        ch.canSend && ch.canReceive -> "send + receive"
+                        ch.canReceive -> "receive only — your markers do NOT go here"
+                        ch.canSend -> "send only"
+                        else -> "no direction"
+                    }
+                    text = "${ch.name}  ($role)"
+                    setTextColor(androidx.core.content.ContextCompat.getColor(
+                        applicationContext, R.color.tp_text_primary))
+                    isChecked = ch.active
+                    isEnabled = !locked
+                    alpha = if (locked) 0.55f else 1f
+                    setOnCheckedChangeListener { _, checked ->
+                        if (painting) return@setOnCheckedChangeListener
+                        ch.active = checked
+                        val bits = channels.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
+                        status.text = "Sending ${bits.size} active channel(s)…"
+                        // The COMPLETE set every time — activebits is absolute.
+                        TakMissionManager.setActiveChannels(bits) { ok ->
+                            status.text = if (ok) "The server has ${bits.size} active channel(s)."
+                                          else "The server refused the change."
+                        }
+                    }
+                }
+                list.addView(row)
+            }
+            painting = false
+        }
+
+        fun reload() = TakMissionManager.listChannels { paint(it) }
+        reload()
+
+        // Follow the server while the dialog is open, and stop when it closes.
+        val onGroups = TakManager.GroupChangeListener {
+            AppLog.i(TAG, "channels changed on the server — re-reading (flight screen)")
+            reload()
+        }
+        TakManager.getInstance().addGroupChangeListener(onGroups)
+
+        AlertDialog.Builder(this, R.style.TakDialogTheme)
+            .setTitle("TAK Channels")
+            .setView(view)
+            .setNegativeButton("Close", null)
+            .setOnDismissListener {
+                TakManager.getInstance().removeGroupChangeListener(onGroups)
+            }
+            .show()
+    }
+
     /** Log + toast-on-failure adapter for the camera's completion callbacks. */
     private fun camCb(opName: String, onOk: (() -> Unit)? = null) = object : CallbackWithNoParam {
         override fun onSuccess() {
@@ -3147,6 +3242,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         private const val FOV_STEP_DEG = 0.5
 
     /** Raw digital-zoom units per 1x. The SDK's scale is hundredths; see [applyZoom]. */
+    /** The TAK configuration lock, as TakConnectActivity writes it. Read here so a channel
+     *  cannot be changed from the flight screen while Pre-Flight is locked. The NAMES are
+     *  duplicated because TakConnectActivity keeps them private; if either string changes
+     *  there, change it here too. */
+    private const val TAK_PREFS = "takpilot2_tak"
+    private const val TAK_CONFIG_LOCKED = "tak_config_locked"
+
     private const val ZOOM_RAW_PER_X = 100
 
     /** Zoom limits in raw units, 1x to 16x. Enforced on OUR side: setDigitalZoomScale does no

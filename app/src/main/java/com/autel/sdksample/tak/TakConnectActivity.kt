@@ -471,7 +471,12 @@ class TakConnectActivity : AppCompatActivity() {
                     applicationContext, R.color.tp_text_primary))
                 // Enabled for every channel. See the note above: the box is `active`, and a
                 // receive-only channel is still one a pilot may want on or off.
-                isEnabled = true
+                // ⚠ THE LOCK STOPS A CHANGE, NOT THE READING. The rows below still follow the
+                // server while locked — a pilot must always be able to SEE the scope of this
+                // aircraft. The lock exists to stop an accidental change, not to hide the truth
+                // (operator, 2026-08-16).
+                isEnabled = !takConfigLocked()
+                alpha = if (takConfigLocked()) 0.55f else 1f
                 isChecked = ch.active
                 setOnCheckedChangeListener { _, checked ->
                     if (updatingChannels) return@setOnCheckedChangeListener
@@ -535,6 +540,11 @@ class TakConnectActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** The TAK configuration lock. The channel rows read it each time they are painted, thus a
+     *  lock or unlock takes effect without leaving the screen. */
+    private fun takConfigLocked(): Boolean =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TAK_LOCKED, false)
 
     private var latestChannels: List<TakMissionClient.Channel> = emptyList()
     /** True while the check boxes are being set from server data, so the listener does not
@@ -871,6 +881,9 @@ class TakConnectActivity : AppCompatActivity() {
             "Unlock TAK server settings?",
             "The lock prevents an accidental change to a server that works. " +
                 "A wrong value stops the aircraft sending data to your team.",
+            // The channel rows are built in code, thus applyLock cannot reach them by id. They
+            // are painted again instead, and each row reads the lock as it is built.
+            afterChange = { renderChannels(latestChannels) },
         )
         setupOneLock(
             R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
@@ -892,6 +905,8 @@ class TakConnectActivity : AppCompatActivity() {
         fieldIds: List<Int>,
         confirmTitle: String,
         confirmBody: String,
+        /** Run after the lock state settles, for controls that applyLock cannot reach by id. */
+        afterChange: (Boolean) -> Unit = {},
     ) {
         val box = findViewById<android.widget.CheckBox>(checkBoxId)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -900,11 +915,13 @@ class TakConnectActivity : AppCompatActivity() {
         val locked = prefs.getBoolean(prefKey, false)
         box.isChecked = locked
         applyLock(fieldIds, locked)
+        afterChange(locked)
 
         box.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 prefs.edit().putBoolean(prefKey, true).apply()
                 applyLock(fieldIds, true)
+                afterChange(true)
                 AppLog.v(TAG, "config locked: $prefKey")
                 return@setOnCheckedChangeListener
             }
@@ -952,6 +969,7 @@ class TakConnectActivity : AppCompatActivity() {
                     if (pw.text.toString() == UNLOCK_PASSWORD) {
                         prefs.edit().putBoolean(prefKey, false).apply()
                         applyLock(fieldIds, false)
+                        afterChange(false)
                         // The entered text is never logged, right or wrong — same rule as
                         // every other credential in this app (security review 2026-08-03).
                         AppLog.i(TAG, "config UNLOCKED: $prefKey")
