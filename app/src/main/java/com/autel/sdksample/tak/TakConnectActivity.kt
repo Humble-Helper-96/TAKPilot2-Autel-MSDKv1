@@ -90,11 +90,6 @@ class TakConnectActivity : AppCompatActivity() {
         }
         TakBridgeHolder.setCameraPointEnabled(cameraPoint.isChecked)
 
-        // My Channels: restore saved selection → apply to TakManager, wire the Pull button.
-        selectedChannels = loadChannels(prefs).toMutableSet()
-        TakManager.getInstance().setChannels(selectedChannels.toList())
-        renderChannels(selectedChannels.toList())   // show saved selection immediately
-        findViewById<Button>(R.id.takPullChannels).setOnClickListener { pullChannels(prefs) }
 
         // Reflect live state on open, and silently reconnect with saved certs if the
         // socket is not up — so the user never has to re-enter credentials / re-enroll.
@@ -164,16 +159,12 @@ class TakConnectActivity : AppCompatActivity() {
             runCatching { VideoStreamerHolder.stop() }
             runCatching { TakBridgeHolder.stop() }
             runCatching { TakManager.getInstance().disconnect() }
-            runCatching { TakManager.getInstance().setChannels(emptyList()) }
             // NOT stop(): logging out of TAK does not mean the app is done. See releaseIfIdle.
             runCatching { TakForegroundService.releaseIfIdle(applicationContext) }
             runCatching { clearEnrollment(prefs) }
             // Reset the UI fields so it's clearly a fresh login.
             username.setText("")
             password.setText("")
-            selectedChannels.clear()
-            runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
-            runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
                 androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
@@ -400,6 +391,8 @@ class TakConnectActivity : AppCompatActivity() {
             .remove(KEY_CLIENTCERT)
             .remove(KEY_UID)
             .remove(KEY_USERNAME)
+            // Channel selection was removed 2026-08-15, but controllers that had one still hold
+            // the stored list. Clearing it here keeps a logout from leaving dead state behind.
             .remove(KEY_CHANNELS)
             .putBoolean(KEY_LOGGED_OUT, true)   // block auto-reconnect until a fresh enroll
             .apply()
@@ -419,59 +412,14 @@ class TakConnectActivity : AppCompatActivity() {
         status.setTextColor(color)
     }
 
-    // ---- My Channels ----
-    private var selectedChannels: MutableSet<String> = mutableSetOf()
-
-    private fun loadChannels(prefs: android.content.SharedPreferences): List<String> =
-        (prefs.getString(KEY_CHANNELS, "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }
-
-    private fun saveChannels(prefs: android.content.SharedPreferences) {
-        prefs.edit().putString(KEY_CHANNELS, selectedChannels.joinToString(",")).apply()
-        TakManager.getInstance().setChannels(selectedChannels.toList())
-    }
-
-    /** Pull the channels the logged-in user belongs to from the TAK server (needs a connection). */
-    private fun pullChannels(prefs: android.content.SharedPreferences) {
-        AppLog.v(TAG, "Pull channels tapped")
-        val chanStatus = findViewById<TextView>(R.id.takChannelsStatus)
-        if (!TakManager.getInstance().isConnected) {
-            chanStatus.text = "Connect to TAK first, then pull channels."
-            chanStatus.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-            return
-        }
-        chanStatus.text = "Pulling channels…"
-        chanStatus.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-        TakMissionManager.listMyChannels { chans ->
-            if (chans.isEmpty()) {
-                chanStatus.text = "No channels found for this login."
-            } else {
-                chanStatus.text = "${chans.size} channel(s). Check the ones to publish to."
-            }
-            // Keep any previously-selected channels even if not returned this pull.
-            val all = (chans + selectedChannels).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
-            renderChannels(all)
-        }
-    }
-
-    /** Render a checkbox per channel; toggling saves the selection + applies it to routing. */
-    private fun renderChannels(channels: List<String>) {
-        val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        list.removeAllViews()
-        for (name in channels) {
-            val cb = android.widget.CheckBox(this).apply {
-                text = name
-                setTextColor(Color.WHITE)
-                isChecked = selectedChannels.contains(name)
-                setOnCheckedChangeListener { _, checked ->
-                    if (checked) selectedChannels.add(name) else selectedChannels.remove(name)
-                    AppLog.v(TAG, "channel '$name' ${if (checked) "selected" else "deselected"}")
-                    saveChannels(prefs)
-                }
-            }
-            list.addView(cb)
-        }
-    }
+    // ---- My Channels: REMOVED 2026-08-15 ----
+    //
+    // The screen let a pilot pick channels, and every marker and alert they then sent was
+    // DROPPED BY THE SERVER. See the note on TakManager, which holds the evidence. Routing is
+    // the certificate's group membership now.
+    //
+    // TakMissionManager.listMyChannels is left in place: it is a plain wrapper on the server's
+    // channel API and is what a correct implementation will need.
 
     // ---- 1. Aircraft Settings ----
 

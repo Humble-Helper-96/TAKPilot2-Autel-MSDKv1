@@ -107,8 +107,31 @@ Both of those changes shipped in v1.6.0. **v1.6.0 is now RELEASED** — tag `v1.
 versionCode 30, on the fleet from 2026-08-15. The earlier instruction here not to bump the
 version applied only while v1.6.0 was open; it is spent. New work takes a new version.
 
-v1.6.1 is open: versionCode 31, versionName 1.6.1. It is the Field Guide only — no code path
-changed and nothing new is on the wire. The guide lost 63% of its words, gained a controller-
+v1.6.1 is open: versionCode 31, versionName 1.6.1. It carries the Field Guide rewrite AND the
+removal of channel selection.
+
+**CHANNEL SELECTION IS GONE, and this is the important part of v1.6.1.** TAK Setup let a pilot
+pick channels, and `TakManager` then put `<marti><dest group="…"/></marti>` on every CoT that
+went through `sendCot`. THE SERVER DROPPED THOSE EVENTS. Markers and alerts never left the
+server; deselect every channel and they arrive at once. Proved on the fleet controller
+2026-08-15 with one marker sent each way. The feature also never applied to the drone PLI or the
+camera point, which call `sendMessage` directly — so a pilot who picked channels to LIMIT who
+saw the aircraft still broadcast its position to everyone. It failed in both directions, and it
+had done so since the v1.2 baseline. Routing is the certificate's group membership now. Do not
+re-add `<dest group>` without testing a marker AND an alert end to end on a real server; the
+mechanism a TAK Server actually accepts is an open question and is the work this defers.
+
+⚠ **BOTH DJI TREES STILL HAVE IT** — `withChannelDest` and `setChannels` are in each. Any pilot
+on those airframes who selected a channel is silently losing markers and alerts.
+
+v1.6.1 also makes the outbound CoT path visible: `sendCot` logs the exact bytes (verbose, so
+Detailed must be on), `TakClient` reports the write failures a `PrintWriter` silently swallows,
+and "Marker sent" is now "Marker queued for send" because it was written whether or not anything
+went out. That log is what found the channel bug. The outbound log is redacted — the pilot PLI
+carries the video password — and `OutboundLogRedactionTest` is a security control, not a
+formatting test.
+
+The Field Guide part: the guide lost 63% of its words, gained a controller-
 button section (C1 / C2 / zoom rocker), and renamed "Unknown marker" to "Static marker",
 which is a pilot-visible rename of a control the test pilots have already learned. It also
 corrected two places where the guide disagreed with the app: a Pre-Flight "If the signal is

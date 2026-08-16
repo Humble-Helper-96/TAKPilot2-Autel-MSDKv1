@@ -660,47 +660,12 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
-        <!-- My Channels: pull the groups the logged-in user belongs to and pick which ones this
-             aircraft's markers/PLI are directed to. Requires an active connection. -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="My Channels"
-            android:textColor="@color/tp_text_primary"
-            android:textStyle="bold"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Selected channels receive the aircraft position and markers. None selected uses the server default."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
-
-        <Button
-            style="@style/TakButton.Info"
-            android:id="@+id/takPullChannels"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Pull Channels" />
-
-        <TextView
-            android:id="@+id/takChannelsStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
-            android:text="" />
-
-        <LinearLayout
-            android:id="@+id/takChannelsList"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="4dp" />
+        <!-- My Channels: REMOVED 2026-08-15. The control let a pilot pick channels, and every
+             marker and alert they sent was then dropped by the server — see TakManager for the
+             evidence. The block also claimed "Selected channels receive the aircraft position
+             and markers", which was wrong twice over: the aircraft position ignored the
+             selection completely, and the markers never arrived. Routing is the certificate's
+             group membership. A correct implementation is deferred to a future release. -->
 
         <View
             android:layout_width="match_parent"

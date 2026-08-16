@@ -24,7 +24,6 @@ object TakAutoConnect {
     private const val KEY_CLIENTCERT = "clientcert_path"
     private const val KEY_CAMERA_POINT = "camera_point"
     private const val KEY_LOGGED_OUT = "logged_out"
-    private const val KEY_CHANNELS = "channels"
 
     /** Reconnect in the background if we have saved certs and aren't already connected. */
     fun tryReconnect(context: Context) {
@@ -130,9 +129,8 @@ object TakAutoConnect {
                 uid, callsign, "Cyan", "Team Member",
                 host, cotPort, ts, "atakatak", cc, "atakatak",
             )
-            // Re-apply the saved channel routing selection.
-            (prefs.getString(KEY_CHANNELS, "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                .let { if (it.isNotEmpty()) TakManager.getInstance().setChannels(it) }
+            // No channel routing is re-applied: channel selection was removed 2026-08-15
+            // because it silently destroyed markers and alerts. See TakManager.
             TakBridgeHolder.start("$uid-DRONE", callsign)
             TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
             TakForegroundService.start(context.applicationContext, callsign)
