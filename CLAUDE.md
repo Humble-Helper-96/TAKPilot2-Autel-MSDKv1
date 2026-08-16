@@ -60,11 +60,16 @@ A UI change lands in all three applications, or it lands in none.
 
 ## Conventions
 
-- Documents are STE with the marker line at the top. New code comments are STE. Old
+- Documents are STE with the marker line at the top — but NOT the release notes, which carry
+  no marker line (operator, 2026-08-16). They are still written in STE; the pilot reading them
+  does not need to be told which controlled language they are in. New code comments are STE. Old
   comments become STE when a file is next touched for real work.
 - UI state must show what the AIRCRAFT holds, not what was requested. Unknown is its own
   state (amber), never collapsed into off.
-- Release notes are short and simple, one line per function, next to the APK.
+- Release notes are short and simple, ONE LINE PER FUNCTION, next to the APK. Keep them that
+  way: the v1.6.0 and v1.6.1 notes both had to be cut back after they grew into prose that
+  stated a fact, then restated it as its own consequence (operator, 2026-08-16). A change gets
+  a line or a bullet, not a paragraph and a follow-up paragraph.
 - Colours come from the tokens in `res/values/takpilot_colors.xml`. Do not add a
   `Color.parseColor` call site — specification §6.1. `res/values/colors.xml` belongs to the
   vendor sample; leave it alone, and see the recorded exception in §6.1 before you change
