@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.taklite.client.tak.CotBuilder
 import com.taklite.client.tak.TakCertEnroller
+import com.taklite.client.tak.TakMissionClient
 import com.taklite.client.tak.TakManager
 import com.autel.sdksample.R
 import com.taklite.util.AppLog
@@ -91,10 +92,10 @@ class TakConnectActivity : AppCompatActivity() {
         TakBridgeHolder.setCameraPointEnabled(cameraPoint.isChecked)
 
         // My Channels: restore saved selection → apply to TakManager, wire the Pull button.
-        selectedChannels = loadChannels(prefs).toMutableSet()
-        TakManager.getInstance().setChannels(selectedChannels.toList())
-        renderChannels(selectedChannels.toList())   // show saved selection immediately
-        findViewById<Button>(R.id.takPullChannels).setOnClickListener { pullChannels(prefs) }
+        // RESEARCH BUILD: the channels come from the server and go back to the server. No
+        // <dest group> is put on any message — see CHANNELS-FINDINGS.md.
+        refreshChannels()
+        findViewById<Button>(R.id.takPullChannels).setOnClickListener { refreshChannels() }
 
         // Reflect live state on open, and silently reconnect with saved certs if the
         // socket is not up — so the user never has to re-enter credentials / re-enroll.
@@ -171,7 +172,9 @@ class TakConnectActivity : AppCompatActivity() {
             // Reset the UI fields so it's clearly a fresh login.
             username.setText("")
             password.setText("")
-            selectedChannels.clear()
+            // Nothing local to clear: the channels live on the server now. Logging out does
+            // not change them, which is correct — they belong to the certificate.
+            latestChannels = emptyList()
             runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
             runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
@@ -420,58 +423,81 @@ class TakConnectActivity : AppCompatActivity() {
     }
 
     // ---- My Channels ----
-    private var selectedChannels: MutableSet<String> = mutableSetOf()
 
-    private fun loadChannels(prefs: android.content.SharedPreferences): List<String> =
-        (prefs.getString(KEY_CHANNELS, "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
-    private fun saveChannels(prefs: android.content.SharedPreferences) {
-        prefs.edit().putString(KEY_CHANNELS, selectedChannels.joinToString(",")).apply()
-        TakManager.getInstance().setChannels(selectedChannels.toList())
-    }
-
-    /** Pull the channels the logged-in user belongs to from the TAK server (needs a connection). */
-    private fun pullChannels(prefs: android.content.SharedPreferences) {
-        AppLog.v(TAG, "Pull channels tapped")
-        val chanStatus = findViewById<TextView>(R.id.takChannelsStatus)
-        if (!TakManager.getInstance().isConnected) {
-            chanStatus.text = "Connect to TAK first, then pull channels."
-            chanStatus.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-            return
-        }
-        chanStatus.text = "Pulling channels…"
-        chanStatus.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-        TakMissionManager.listMyChannels { chans ->
-            if (chans.isEmpty()) {
-                chanStatus.text = "No channels found for this login."
-            } else {
-                chanStatus.text = "${chans.size} channel(s). Check the ones to publish to."
-            }
-            // Keep any previously-selected channels even if not returned this pull.
-            val all = (chans + selectedChannels).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
-            renderChannels(all)
-        }
-    }
-
-    /** Render a checkbox per channel; toggling saves the selection + applies it to routing. */
-    private fun renderChannels(channels: List<String>) {
+    /**
+     * The channels, as the SERVER holds them.
+     *
+     * This is not a local preference any more. The check box shows the server's `active` state,
+     * and a change PUTs the new set to the server — the method a real TAK client uses. Nothing
+     * is stored on the controller, thus nothing here can disagree with the server.
+     *
+     * A channel the certificate cannot SEND to is shown and disabled. It is not hidden: a pilot
+     * must be able to see that the channel exists and that this aircraft cannot publish to it.
+     */
+    private fun renderChannels(channels: List<TakMissionClient.Channel>) {
         val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         list.removeAllViews()
-        for (name in channels) {
-            val cb = android.widget.CheckBox(this).apply {
-                text = name
-                setTextColor(Color.WHITE)
-                isChecked = selectedChannels.contains(name)
+        latestChannels = channels
+        for (ch in channels) {
+            val row = android.widget.CheckBox(this).apply {
+                val role = when {
+                    ch.canSend && ch.canReceive -> "send + receive"
+                    ch.canReceive -> "receive only — cannot publish"
+                    ch.canSend -> "send only"
+                    else -> "no direction"
+                }
+                text = "${ch.name}  ($role)"
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    applicationContext,
+                    if (ch.canSend) R.color.tp_text_primary else R.color.tp_text_secondary))
+                isEnabled = ch.canSend
+                isChecked = ch.active
                 setOnCheckedChangeListener { _, checked ->
-                    if (checked) selectedChannels.add(name) else selectedChannels.remove(name)
-                    AppLog.v(TAG, "channel '$name' ${if (checked) "selected" else "deselected"}")
-                    saveChannels(prefs)
+                    if (updatingChannels) return@setOnCheckedChangeListener
+                    ch.active = checked
+                    pushActiveChannels()
                 }
             }
-            list.addView(cb)
+            list.addView(row)
         }
     }
+
+    /**
+     * Sends the COMPLETE set of active channels to the server.
+     *
+     * ⚠ activebits is ABSOLUTE. Anything not in this list is switched off, thus the whole set
+     * goes every time and never a change. ⚠ It applies to the CERTIFICATE — every controller
+     * enrolled as this user gets this set.
+     */
+    private fun pushActiveChannels() {
+        val bits = latestChannels.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
+        val status = findViewById<TextView>(R.id.takChannelsStatus)
+        status.text = "Sending ${bits.size} active channel(s) to the server…"
+        TakMissionManager.setActiveChannels(bits) { ok ->
+            status.text = if (ok) "Server accepted ${bits.size} active channel(s)."
+                          else "The server refused the change. See the log."
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext,
+                if (ok) R.color.tp_state_go else R.color.tp_state_danger))
+            // Read it back. The server is the truth, not what was just tapped.
+            refreshChannels()
+        }
+    }
+
+    /** Re-reads the channels from the server and repaints. The server can be changed from TAK
+     *  Portal by an administrator, thus the screen must follow it and not a local copy. */
+    private fun refreshChannels() {
+        TakMissionManager.listChannels { chans ->
+            updatingChannels = true
+            renderChannels(chans)
+            updatingChannels = false
+        }
+    }
+
+    private var latestChannels: List<TakMissionClient.Channel> = emptyList()
+    /** True while the check boxes are being set from server data, so the listener does not
+     *  treat a repaint as a pilot's tap and PUT it straight back. */
+    private var updatingChannels = false
 
     // ---- 1. Aircraft Settings ----
 

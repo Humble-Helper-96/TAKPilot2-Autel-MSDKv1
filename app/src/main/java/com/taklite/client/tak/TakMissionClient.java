@@ -134,10 +134,111 @@ public class TakMissionClient {
      * by name, skips the implicit __ANON__, and returns a clean sorted list for the "My Channels"
      * picker on the TAK Setup screen.
      */
+    /**
+     * One channel as the server describes it, for one direction.
+     *
+     * The server sends ONE RECORD FOR EACH DIRECTION. A channel the certificate can send to and
+     * receive from arrives twice, once IN and once OUT. A channel it can only receive from
+     * arrives once, OUT. That is the only way to know which channels accept a send, and it is
+     * what {@link #listChannels()} folds together.
+     */
+    public static class Channel {
+        public final String name;
+        public final int bitpos;
+        public boolean canSend;      // an IN record exists
+        public boolean canReceive;   // an OUT record exists
+        public boolean active;       // switched on for this certificate right now
+        public String description;
+        Channel(String name, int bitpos) { this.name = name; this.bitpos = bitpos; }
+        @Override public String toString() {
+            return name + "[bit=" + bitpos + (canSend ? " send" : "") + (canReceive ? " recv" : "")
+                    + (active ? " ACTIVE" : " off") + "]";
+        }
+    }
+
+    /**
+     * The channels this certificate has, folded to one entry each.
+     *
+     * ⚠ THE QUERY PARAMETERS ARE NOT OPTIONAL. Without them the server omits the IN records and
+     * every channel looks receive-only — proved on hardware 2026-08-16, same certificate, same
+     * minute: the bare path returned 2 records and this one returned 3, and the extra record is
+     * the IN that says a channel accepts a send.
+     */
+    public List<Channel> listChannels() {
+        java.util.LinkedHashMap<String, Channel> byName = new java.util.LinkedHashMap<>();
+        try {
+            String body = request("GET", "/Marti/api/groups/all?useCache=true&sendLatestSA=true",
+                    null, "application/json");
+            if (body == null) return new ArrayList<>();
+            JSONArray data = new JSONObject(body).optJSONArray("data");
+            if (data == null) return new ArrayList<>();
+            for (int i = 0; i < data.length(); i++) {
+                JSONObject g = data.getJSONObject(i);
+                String name = g.optString("name", null);
+                if (name == null || name.isEmpty() || name.startsWith("__")) continue;
+                Channel c = byName.get(name);
+                if (c == null) { c = new Channel(name, g.optInt("bitpos", -1)); byName.put(name, c); }
+                if ("IN".equalsIgnoreCase(g.optString("direction", ""))) c.canSend = true;
+                if ("OUT".equalsIgnoreCase(g.optString("direction", ""))) c.canReceive = true;
+                // active is per channel, not per direction; either record carries it.
+                if (g.optBoolean("active", false)) c.active = true;
+                String d = g.optString("description", null);
+                if (d != null && !d.isEmpty()) c.description = d;
+            }
+            AppLog.i(TAG, "channels: " + byName.values());
+        } catch (Exception e) {
+            AppLog.w(TAG, "listChannels failed: " + e.getMessage());
+        }
+        return new ArrayList<>(byName.values());
+    }
+
+    /**
+     * Sets which channels are active for this certificate.
+     *
+     * ⚠ THE LIST IS ABSOLUTE. The server activates the channels whose bitpos is in the list and
+     * deactivates every other one. An empty list switches them all off. Always send the COMPLETE
+     * set you want, never a change.
+     *
+     * ⚠ IT BELONGS TO THE CERTIFICATE, NOT THE AIRCRAFT. Two controllers enrolled as one user
+     * share one set, and this call changes it for both (operator, 2026-08-16).
+     *
+     * The body shape comes from the server source — {@code PUT /groups/activebits} takes
+     * {@code Integer[]} and compares each with {@code group.getBitpos()}. It has not been
+     * confirmed against a live server. The status and any error body are logged.
+     *
+     * @return true when the server answered 2xx.
+     */
+    public boolean setActiveChannels(List<Integer> bitpos) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < bitpos.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(bitpos.get(i));
+        }
+        sb.append("]");
+        AppLog.i(TAG, "PUT /Marti/api/groups/activebits " + sb);
+        int code = requestStatus("PUT", "/Marti/api/groups/activebits", sb.toString(),
+                "application/json");
+        AppLog.i(TAG, "activebits -> HTTP " + code);
+        return code >= 200 && code < 300;
+    }
+
     public List<String> listMyChannels() {
         java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
         try {
-            String body = request("GET", "/Marti/api/groups/all", null, "application/json");
+            // RESEARCH BUILD: fetch it BOTH ways and compare.
+            //
+            // TAKAware asks with useCache=true&sendLatestSA=true and gets TWO records for a
+            // two-way channel — one direction=IN and one direction=OUT — which is how it splits
+            // its menu. We ask with no parameters and get ONE record. That difference is the
+            // thing under test: it decides whether the server can tell us which channels this
+            // certificate may SEND to.
+            String bare = request("GET", "/Marti/api/groups/all", null, "application/json");
+            AppLog.i(TAG, "GROUPS BARE: " + bare);
+            String body = request("GET",
+                    "/Marti/api/groups/all?useCache=true&sendLatestSA=true", null,
+                    "application/json");
+            AppLog.i(TAG, "GROUPS WITHPARAMS: " + body);
+            if (body == null) body = bare;
             if (body == null) return new ArrayList<>();
             JSONObject root = new JSONObject(body);
             JSONArray data = root.optJSONArray("data");

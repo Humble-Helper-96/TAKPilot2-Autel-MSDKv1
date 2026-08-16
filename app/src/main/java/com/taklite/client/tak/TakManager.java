@@ -230,7 +230,11 @@ public class TakManager implements TakClient.TakClientListener {
                     + " connected=" + connected);
             return;
         }
-        String wire = withChannelDest(xml);
+        // RESEARCH BRANCH: NO <dest group> IS EVER INJECTED. The channels are set with
+        // PUT /Marti/api/groups/activebits and enforced by the server — see
+        // CHANNELS-FINDINGS.md. withChannelDest and setChannels are kept only so the old
+        // behaviour can be compared; nothing may call them.
+        String wire = xml;
         // THE EXACT BYTES, AFTER withChannelDest, so the log shows any injected <marti> block
         // rather than what the builder produced. Added 2026-08-15: markers were reported as not
         // arriving while the PLI did, and there was no way to tell a message that never left the

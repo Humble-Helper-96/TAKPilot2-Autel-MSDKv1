@@ -99,6 +99,28 @@ object TakMissionManager {
     }
 
     /** Pull the channels/groups the logged-in user belongs to (deduped) for the TAK Setup picker. */
+    /** The channels this certificate has, with direction and active state. Background, result
+     *  on the main thread. */
+    fun listChannels(cb: (List<TakMissionClient.Channel>) -> Unit) {
+        io.execute {
+            val chans = client()?.listChannels() ?: emptyList()
+            handler.post { cb(chans) }
+        }
+    }
+
+    /**
+     * Sets the active channels for this certificate.
+     *
+     * ⚠ ABSOLUTE — pass the COMPLETE set you want active. Anything not in the list is switched
+     * off. ⚠ It applies to the certificate, thus to every controller enrolled as this user.
+     */
+    fun setActiveChannels(bitpos: List<Int>, cb: (Boolean) -> Unit) {
+        io.execute {
+            val ok = client()?.setActiveChannels(bitpos) == true
+            handler.post { cb(ok) }
+        }
+    }
+
     fun listMyChannels(cb: (List<String>) -> Unit) {
         io.execute {
             val chans = client()?.listMyChannels() ?: emptyList()

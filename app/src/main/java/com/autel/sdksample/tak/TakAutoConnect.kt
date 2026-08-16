@@ -130,9 +130,9 @@ object TakAutoConnect {
                 uid, callsign, "Cyan", "Team Member",
                 host, cotPort, ts, "atakatak", cc, "atakatak",
             )
-            // Re-apply the saved channel routing selection.
-            (prefs.getString(KEY_CHANNELS, "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                .let { if (it.isNotEmpty()) TakManager.getInstance().setChannels(it) }
+            // NOTHING IS RE-APPLIED. A controller can still hold a channel list saved by an
+            // older build, and feeding it to setChannels would put <dest group> back on every
+            // message and destroy the markers again. The channels live on the server now.
             TakBridgeHolder.start("$uid-DRONE", callsign)
             TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
             TakForegroundService.start(context.applicationContext, callsign)
