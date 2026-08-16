@@ -39,6 +39,7 @@ class TakConnectActivity : AppCompatActivity() {
         // The listener holds this Activity. TakManager outlives the screen, thus leaving it
         // attached leaks the whole Activity and repaints views that are gone.
         runCatching { TakManager.getInstance().removeGroupChangeListener(groupChangeListener) }
+        runCatching { TakManager.getInstance().removeListener(connectionListener) }
         super.onDestroy()
     }
 
@@ -102,7 +103,11 @@ class TakConnectActivity : AppCompatActivity() {
         // administrator in TAK Portal. Listening beats a timer: the screen follows in about a
         // second, and it asks the server nothing while nothing changes.
         TakManager.getInstance().addGroupChangeListener(groupChangeListener)
-        findViewById<Button>(R.id.takPullChannels).setOnClickListener { refreshChannels() }
+        // AND read them again when TAK connects. The refresh above needs a connection, so a
+        // screen opened before TAK is up would otherwise show an empty list for ever — the
+        // "Pull Channels" button used to be the only way out of that, and it is gone
+        // (operator, 2026-08-16).
+        TakManager.getInstance().addListener(connectionListener)
 
         // Reflect live state on open, and silently reconnect with saved certs if the
         // socket is not up — so the user never has to re-enter credentials / re-enroll.
@@ -516,6 +521,19 @@ class TakConnectActivity : AppCompatActivity() {
         refreshChannels()
         findViewById<TextView>(R.id.takChannelsStatus)?.text =
             "The server changed the channels. The list is up to date."
+    }
+
+    /** Reads the channels again when TAK connects. Nothing else here needs contact events. */
+    private val connectionListener = object : TakManager.TakUserListener {
+        override fun onTakUserUpdated(user: com.taklite.client.tak.TakUser) {}
+        override fun onTakUserRemoved(uid: String) {}
+        override fun onTakUserDeleted(uid: String) {}
+        override fun onTakConnectionChanged(connected: Boolean) {
+            if (connected) {
+                AppLog.i(TAG, "TAK connected — reading the channels")
+                refreshChannels()
+            }
+        }
     }
 
     private var latestChannels: List<TakMissionClient.Channel> = emptyList()

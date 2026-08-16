@@ -674,17 +674,10 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Selected channels receive the aircraft position and markers. None selected uses the server default."
+            android:text="These are the channels of this certificate on the TAK server. A change here goes to the server, and a change on the server comes back here. A receive-only channel does not carry the markers of this aircraft."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
-        <Button
-            style="@style/TakButton.Info"
-            android:id="@+id/takPullChannels"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Pull Channels" />
 
         <TextView
             android:id="@+id/takChannelsStatus"
