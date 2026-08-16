@@ -2184,6 +2184,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * with the rows editable is the right password.
      */
     private fun promptChannelUnlock(onUnlocked: () -> Unit) {
+        // STYLED EXACTLY AS PRE-FLIGHT'S UNLOCK FIELD. A programmatic EditText takes the
+        // PLATFORM's colours and no background at all, thus the first version was a bare line
+        // of text across the full width of the dialog — hard to see and hard to hit. The
+        // background and the padding are what make it look like a field, and the wrapper is
+        // what keeps it off the edges. Do not simplify either away.
         val field = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -2192,13 +2197,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             setTextColor(androidx.core.content.ContextCompat.getColor(
                 applicationContext, R.color.tp_text_primary))
             setHintTextColor(androidx.core.content.ContextCompat.getColor(
-                applicationContext, R.color.tp_text_hint_dialog))
+                applicationContext, R.color.tp_text_hint))
+            setBackgroundResource(R.drawable.bg_dialog_field)
+            val pad = (12 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
         }
-        AlertDialog.Builder(this, R.style.TakDialogTheme)
-            .setTitle("Unlock the channels?")
-            .setMessage("A change here changes who sees this aircraft. It stays unlocked " +
-                "until you leave the flight screen, and Pre-Flight stays locked.")
-            .setView(field)
+        val wrap = android.widget.FrameLayout(this).apply {
+            val padH = (16 * resources.displayMetrics.density).toInt()
+            val padV = (8 * resources.displayMetrics.density).toInt()
+            setPadding(padH, padV, padH, padV)
+            addView(field)
+        }
+        // Destructive theme, as Pre-Flight's unlock uses: getting this wrong changes who sees
+        // the aircraft.
+        AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+            // No body text. It is a password prompt, and the pilot already knows what they
+            // touched. The first version explained the session rule here, which is a thing to
+            // read in the air and not a thing to decide.
+            .setTitle("Unlock channels")
+            .setView(wrap)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Unlock") { _, _ ->
                 if (field.text.toString() == CHANNEL_UNLOCK_PASSWORD) {
