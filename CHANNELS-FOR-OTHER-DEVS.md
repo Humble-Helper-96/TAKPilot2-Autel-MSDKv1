@@ -1,6 +1,4 @@
-# TAK channels — two messages to send
-
-**Written in Simplified Technical English (ASD-STE100).**
+# TAK channels
 
 Two findings from tests on a live TAK Server, 15 and 16 August 2026. Each part below is
 complete. Send each part to one person.
@@ -9,7 +7,7 @@ The full evidence is in `CHANNELS-FINDINGS.md`.
 
 ---
 
-# Part 1 — for Rick (TAKPilot)
+# Part 1 — TAKPilot
 
 **Subject: the channel selection destroys markers. Here is the cause and the correction.**
 
@@ -20,11 +18,10 @@ each channel into every message that goes through `sendCot()`:
 
     <marti><dest group="APD Main" send="true" /></marti>
 
-**If the pilot cannot SEND to one of those channels, the server refuses the whole message.** The
-markers do not go to the team. The pilot gets no error, and the application gets no error.
+**If a selected channel is Read Only, the server refuses the whole message.**  The pilot gets no error, and the application gets no error.
 
-This is in your source and in ours. We forked it, thus we had the same fault for the life of the
-application. A pilot on our fleet lost every marker for one week.
+This is in the source and in ours. We forked it, thus we had the same fault for the life of the
+application. 
 
 ## Why the server refuses
 
@@ -58,12 +55,12 @@ One bad channel destroys the message for the good channel.
    directly, thus they ignore the selection. A pilot who selects channels to LIMIT who sees the
    aircraft still sends its position to everyone. The function fails in both directions.
 2. **`TakGroupAssigner.java` has no caller.** It adds the certificate to every channel, which
-   would make the server test pass. Nothing calls it, in your source or in ours. It is 259 lines
+   would make the server test pass. Nothing calls it, in the source or in ours. It is 259 lines
    that never operate.
 
 ## The correction
 
-**No TAK client puts `<dest group>` on a message.** We examined four TAKAware debug logs. There
+**No TAK client puts `<dest group>` on a message.** We examined four TAKAware debug logs to see how that application handeled channels. There
 is not one `<marti><dest group>` in them. A client sends plain CoT and the server decides who
 gets it.
 
@@ -76,8 +73,8 @@ Use the server API instead:
 The parameters are necessary. Without them the server omits the IN records, and each channel
 looks receive-only. The server sends one record for each channel in each direction:
 
-- two records (IN and OUT) — the certificate can send and receive
-- one record (OUT) — receive only
+- two records (IN and OUT) 
+- one record (OUT) 
 - `active` — the channel is on now. It governs receive as well as send.
 - `bitpos` — the number that identifies the channel
 
@@ -93,7 +90,7 @@ each time.
 **Follow the server**
 
 The server sends a `t-x-g-c` CoT when the channels change. Read the channels again when one
-arrives. Do not use a timer.
+arrives. 
 
 ## What you get
 
@@ -105,15 +102,15 @@ Delete `withChannelDest` and `setChannels`. We did, and the markers came back at
 
 **One warning.** The active channels belong to the CERTIFICATE. If two controllers enroll as
 one user, a change on one controller changes both. An aircraft that needs its own scope needs
-its own certificate.
+its own certificate. This can be viewed as an advantage or disadvange depending on your needs.
 
 ---
 
-# Part 2 — for Cory (TAK Aware)
+# Part 2 — TAK Aware
 
 **Subject: the server tells you when the channels change. TAK Aware does not use it.**
 
-## What we saw in your logs
+## What we saw in logs
 
 Thank you for the debug logs. They gave us the answer to our own fault.
 
