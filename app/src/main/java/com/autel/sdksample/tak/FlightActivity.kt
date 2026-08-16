@@ -2253,6 +2253,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             channels = chans
             painting = true
             list.removeAllViews()
+            if (chans.isEmpty()) {
+                // Channels turned off on this server. Show nothing to change — a write to such
+                // a server is reported to cause real trouble on it.
+                status.text = "This server has no channels."
+                painting = false
+                return
+            }
             for (ch in chans) {
                 val row = android.widget.CheckBox(themed).apply {
                     // Two-way is the normal case and gets no label — a note on every row is

@@ -458,6 +458,13 @@ class TakConnectActivity : AppCompatActivity() {
         val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
         list.removeAllViews()
         latestChannels = channels
+        if (channels.isEmpty()) {
+            // A server with channels turned off returns none. Say so, and offer no control:
+            // writing to such a server is reported to cause real trouble on it.
+            findViewById<TextView>(R.id.takChannelsStatus).text =
+                "This server has no channels."
+            return
+        }
         for (ch in channels) {
             val row = android.widget.CheckBox(this).apply {
                 // Two-way is the normal case and gets no label — a note on every row is
@@ -509,6 +516,15 @@ class TakConnectActivity : AppCompatActivity() {
      * enrolled as this user gets this set.
      */
     private fun pushActiveChannels() {
+        // ⚠ NEVER WRITE TO A SERVER THAT HAS NO CHANNELS. Cory Foy (TAK Aware) reported
+        // 2026-08-16 that a channel change sent to a server which does not have channels
+        // enabled can do real damage server side — days of debugging on one deployment. No row
+        // exists when the list is empty, thus no toggle can fire this, but the guard is here
+        // so that stays true if a caller is ever added.
+        if (latestChannels.isEmpty()) {
+            AppLog.w(TAG, "channel write refused — this server returned no channels")
+            return
+        }
         val bits = latestChannels.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
         val status = findViewById<TextView>(R.id.takChannelsStatus)
         status.text = "Sending ${bits.size} active channel(s) to the server…"

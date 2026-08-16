@@ -183,7 +183,28 @@ Two decisions are open:
 
 **Set `RESEARCH_NO_DROP_LIMITS` to false before any of this goes to a release.**
 
-## 9. What is still not tested
+## 9. ⚠ A server that does not have channels
+
+Cory Foy, the developer of TAK Aware, gave this warning on 16 August 2026:
+
+> Channels is actually a deeper challenge — admins can turn channels changes off in two
+> different ways. And sending a channel change to a non-channel enabled server can actually
+> wreak havoc server side (we spent days debugging that with Texas).
+
+**Do not write to a server that does not have channels.** Two rules come from this:
+
+1. Write only when the server gave you a channel. Our screens build a row for each channel the
+   server returns, and only a row can start a write. A server with no channels thus gets no
+   write. `pushActiveChannels` refuses an empty list as well, so this stays true if another
+   caller is added later.
+2. A refused write is not a fault to hide. An administrator can stop a client changing its own
+   channels. Show the pilot that the server refused, and read the channels again.
+
+**Not known: how to identify such a server before you write to it.** An empty channel list is
+the only signal we have, and it is a guess. Ask Cory what the two methods are, and what a
+client can read to know.
+
+## 10. What is still not tested
 
 - `PUT /groups/active` and `PUT /groups/activeForce`.
 - More than one aircraft on one certificate. Section 5 comes from the operator, not from a test
@@ -192,7 +213,7 @@ Two decisions are open:
   code, but no part of this application sends an alert.
 - The behaviour when the server refuses a `PUT`. Only HTTP 200 was seen.
 
-## 10. Corrections — do not repeat these
+## 11. Corrections — do not repeat these
 
 This document had five wrong statements before the tests corrected them. Each one came from the
 same error: **an absence in our own data was reported as a fact about the server.**
