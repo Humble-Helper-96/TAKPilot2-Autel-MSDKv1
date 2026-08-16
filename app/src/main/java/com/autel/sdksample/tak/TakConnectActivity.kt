@@ -460,13 +460,15 @@ class TakConnectActivity : AppCompatActivity() {
         latestChannels = channels
         for (ch in channels) {
             val row = android.widget.CheckBox(this).apply {
-                val role = when {
-                    ch.canSend && ch.canReceive -> "send + receive"
-                    ch.canReceive -> "receive only — your markers do NOT go here"
-                    ch.canSend -> "send only"
-                    else -> "no direction"
+                // Two-way is the normal case and gets no label — a note on every row is
+                // noise, and the exception is what a pilot needs to see (operator,
+                // 2026-08-16).
+                text = when {
+                    ch.canSend && ch.canReceive -> ch.name
+                    ch.canReceive -> "${ch.name} - Rx Only"
+                    ch.canSend -> "${ch.name} - Tx Only"
+                    else -> "${ch.name} - no direction"
                 }
-                text = "${ch.name}  ($role)"
                 setTextColor(androidx.core.content.ContextCompat.getColor(
                     applicationContext, R.color.tp_text_primary))
                 // Enabled for every channel. See the note above: the box is `active`, and a
