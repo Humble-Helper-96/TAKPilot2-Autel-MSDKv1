@@ -112,9 +112,13 @@ removal of channel selection.
 
 **CHANNEL SELECTION IS GONE, and this is the important part of v1.6.1.** TAK Setup let a pilot
 pick channels, and `TakManager` then put `<marti><dest group="…"/></marti>` on every CoT that
-went through `sendCot`. THE SERVER DROPPED THOSE EVENTS. Markers and alerts never left the
-server; deselect every channel and they arrive at once. Proved on the fleet controller
-2026-08-15 with one marker sent each way. The feature also never applied to the drone PLI or the
+went through `sendCot`. THE SERVER DROPPED THOSE EVENTS. Markers never left the server;
+deselect every channel and they arrive at once. Proved on the fleet controller 2026-08-15 with
+one marker sent each way. It would have done the same to an alert, but **nothing in this app
+calls `sendAlert`** — that method and its listener are unreachable code in the shared core, so
+no alert was ever lost. An earlier version of this note and of the v1.6.1 release notes said
+alerts were being dropped; that was inferred from the code path without checking it had a
+caller, and it was wrong. The feature also never applied to the drone PLI or the
 camera point, which call `sendMessage` directly — so a pilot who picked channels to LIMIT who
 saw the aircraft still broadcast its position to everyone. It failed in both directions, and it
 had done so since the v1.2 baseline. Routing is the certificate's group membership now. Do not
@@ -122,7 +126,8 @@ re-add `<dest group>` without testing a marker AND an alert end to end on a real
 mechanism a TAK Server actually accepts is an open question and is the work this defers.
 
 ⚠ **BOTH DJI TREES STILL HAVE IT** — `withChannelDest` and `setChannels` are in each. Any pilot
-on those airframes who selected a channel is silently losing markers and alerts.
+on those airframes who selected a channel is silently losing markers. Check whether those trees
+wire `sendAlert` before repeating the alert claim; this one does not.
 
 v1.6.1 also makes the outbound CoT path visible: `sendCot` logs the exact bytes (verbose, so
 Detailed must be on), `TakClient` reports the write failures a `PrintWriter` silently swallows,

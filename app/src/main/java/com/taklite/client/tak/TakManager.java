@@ -211,10 +211,15 @@ public class TakManager implements TakClient.TakClientListener {
      *
      * This class used to hold the channels a pilot picked on TAK Setup and inject
      * {@code <marti><dest group="…" send="true"/></marti>} into every CoT that went through
-     * {@link #sendCot}. IT SILENTLY DESTROYED MARKERS AND ALERTS. With channels selected, the
-     * server would not route those events and simply dropped them; with none selected they
-     * arrived at once. Proved on the fleet controller 2026-08-15 by watching one marker with the
-     * block and one without.
+     * {@link #sendCot}. IT SILENTLY DESTROYED MARKERS. With channels selected, the server would
+     * not route them and simply dropped them; with none selected they arrived at once. Proved on
+     * the fleet controller 2026-08-15 by watching one marker with the block and one without.
+     *
+     * It would have done the same to an alert — {@link #sendAlert} takes the same path — but
+     * NOTHING IN THIS APPLICATION CALLS sendAlert, so no alert was ever lost. That method and
+     * its listener are unreachable code carried by this shared core. The first write-up of this
+     * bug claimed alerts were being dropped; that was wrong, and it reached the v1.6.1 release
+     * notes before it was caught. If an alert control is ever added, this path is what it uses.
      *
      * It was also never applied evenly. The drone PLI and the camera point call
      * {@link TakClient#sendMessage} directly, so they ignored the selection entirely — a pilot
