@@ -518,7 +518,44 @@ public class TakManager implements TakClient.TakClientListener {
     @Override
     public void onCotReceived(String xml) {
         AppLog.d(TAG, "CoT received: " + xml.substring(0, Math.min(xml.length(), 200)));
+        // t-x-g-c is the server saying "your channels changed, read them again". It arrives
+        // whether the change came from this controller or from an administrator in TAK Portal,
+        // and it arrives about a tenth of a second after the change — see the group-change
+        // listener below for why this is better than a timer.
+        if (xml.contains("type=\"t-x-g-c\"")) {
+            AppLog.i(TAG, "group change (t-x-g-c) — the active channels changed on the server");
+            notifyGroupsChanged();
+        }
         processCoT(xml);
+    }
+
+    /**
+     * Told when the server's active channels for this certificate change.
+     *
+     * ⚠ THIS IS A NOTICE, NOT THE STATE. The event carries no channel list — it says only that
+     * something changed. A listener must read the channels again to find out what they are.
+     */
+    public interface GroupChangeListener { void onGroupsChanged(); }
+
+    private final List<GroupChangeListener> groupListeners = new ArrayList<>();
+
+    public void addGroupChangeListener(GroupChangeListener l) {
+        synchronized (groupListeners) { if (!groupListeners.contains(l)) groupListeners.add(l); }
+    }
+
+    public void removeGroupChangeListener(GroupChangeListener l) {
+        synchronized (groupListeners) { groupListeners.remove(l); }
+    }
+
+    private void notifyGroupsChanged() {
+        mainHandler.post(() -> {
+            synchronized (groupListeners) {
+                for (GroupChangeListener l : groupListeners) {
+                    try { l.onGroupsChanged(); }
+                    catch (Exception e) { AppLog.w(TAG, "group listener failed: " + e.getMessage()); }
+                }
+            }
+        });
     }
 
     @Override

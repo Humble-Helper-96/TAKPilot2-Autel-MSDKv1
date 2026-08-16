@@ -36,6 +36,9 @@ class TakConnectActivity : AppCompatActivity() {
         // A debounced write must not outlive the screen that scheduled it — leaving the pilot's
         // half-typed value to land on the aircraft after they navigated away.
         cancelPendingSettingPushes()
+        // The listener holds this Activity. TakManager outlives the screen, thus leaving it
+        // attached leaks the whole Activity and repaints views that are gone.
+        runCatching { TakManager.getInstance().removeGroupChangeListener(groupChangeListener) }
         super.onDestroy()
     }
 
@@ -95,6 +98,10 @@ class TakConnectActivity : AppCompatActivity() {
         // RESEARCH BUILD: the channels come from the server and go back to the server. No
         // <dest group> is put on any message — see CHANNELS-FINDINGS.md.
         refreshChannels()
+        // The server pushes t-x-g-c when the channels change, from this controller or from an
+        // administrator in TAK Portal. Listening beats a timer: the screen follows in about a
+        // second, and it asks the server nothing while nothing changes.
+        TakManager.getInstance().addGroupChangeListener(groupChangeListener)
         findViewById<Button>(R.id.takPullChannels).setOnClickListener { refreshChannels() }
 
         // Reflect live state on open, and silently reconnect with saved certs if the
@@ -500,6 +507,15 @@ class TakConnectActivity : AppCompatActivity() {
             renderChannels(chans)
             updatingChannels = false
         }
+    }
+
+    /** The server told us the channels changed. Read them again — the event carries a notice,
+     *  not a list. */
+    private val groupChangeListener = TakManager.GroupChangeListener {
+        AppLog.i(TAG, "channels changed on the server — re-reading")
+        refreshChannels()
+        findViewById<TextView>(R.id.takChannelsStatus)?.text =
+            "The server changed the channels. The list is up to date."
     }
 
     private var latestChannels: List<TakMissionClient.Channel> = emptyList()
