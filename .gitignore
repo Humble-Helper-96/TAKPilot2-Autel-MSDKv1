@@ -103,3 +103,9 @@ crashlytics-build.properties
 
 # Local tool/editor config, not project content
 .claude/
+
+# The Field Guide handout in ODT. Generated from FieldGuideActivity.kt for hand editing —
+# regenerate with tools/generate_field_guide_md.py and convert, rather than tracking a binary
+# that goes stale the moment the guide changes. The .md beside it IS tracked: it diffs.
+TAKPilot2-FieldGuide.odt
+.~lock.*#

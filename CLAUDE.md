@@ -103,6 +103,18 @@ pilot was told the marker was refused. `showNotice` takes a `refused` flag and o
 colour; do not set the notice colour at a call site. Both DJI siblings took the same change on
 the same day — specification §4.8.
 
-**Do not bump the version for either change.** v1.6.0 is open and takes them as they stand
-(operator, 2026-08-14). `BUILD_TIME` on the home screen identifies a build in the field, so a
-second test build at the same `versionCode` is still unambiguous.
+Both of those changes shipped in v1.6.0. **v1.6.0 is now RELEASED** — tag `v1.6.0`,
+versionCode 30, on the fleet from 2026-08-15. The earlier instruction here not to bump the
+version applied only while v1.6.0 was open; it is spent. New work takes a new version.
+
+v1.6.1 is open: versionCode 31, versionName 1.6.1. It is the Field Guide only — no code path
+changed and nothing new is on the wire. The guide lost 63% of its words, gained a controller-
+button section (C1 / C2 / zoom rocker), and renamed "Unknown marker" to "Static marker",
+which is a pilot-visible rename of a control the test pilots have already learned. It also
+corrected two places where the guide disagreed with the app: a Pre-Flight "If the signal is
+lost" control that was removed on 2026-08-13, and four settings the screen has but the guide
+never listed.
+
+The markdown and ODT handouts beside this file are GENERATED from `FieldGuideActivity.kt` by
+`tools/generate_field_guide_md.py`. The Kotlin is the source of truth; regenerate after every
+guide edit rather than editing the handouts and hoping they agree.
