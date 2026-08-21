@@ -454,7 +454,7 @@ public class CotBuilder {
         StringBuilder sb = new StringBuilder();
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.append("<event version=\"").append(COT_VERSION).append("\"");
-        sb.append(" type=\"").append(cotType).append("\"");
+        sb.append(" type=\"").append(escapeXml(cotType)).append("\"");
         sb.append(" uid=\"").append(escapeXml(markerUid)).append("\"");
         sb.append(" how=\"h-g-i-g-o\"");
         sb.append(" time=\"").append(time).append("\"");
