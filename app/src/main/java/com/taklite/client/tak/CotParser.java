@@ -31,6 +31,55 @@ public class CotParser {
         COT_DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
     }
 
+    /**
+     * §3 "XML parser re-created per message": {@code XmlPullParserFactory.newInstance()} does a
+     * classpath/system-property lookup for an implementation every time it is called — real work,
+     * paid on every single inbound CoT event, for a factory whose configuration never changes.
+     * Built once and reused; {@link XmlPullParserFactory#newPullParser()} still hands out a fresh
+     * (and cheap) parser instance per call, which is the part that actually needs to be new —
+     * an {@link XmlPullParser} is stateful for the one document it walks and is not shared.
+     */
+    private static XmlPullParserFactory factory;
+
+    private static synchronized XmlPullParser newParser(String cleanedXml) throws XmlPullParserException {
+        if (factory == null) {
+            factory = XmlPullParserFactory.newInstance();
+            factory.setNamespaceAware(false);
+        }
+        XmlPullParser parser = factory.newPullParser();
+        parser.setInput(new StringReader(cleanedXml));
+        return parser;
+    }
+
+    /**
+     * Reads only the {@code <event type="…">} attribute — one tag, not the whole document — so
+     * {@link com.taklite.client.tak.TakManager#processCoT} (a friend by convention, not package)
+     * can route to the ONE parser below that can possibly succeed instead of trying all three in
+     * sequence on every inbound message (the other §3 half of this finding: disconnect, then
+     * alert, then position, each a full fresh parse, on every single event). Null on any failure
+     * — the caller's contract is to fall back to the old try-all-three sequence when this can't
+     * tell, never to drop an event it would otherwise have parsed.
+     */
+    public static String peekEventType(String xml) {
+        if (xml == null || xml.isEmpty()) return null;
+        try {
+            String cleaned = xml.replaceAll("<\\?xml[^?]*\\?>", "").trim();
+            if (cleaned.isEmpty()) return null;
+            XmlPullParser parser = newParser(cleaned);
+            for (int eventType = parser.getEventType(); eventType != XmlPullParser.END_DOCUMENT; eventType = parser.next()) {
+                if (eventType == XmlPullParser.START_TAG) {
+                    if ("event".equals(parser.getName())) {
+                        return parser.getAttributeValue(null, "type");
+                    }
+                    return null;   // first tag isn't <event> — not a shape any parser below handles
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public static class AlertMessage {
         public String alertId;
         public String senderCallsign;
@@ -48,10 +97,7 @@ public class CotParser {
             String cleaned = xml.replaceAll("<\\?xml[^?]*\\?>", "").trim();
             if (cleaned.isEmpty()) return null;
 
-            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-            factory.setNamespaceAware(false);
-            XmlPullParser parser = factory.newPullParser();
-            parser.setInput(new StringReader(cleaned));
+            XmlPullParser parser = newParser(cleaned);
 
             String uid = null;
             String type = null;
@@ -223,10 +269,7 @@ public class CotParser {
             String cleaned = xml.replaceAll("<\\?xml[^?]*\\?>", "").trim();
             if (cleaned.isEmpty()) return null;
 
-            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-            factory.setNamespaceAware(false);
-            XmlPullParser parser = factory.newPullParser();
-            parser.setInput(new StringReader(cleaned));
+            XmlPullParser parser = newParser(cleaned);
 
             AlertMessage alert = new AlertMessage();
 
@@ -271,10 +314,7 @@ public class CotParser {
             String cleaned = xml.replaceAll("<\\?xml[^?]*\\?>", "").trim();
             if (cleaned.isEmpty()) return null;
 
-            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-            factory.setNamespaceAware(false);
-            XmlPullParser parser = factory.newPullParser();
-            parser.setInput(new StringReader(cleaned));
+            XmlPullParser parser = newParser(cleaned);
 
             String linkedUid = null;
 
