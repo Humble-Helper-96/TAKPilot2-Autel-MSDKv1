@@ -445,6 +445,15 @@
                     android:hint="MMTX01"
                     android:inputType="text" />
             </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Broadcast ID" />
+                <EditText
+                    android:id="@+id/videoStreamId"
+                    style="@style/takFieldStyle"
+                    android:hint="UAS-CALLSIGN"
+                    android:inputType="text" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout style="@style/takFormRow">
@@ -457,13 +466,23 @@
                     android:inputType="textUri" />
             </LinearLayout>
 
+            <!-- ONE LOGIN FOR THE SERVER, not one per protocol (operator, 2026-08-29). SRT has
+                 no login of its own: the stream id is an opaque string and the media server
+                 reads a user and a password out of it by its own convention. -->
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Broadcast ID" />
+                <TextView style="@style/takLabelStyle" android:text="Username" />
                 <EditText
-                    android:id="@+id/videoStreamId"
+                    android:id="@+id/videoUser"
                     style="@style/takFieldStyle"
-                    android:hint="UAS-CALLSIGN"
                     android:inputType="text" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Password" />
+                <EditText
+                    android:id="@+id/videoPassword"
+                    style="@style/takFieldStyle"
+                    android:inputType="textPassword" />
             </LinearLayout>
         </LinearLayout>
 
@@ -542,53 +561,35 @@
             android:textColor="@color/tp_text_secondary"
             android:textSize="11sp" />
 
-        <!-- THE PORT AND THE LOGIN BELONG TO A PROTOCOL, thus there is one block for each
-             (operator, 2026-08-29). One shared set of fields changed meaning when the toggle
-             moved, and the port had to be guessed on a switch.
+        <!-- ONLY THE PORT DIFFERS BETWEEN THE PROTOCOLS, and SRT adds a passphrase. Each
+             block keeps its own values, so a toggle back and forth restores what was last
+             entered for that protocol (operator, 2026-08-29).
 
-             ⚠ THE RTSP BLOCK IS ALWAYS SHOWN, INCLUDING WHEN SRT IS SELECTED. It is not only
-             the push: it is the address that goes to the team in the CoT, because no TAK
-             client plays SRT. Its port was the constant 8554 until this change, so a server
-             serving RTSP on any other port could not be advertised at all. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="RTSP — the address in the CoT"
-            android:paddingTop="12dp" />
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Port" />
-                <EditText
-                    android:id="@+id/videoRtspPort"
-                    style="@style/takFieldStyle"
-                    android:text="8554"
-                    android:inputType="number" />
-            </LinearLayout>
+             ⚠ THE RTSP PORT IS USED WHILE SRT IS SELECTED, even though this block is hidden
+             then: it is the port in the CoT address, because no TAK client plays SRT. Toggle
+             back to RTSP to change it. -->
+        <LinearLayout
+            android:id="@+id/videoRtspBlock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Username" />
-                <EditText
-                    android:id="@+id/videoRtspUser"
-                    style="@style/takFieldStyle"
-                    android:inputType="text" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Password" />
-                <EditText
-                    android:id="@+id/videoRtspPassword"
-                    style="@style/takFieldStyle"
-                    android:inputType="textPassword" />
+            <LinearLayout style="@style/takFormRow">
+                <LinearLayout style="@style/takColumn">
+                    <TextView style="@style/takLabelStyle" android:text="RTSP port" />
+                    <EditText
+                        android:id="@+id/videoRtspPort"
+                        style="@style/takFieldStyle"
+                        android:text="8554"
+                        android:inputType="number" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 
-        <!-- THE SRT BLOCK IS THE PUSH ONLY, thus it is shown only when SRT is selected.
-
-             SRT has a port and a passphrase. The username and the password belong to RTSP
-             (operator, 2026-08-29).
-
-             ⚠ A server that sets srtPublishPassphrase refuses an unencrypted publisher BEFORE
-             it reads any credential, and it sends the same refusal it sends for a wrong
-             login — so an empty passphrase looks exactly like bad credentials from the
-             controller (MediaMTX v1.20.0, 2026-08-29). -->
+        <!-- ⚠ The passphrase encrypts the stream; it is not a credential. A server that sets
+             srtPublishPassphrase refuses an unencrypted publisher BEFORE it reads the stream
+             id, and it sends the same refusal it sends for a wrong password — so an empty
+             passphrase looks exactly like a bad login (MediaMTX v1.20.0, 2026-08-29). -->
         <LinearLayout
             android:id="@+id/videoSrtBlock"
             android:layout_width="match_parent"
@@ -596,12 +597,9 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView style="@style/takLabelStyle"
-                android:text="SRT — the push to the server"
-                android:paddingTop="12dp" />
             <LinearLayout style="@style/takFormRow">
                 <LinearLayout style="@style/takColumn">
-                    <TextView style="@style/takLabelStyle" android:text="Port" />
+                    <TextView style="@style/takLabelStyle" android:text="SRT port" />
                     <EditText
                         android:id="@+id/videoSrtPort"
                         style="@style/takFieldStyle"
@@ -617,6 +615,7 @@
                         android:inputType="textPassword" />
                 </LinearLayout>
             </LinearLayout>
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

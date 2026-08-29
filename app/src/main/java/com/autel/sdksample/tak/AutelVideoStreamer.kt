@@ -59,24 +59,24 @@ class AutelVideoStreamer(
         val host: String,
         val streamId: String,
 
-        // ---- RTSP: the PLAYBACK details, and the push when RTSP is the transport ----
-        //
-        // ⚠ ALWAYS USED, WHICHEVER TRANSPORT IS SELECTED. [advertiseUrl] is an RTSP address
-        // because no TAK client plays SRT, so these three describe what the team receives even
-        // when the video leaves the controller over SRT. They were one shared set with the SRT
-        // credentials until 2026-08-29, and the playback port was the constant 8554 — which
-        // meant a server serving RTSP on any other port could not be advertised at all.
-        val rtspPort: Int,
-        val rtspUser: String,
-        val rtspPass: String,
+        // ONE LOGIN FOR THE SERVER, both protocols. SRT has no login of its own — the SRT
+        // handshake carries a stream id, which is an opaque string, and MediaMTX reads a user
+        // and a password out of it by its own convention. So this pair authorises the publish
+        // whichever transport carries it, and it is also what the CoT address needs.
+        val username: String,
+        val password: String,
 
-        // ---- SRT: the PUSH details, used only when SRT is the transport ----
+        // ONLY THE PORT DIFFERS BETWEEN THE PROTOCOLS, and SRT adds a passphrase. Each keeps
+        // its own value, so a pilot who toggles back and forth finds what they last entered.
         //
-        // SRT has a PORT and a PASSPHRASE. It has no login of its own: the username and the
-        // password belong to RTSP (operator, 2026-08-29). The stream id still carries them,
-        // because that is the only place SRT can put a credential, but they are the RTSP
-        // pair — one login for the server, not two.
+        // ⚠ [rtspPort] IS USED WHICHEVER TRANSPORT IS SELECTED, and the screen hides its field
+        // under SRT. It is not only the push port: [advertiseUrl] is an RTSP address because no
+        // TAK client plays SRT, so this is the port the team connects to even while the video
+        // leaves the controller over SRT. It was the constant 8554 until 2026-08-29, which
+        // meant a server serving RTSP on any other port could not be advertised at all.
+        val rtspPort: Int = VideoTransport.RTSP.defaultPort,
         val srtPort: Int = VideoTransport.SRT.defaultPort,
+
         /** How the video leaves the controller. See [VideoTransport]. */
         val transport: VideoTransport = VideoTransport.RTSP,
         /** SRT only, and MILLISECONDS. The evidence for the number, the units trap and the
@@ -134,11 +134,11 @@ class AutelVideoStreamer(
         fun pushUrl(): String = when (transport) {
             VideoTransport.RTSP -> "rtsp://$host:$rtspPort/${path()}"
             VideoTransport.SRT ->
-                if (rtspUser.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                else "srt://$host:$srtPort/publish:${path()}:$rtspUser:$rtspPass"
+                if (username.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
+                else "srt://$host:$srtPort/publish:${path()}:$username:$password"
         }
 
-        /** The port the PUSH uses. The login is [rtspUser] either way. */
+        /** The port the PUSH uses. The login is [username] either way. */
         val pushPort: Int get() =
             if (transport == VideoTransport.SRT) srtPort else rtspPort
 
@@ -154,7 +154,7 @@ class AutelVideoStreamer(
          * ingest port and whose login authorises a publish.
          */
         fun advertiseUrl(): String {
-            val cred = if (rtspUser.isNotEmpty()) "${enc(rtspUser)}:${enc(rtspPass)}@" else ""
+            val cred = if (username.isNotEmpty()) "${enc(username)}:${enc(password)}@" else ""
             return "rtsp://$cred$host:$rtspPort/${path()}?tcp"
         }
         /**
@@ -173,18 +173,18 @@ class AutelVideoStreamer(
          */
         fun urlSafe(): String {
             val secret = when {
-                rtspUser.isEmpty() -> ""
-                rtspPass.isEmpty() -> "(NO PASSWORD)"
+                username.isEmpty() -> ""
+                password.isEmpty() -> "(NO PASSWORD)"
                 else -> "***"
             }
             return when (transport) {
                 VideoTransport.RTSP -> {
-                    val who = if (rtspUser.isEmpty()) "" else "$rtspUser:$secret@"
+                    val who = if (username.isEmpty()) "" else "$username:$secret@"
                     "rtsp://$who$host:$rtspPort/${path()}?tcp"
                 }
                 VideoTransport.SRT ->
-                    if (rtspUser.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                    else "srt://$host:$srtPort/publish:${path()}:$rtspUser:$secret"
+                    if (username.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
+                    else "srt://$host:$srtPort/publish:${path()}:$username:$secret"
             }
         }
         private fun enc(s: String): String =
@@ -276,7 +276,7 @@ class AutelVideoStreamer(
         // ⚠ SRT carries the credentials inside the stream id, and the colon separates its
         // parts. A password with a colon in it produces a stream id the server reads wrongly
         // and refuses, and the pilot sees only "the stream will not start". Say so in the log.
-        if (config.transport == VideoTransport.SRT && config.rtspPass.contains(':')) {
+        if (config.transport == VideoTransport.SRT && config.password.contains(':')) {
             AppLog.w(TAG, "the video password contains a colon — SRT cannot carry it, " +
                     "the server will refuse this stream. Change the password or use RTSP.")
         }
@@ -298,7 +298,7 @@ class AutelVideoStreamer(
                 setLogs(false)
                 // TCP always. The UDP option went with the checkbox — see [VideoTransport.RTSP].
                 setProtocol(Protocol.TCP)
-                if (config.rtspUser.isNotEmpty()) setAuthorization(config.rtspUser, config.rtspPass)
+                if (config.username.isNotEmpty()) setAuthorization(config.username, config.password)
                 setOnlyVideo(true)
                 setReTries(10)
             })
@@ -586,9 +586,9 @@ object VideoStreamerHolder {
             //
             // The RTSP set is read whichever transport is selected — it is what the CoT
             // advertises. The SRT set is read too and simply goes unused under RTSP.
+            username = p.getString("video_user", "") ?: "",
+            password = p.getString("video_pass", "") ?: "",
             rtspPort = p.getInt("video_rtsp_port", VideoTransport.RTSP.defaultPort),
-            rtspUser = p.getString("video_rtsp_user", "") ?: "",
-            rtspPass = p.getString("video_rtsp_pass", "") ?: "",
             srtPort = p.getInt("video_srt_port", VideoTransport.SRT.defaultPort),
             transport = transport,
             // Read on every start, so a change on the Debug screen takes effect at the next

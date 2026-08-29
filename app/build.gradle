@@ -490,7 +490,16 @@ android {
         //        username and the password belong to RTSP and are entered once. The stream id
         //        still carries them, because that is the only place SRT can put a credential,
         //        but they are the RTSP pair — one login for the server, not two.
-        versionCode 40
+        //        ONE LOGIN, AND ONLY THE PORT CHANGES WITH THE PROTOCOL (operator,
+        //        2026-08-29). The username and the password sit beside the host and serve both
+        //        protocols: SRT has no login of its own — its stream id is an opaque string
+        //        and the media server reads the credentials out of it. The transport toggle
+        //        shows an RTSP port, or an SRT port and a passphrase, and each protocol keeps
+        //        what was last entered for it.
+        //
+        //        ⚠ The RTSP port is used while SRT is selected, although its field is hidden
+        //        then: it is the port in the CoT address. Toggle back to RTSP to change it.
+        versionCode 41
         versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

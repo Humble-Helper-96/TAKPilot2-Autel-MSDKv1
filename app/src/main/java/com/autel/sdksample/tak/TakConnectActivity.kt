@@ -217,9 +217,10 @@ class TakConnectActivity : AppCompatActivity() {
         val vServer1 = findViewById<android.widget.RadioButton>(R.id.videoServer1)
         val vServer2 = findViewById<android.widget.RadioButton>(R.id.videoServer2)
         val vHost = findViewById<EditText>(R.id.videoHost)
+        val vUser = findViewById<EditText>(R.id.videoUser)
+        val vPass = findViewById<EditText>(R.id.videoPassword)
         val vRtspPort = findViewById<EditText>(R.id.videoRtspPort)
-        val vRtspUser = findViewById<EditText>(R.id.videoRtspUser)
-        val vRtspPass = findViewById<EditText>(R.id.videoRtspPassword)
+        val vRtspBlock = findViewById<android.widget.LinearLayout>(R.id.videoRtspBlock)
         val vSrtPort = findViewById<EditText>(R.id.videoSrtPort)
         val vStreamId = findViewById<EditText>(R.id.videoStreamId)
         val vTransportGroup = findViewById<android.widget.RadioGroup>(R.id.videoTransportGroup)
@@ -242,7 +243,7 @@ class TakConnectActivity : AppCompatActivity() {
             vHost.setText(prefs.getString(vKey(slot, "host"), "") ?: "")
             vRtspPort.setText(
                 prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort).toString())
-            vRtspUser.setText(prefs.getString(vKey(slot, "rtsp_user"), "") ?: "")
+            vUser.setText(prefs.getString(vKey(slot, "user"), "") ?: "")
             vSrtPort.setText(
                 prefs.getInt(vKey(slot, "srt_port"), VideoTransport.SRT.defaultPort).toString())
 
@@ -260,7 +261,7 @@ class TakConnectActivity : AppCompatActivity() {
             // ⚠ THE SAME TRAP IS NOW PER SLOT. Every field this function fills must also be
             // written by saveSlot below. A field read here and not written there loses the
             // OTHER server's value the moment the pilot switches.
-            vRtspPass.setText(prefs.getString(vKey(slot, "rtsp_pass"), "") ?: "")
+            vPass.setText(prefs.getString(vKey(slot, "pass"), "") ?: "")
             vStreamId.setText(prefs.getString(vKey(slot, "streamid"), "") ?: "")
             // ⚠ SAME TRAP AS THE PASSWORD ABOVE — a field filled here must be saved by
             // saveSlot, or switching servers erases the other one's value.
@@ -307,9 +308,9 @@ class TakConnectActivity : AppCompatActivity() {
         fun refreshTransportHint() {
             // The passphrase row rides with the hint because both answer to the same choice
             // and every call site that repaints one must repaint the other.
-            vSrtBlock.visibility =
-                if (selectedTransport() == VideoTransport.SRT) android.view.View.VISIBLE
-                else android.view.View.GONE
+            val srt = selectedTransport() == VideoTransport.SRT
+            vSrtBlock.visibility = if (srt) android.view.View.VISIBLE else android.view.View.GONE
+            vRtspBlock.visibility = if (srt) android.view.View.GONE else android.view.View.VISIBLE
             vTransportHint.text = if (selectedTransport() == VideoTransport.SRT)
                 "Low delay on a less reliable network, for example a cellular network."
             else
@@ -330,10 +331,10 @@ class TakConnectActivity : AppCompatActivity() {
             host = vHost.text.toString().trim(),
             streamId = vStreamId.text.toString().trim(),
             transport = selectedTransport(),
+            username = vUser.text.toString().trim(),
+            password = vPass.text.toString(),
             rtspPort = vRtspPort.text.toString().trim().toIntOrNull()
                 ?: VideoTransport.RTSP.defaultPort,
-            rtspUser = vRtspUser.text.toString().trim(),
-            rtspPass = vRtspPass.text.toString(),
             srtPort = vSrtPort.text.toString().trim().toIntOrNull()
                 ?: VideoTransport.SRT.defaultPort,
             srtPassphrase = vSrtPhrase.text.toString(),
@@ -361,8 +362,8 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(vKey(slot, "name"), vName.text.toString().trim())
                 .putString(vKey(slot, "host"), cfg.host)
                 .putInt(vKey(slot, "rtsp_port"), cfg.rtspPort)
-                .putString(vKey(slot, "rtsp_user"), cfg.rtspUser)
-                .putString(vKey(slot, "rtsp_pass"), cfg.rtspPass)
+                .putString(vKey(slot, "user"), cfg.username)
+                .putString(vKey(slot, "pass"), cfg.password)
                 .putInt(vKey(slot, "srt_port"), cfg.srtPort)
                 .putString(vKey(slot, "streamid"), cfg.streamId)
                 .putString(vKey(slot, "transport"), cfg.transport.prefValue)
@@ -376,8 +377,8 @@ class TakConnectActivity : AppCompatActivity() {
                 // exists, and the stream still starts if this mirror is ever the only thing left.
                 .putString(KEY_V_HOST, cfg.host)
                 .putInt(KEY_V_RTSP_PORT, cfg.rtspPort)
-                .putString(KEY_V_RTSP_USER, cfg.rtspUser)
-                .putString(KEY_V_RTSP_PASS, cfg.rtspPass)
+                .putString(KEY_V_USER, cfg.username)
+                .putString(KEY_V_PASS, cfg.password)
                 .putInt(KEY_V_SRT_PORT, cfg.srtPort)
                 .putString(KEY_V_STREAMID, cfg.streamId)
                 .putString(KEY_V_TRANSPORT, cfg.transport.prefValue)
@@ -399,9 +400,8 @@ class TakConnectActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
-        listOf(vName, vHost, vStreamId,
-               vRtspPort, vRtspUser, vRtspPass,
-               vSrtPort, vSrtPhrase)
+        listOf(vName, vHost, vStreamId, vUser, vPass,
+               vRtspPort, vSrtPort, vSrtPhrase)
             .forEach { it.addTextChangedListener(watcher) }
         /**
          * The transport choice, and the ONE place the port field is written for the pilot.
@@ -478,38 +478,56 @@ class TakConnectActivity : AppCompatActivity() {
     }
 
     /**
-     * Second slot migration: ONE port and ONE login became a set per protocol.
+     * Second slot migration: ONE port became a port PER PROTOCOL.
      *
      * It needs its own flag because [migrateVideoSlots] has already run on every controller in
      * the fleet and will never run again.
      *
      * ⚠ **Which protocol the old port belonged to depends on the slot's transport.** A slot
      * left on RTSP had an RTSP port; a slot already switched to SRT had an SRT ingest port, and
-     * its RTSP port was never asked for — it was the constant 8554, so that is what goes in.
+     * its RTSP port was never asked for — the build used the constant 8554 for it, so that is
+     * what goes in.
      *
-     * The login goes to the RTSP block, which is where it belongs: SRT has no login of its
-     * own, only a passphrase.
+     * The login is NOT split. One pair authorises the publish on either protocol: SRT has no
+     * login of its own, and the media server reads the same credentials out of the stream id.
+     *
+     * ⚠ It also recovers from the SHORT-LIVED SPLIT LAYOUT that development builds 39 and 40
+     * wrote (`rtsp_user`/`rtsp_pass`). Those keys are read back into the one login if the
+     * original is empty, so a controller that ran that build does not come up with no
+     * credentials.
      */
     private fun migrateVideoProtocolSplit(prefs: android.content.SharedPreferences) {
         if (prefs.getBoolean(KEY_V_PROTO_SPLIT_MIGRATED, false)) return
         val e = prefs.edit()
         for (slot in 1..2) {
             val oldPort = prefs.getInt(vKey(slot, "port"), VideoTransport.RTSP.defaultPort)
-            val user = prefs.getString(vKey(slot, "user"), "") ?: ""
-            val pass = prefs.getString(vKey(slot, "pass"), "") ?: ""
             val onSrt = VideoTransport.fromPref(prefs.getString(vKey(slot, "transport"), null)) ==
                     VideoTransport.SRT
-            e.putInt(vKey(slot, "rtsp_port"),
-                if (onSrt) VideoTransport.RTSP.defaultPort else oldPort)
-            e.putInt(vKey(slot, "srt_port"),
-                if (onSrt) oldPort else VideoTransport.SRT.defaultPort)
-            e.putString(vKey(slot, "rtsp_user"), user)
-            e.putString(vKey(slot, "rtsp_pass"), pass)
+            if (!prefs.contains(vKey(slot, "rtsp_port"))) {
+                e.putInt(vKey(slot, "rtsp_port"),
+                    if (onSrt) VideoTransport.RTSP.defaultPort else oldPort)
+            }
+            if (!prefs.contains(vKey(slot, "srt_port"))) {
+                e.putInt(vKey(slot, "srt_port"),
+                    if (onSrt) oldPort else VideoTransport.SRT.defaultPort)
+            }
+            // Recover a login left behind by the split-layout builds.
+            if ((prefs.getString(vKey(slot, "user"), "") ?: "").isEmpty()) {
+                prefs.getString(vKey(slot, "rtsp_user"), null)?.takeIf { it.isNotEmpty() }
+                    ?.let { e.putString(vKey(slot, "user"), it) }
+            }
+            if ((prefs.getString(vKey(slot, "pass"), "") ?: "").isEmpty()) {
+                prefs.getString(vKey(slot, "rtsp_pass"), null)?.takeIf { it.isNotEmpty() }
+                    ?.let { e.putString(vKey(slot, "pass"), it) }
+            }
             // The passphrase only changed key name.
-            e.putString(vKey(slot, "srt_phrase"), prefs.getString(vKey(slot, "srtpass"), "") ?: "")
+            if (!prefs.contains(vKey(slot, "srt_phrase"))) {
+                e.putString(vKey(slot, "srt_phrase"),
+                    prefs.getString(vKey(slot, "srtpass"), "") ?: "")
+            }
         }
         e.putBoolean(KEY_V_PROTO_SPLIT_MIGRATED, true).apply()
-        AppLog.i(TAG, "video config migrated to a port and login per protocol")
+        AppLog.i(TAG, "video config migrated to a port per protocol")
     }
 
     /** Preference key for one field of one video server slot. */
@@ -1140,7 +1158,7 @@ class TakConnectActivity : AppCompatActivity() {
     private val videoLockedFields = listOf(
         R.id.videoName,
         R.id.videoHost, R.id.videoStreamId,
-        R.id.videoRtspPort, R.id.videoRtspUser, R.id.videoRtspPassword,
+        R.id.videoUser, R.id.videoPassword, R.id.videoRtspPort,
         R.id.videoSrtPort, R.id.videoSrtPassphrase,
         R.id.videoCodecH264, R.id.videoCodecH265,
         R.id.videoTransportRtsp, R.id.videoTransportSrt, R.id.videoSrtPassphrase,
@@ -1700,8 +1718,6 @@ class TakConnectActivity : AppCompatActivity() {
         // video_user / video_pass trio, which are now read only by the slot migration.
         // ⚠ Must match the literals read in AutelVideoStreamer.startFromPrefs.
         private const val KEY_V_RTSP_PORT = "video_rtsp_port"
-        private const val KEY_V_RTSP_USER = "video_rtsp_user"
-        private const val KEY_V_RTSP_PASS = "video_rtsp_pass"
         private const val KEY_V_SRT_PORT = "video_srt_port"
         /** The SRT passphrase — the stream ENCRYPTION key, not the publish login. Must match
          *  the literal read in AutelVideoStreamer.startFromPrefs. */
@@ -1716,7 +1732,7 @@ class TakConnectActivity : AppCompatActivity() {
 
         /** Guard for [migrateVideoProtocolSplit]. Separate from the slot-migration flag, which
          *  has already run everywhere and cannot carry a second meaning. */
-        private const val KEY_V_PROTO_SPLIT_MIGRATED = "video_proto_split_migrated"
+        private const val KEY_V_PROTO_SPLIT_MIGRATED = "video_port_per_protocol_migrated"
         /** Set once the single-server configuration has been copied into slot 1. See
          *  migrateVideoSlots for why this must never run twice. */
         private const val KEY_V_SLOTS_MIGRATED = "video_slots_migrated"
