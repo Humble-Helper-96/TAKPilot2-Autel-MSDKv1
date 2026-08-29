@@ -21,18 +21,24 @@ import org.junit.Test
  */
 class VideoTransportUrlTest {
 
+    /**
+     * One server, configured for both protocols with DIFFERENT ports and DIFFERENT logins, so
+     * a test that reads the wrong pair cannot pass by coincidence.
+     */
     private fun cfg(
         transport: VideoTransport,
-        port: Int = transport.defaultPort,
-        user: String = "tak",
-        pass: String = "s3cret",
+        rtspPort: Int = VideoTransport.RTSP.defaultPort,
+        srtPort: Int = VideoTransport.SRT.defaultPort,
+        rtspUser: String = "rtspuser",
+        rtspPass: String = "rtsppass",
+        srtUser: String = "srtuser",
+        srtPass: String = "srtpass",
     ) = AutelVideoStreamer.VideoConfig(
         host = "stream.example.com",
-        port = port,
-        username = user,
-        password = pass,
         streamId = "UAS-ALPHA",
         transport = transport,
+        rtspPort = rtspPort, rtspUser = rtspUser, rtspPass = rtspPass,
+        srtPort = srtPort, srtUser = srtUser, srtPass = srtPass,
     )
 
     // ---- RTSP: unchanged behaviour, credentials in the protocol ----
@@ -49,13 +55,13 @@ class VideoTransportUrlTest {
     @Test
     fun rtspAdvertisesItsOwnPortWithCredentials() {
         assertEquals(
-            "rtsp://tak:s3cret@stream.example.com:8554/UAS-ALPHA-Low?tcp",
+            "rtsp://rtspuser:rtsppass@stream.example.com:8554/UAS-ALPHA-Low?tcp",
             cfg(VideoTransport.RTSP).advertiseUrl())
     }
 
     @Test
     fun rtspKeepsANonDefaultPortInBothAddresses() {
-        val c = cfg(VideoTransport.RTSP, port = 8654)
+        val c = cfg(VideoTransport.RTSP, rtspPort = 8654)
         assertTrue(":8654/" in c.pushUrl())
         assertTrue(":8654/" in c.advertiseUrl())
     }
@@ -65,7 +71,7 @@ class VideoTransportUrlTest {
     @Test
     fun srtPutsThePublisherPathAndCredentialsInTheStreamId() {
         assertEquals(
-            "srt://stream.example.com:8890/publish:UAS-ALPHA-Low:tak:s3cret",
+            "srt://stream.example.com:8890/publish:UAS-ALPHA-Low:srtuser:srtpass",
             cfg(VideoTransport.SRT).pushUrl())
     }
 
@@ -75,7 +81,7 @@ class VideoTransportUrlTest {
         // different request from a server reading no credentials at all.
         assertEquals(
             "srt://stream.example.com:8890/publish:UAS-ALPHA-Low",
-            cfg(VideoTransport.SRT, user = "", pass = "").pushUrl())
+            cfg(VideoTransport.SRT, srtUser = "", srtPass = "").pushUrl())
     }
 
     /**
@@ -85,17 +91,35 @@ class VideoTransportUrlTest {
     @Test
     fun srtIsStillAdvertisedAsRtspOnThePlaybackPort() {
         val url = cfg(VideoTransport.SRT).advertiseUrl()
-        assertEquals("rtsp://tak:s3cret@stream.example.com:8554/UAS-ALPHA-Low?tcp", url)
+        // ⚠ The RTSP login and the RTSP port, NOT the SRT ones — the SRT pair authorises a
+        // publish and its port is an ingest port. Neither means anything to a viewer.
+        assertEquals("rtsp://rtspuser:rtsppass@stream.example.com:8554/UAS-ALPHA-Low?tcp", url)
+        assertFalse("SRT credentials leaked into the CoT address", "srtuser" in url)
         assertFalse("the CoT must never carry an srt address", url.startsWith("srt://"))
         assertFalse("8890 is the ingest port, not a playback port", "8890" in url)
     }
 
     @Test
     fun theIngestPortDoesNotFollowTheStreamToThePlaybackAddress() {
-        // A pilot on a server that ingests SRT on a private port still advertises 8554.
-        val c = cfg(VideoTransport.SRT, port = 9999)
+        // Ingest on a private port, playback on another: the two must not be confused.
+        val c = cfg(VideoTransport.SRT, srtPort = 9999, rtspPort = 8654)
         assertTrue(":9999/" in c.pushUrl())
-        assertEquals(8554, c.playbackPort())
+        assertTrue(":8654/" in c.advertiseUrl())
+        assertFalse("the ingest port reached the CoT address", "9999" in c.advertiseUrl())
+    }
+
+    /**
+     * ⚠ THE POINT OF SPLITTING THEM. An SRT push still advertises an RTSP address, so the RTSP
+     * port and login are LIVE under SRT — they are not the unused half of a choice. This was a
+     * hardcoded 8554 and a shared login until 2026-08-29, which meant a server serving RTSP on
+     * another port could not be advertised at all.
+     */
+    @Test
+    fun theRtspDetailsAreUsedWhileTheTransportIsSrt() {
+        val c = cfg(VideoTransport.SRT, rtspPort = 8654, rtspUser = "viewer", rtspPass = "vpass")
+        assertEquals(
+            "rtsp://viewer:vpass@stream.example.com:8654/UAS-ALPHA-Low?tcp",
+            c.advertiseUrl())
     }
 
     // ---- The masked form: what the screen and the log are allowed to show ----
@@ -104,7 +128,8 @@ class VideoTransportUrlTest {
     fun theMaskedUrlNeverCarriesThePasswordOnEitherTransport() {
         for (t in VideoTransport.values()) {
             val safe = cfg(t).urlSafe()
-            assertFalse("password leaked into $t preview: $safe", "s3cret" in safe)
+            assertFalse("password leaked into $t preview: $safe", "rtsppass" in safe)
+            assertFalse("password leaked into $t preview: $safe", "srtpass" in safe)
             assertTrue("$t preview lost the mask: $safe", "***" in safe)
         }
     }
@@ -116,7 +141,7 @@ class VideoTransportUrlTest {
     @Test
     fun anEmptyPasswordSaysSoRatherThanShowingStars() {
         for (t in VideoTransport.values()) {
-            val safe = cfg(t, pass = "").urlSafe()
+            val safe = cfg(t, rtspPass = "", srtPass = "").urlSafe()
             assertTrue("$t hid an empty password: $safe", "(NO PASSWORD)" in safe)
         }
     }
@@ -153,10 +178,7 @@ class VideoTransportUrlTest {
      */
     @Test
     fun thePassphraseNeverAppearsInAnyAddress() {
-        val c = AutelVideoStreamer.VideoConfig(
-            host = "stream.example.com", port = 8890,
-            username = "tak", password = "s3cret", streamId = "UAS-ALPHA",
-            transport = VideoTransport.SRT, srtPassphrase = "AnEncryptionKey")
+        val c = cfg(VideoTransport.SRT).copy(srtPassphrase = "AnEncryptionKey")
         for (url in listOf(c.pushUrl(), c.advertiseUrl(), c.urlSafe())) {
             assertFalse("passphrase leaked into: $url", "AnEncryptionKey" in url)
         }
@@ -167,10 +189,7 @@ class VideoTransportUrlTest {
     @Test
     fun noPassphraseChangesNothingAboutTheAddresses() {
         val withOut = cfg(VideoTransport.SRT)
-        val with = AutelVideoStreamer.VideoConfig(
-            host = "stream.example.com", port = 8890,
-            username = "tak", password = "s3cret", streamId = "UAS-ALPHA",
-            transport = VideoTransport.SRT, srtPassphrase = "AnEncryptionKey")
+        val with = withOut.copy(srtPassphrase = "AnEncryptionKey")
         assertEquals(withOut.pushUrl(), with.pushUrl())
         assertEquals(withOut.advertiseUrl(), with.advertiseUrl())
     }

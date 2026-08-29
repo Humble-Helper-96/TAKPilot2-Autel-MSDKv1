@@ -472,7 +472,21 @@ android {
         //        protocols, and which network each one suits. It told the pilot which one to
         //        pick, claimed what the team would see, and carried a delay figure that went
         //        stale when the buffer moved to 500 ms (operator, 2026-08-29).
-        versionCode 38
+        //        THE PORT AND THE LOGIN NOW BELONG TO A PROTOCOL. Pre-Flight has an RTSP block
+        //        and an SRT block, each with its own port, username and password, and the SRT
+        //        block also holds the passphrase. One shared set of fields changed meaning
+        //        when the transport toggle moved, and the port had to be guessed on a switch.
+        //        Nothing guesses now.
+        //
+        //        ⚠ THE RTSP BLOCK IS SHOWN AND USED WHICHEVER TRANSPORT IS SELECTED. It is the
+        //        address that goes to the team in the CoT, not only the push. Its port was the
+        //        constant 8554, thus a server serving RTSP on any other port could not be
+        //        advertised at all; it is a real field now.
+        //
+        //        The upgrade keeps everything. A slot already on SRT had an SRT ingest port,
+        //        so that value goes to the SRT block and the RTSP block takes 8554 — which is
+        //        what the build was using for it. The one login is copied to both protocols.
+        versionCode 39
         versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

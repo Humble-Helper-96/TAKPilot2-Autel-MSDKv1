@@ -62,21 +62,13 @@ enum class VideoTransport(val label: String, val scheme: String, val defaultPort
         fun fromPref(name: String?): VideoTransport =
             values().firstOrNull { it.prefValue == name } ?: RTSP
 
-        /**
-         * The port the media server serves RTSP on, for the address that goes in the CoT.
-         *
-         * ⚠ **A CONSTANT, and it is only used when SRT is selected.** With RTSP the push port
-         * and the playback port are the same port and the pilot's own value is used. With SRT
-         * they are two different ports on the same server, and the screen deliberately does NOT
-         * have a second field for the playback one (operator, 2026-08-29): nobody types the
-         * playback address anywhere, it goes out in the CoT, thus asking a pilot for it on a
-         * tailgate is a field to get wrong for no gain.
-         *
-         * This is the media server default. A server that serves RTSP on another port cannot be
-         * advertised correctly from an SRT push, and the fix is a field here, not a workaround
-         * at a call site.
-         */
-        const val RTSP_PLAYBACK_PORT = 8554
+        // The playback port was a CONSTANT here (8554) until 2026-08-29, because an SRT push
+        // and its RTSP playback are two different ports and the screen had one field. That
+        // meant a server serving RTSP on any other port could not be advertised at all.
+        //
+        // It is a real field now: the RTSP block on Pre-Flight is shown whichever transport is
+        // selected, because it describes the address in the CoT and not only the push. See
+        // AutelVideoStreamer.VideoConfig.
 
         /**
          * The SRT latency budget, in MILLISECONDS. **Not on the Pre-Flight screen** — it is on

@@ -458,15 +458,6 @@
             </LinearLayout>
 
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Port" />
-                <EditText
-                    android:id="@+id/videoPort"
-                    style="@style/takFieldStyle"
-                    android:text="8554"
-                    android:inputType="number" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
                 <TextView style="@style/takLabelStyle" android:text="Broadcast ID" />
                 <EditText
                     android:id="@+id/videoStreamId"
@@ -476,23 +467,6 @@
             </LinearLayout>
         </LinearLayout>
 
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Username" />
-                <EditText
-                    android:id="@+id/videoUser"
-                    style="@style/takFieldStyle"
-                    android:inputType="text" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Password" />
-                <EditText
-                    android:id="@+id/videoPassword"
-                    style="@style/takFieldStyle"
-                    android:inputType="textPassword" />
-            </LinearLayout>
-        </LinearLayout>
 
         <TextView style="@style/takLabelStyle" android:text="Video codec" />
         <RadioGroup
@@ -568,22 +542,89 @@
             android:textColor="@color/tp_text_secondary"
             android:textSize="11sp" />
 
-        <!-- SRT PASSPHRASE. Shown only when SRT is selected, because it means nothing to RTSP.
+        <!-- THE PORT AND THE LOGIN BELONG TO A PROTOCOL, thus there is one block for each
+             (operator, 2026-08-29). One shared set of fields changed meaning when the toggle
+             moved, and the port had to be guessed on a switch.
 
-             ⚠ It is NOT the video password above. That one authorises the publish; this one
-             encrypts the stream, and a server that sets srtPublishPassphrase REFUSES an
-             unencrypted publisher before it looks at any credential. The refusal reads as
-             SRT_REJ_PEER, which is the same thing it says for a wrong password — so an empty
-             box here is indistinguishable from a bad login (measured against MediaMTX v1.20.0,
-             2026-08-29). Hence its own field and its own caption. -->
+             ⚠ THE RTSP BLOCK IS ALWAYS SHOWN, INCLUDING WHEN SRT IS SELECTED. It is not only
+             the push: it is the address that goes to the team in the CoT, because no TAK
+             client plays SRT. Its port was the constant 8554 until this change, so a server
+             serving RTSP on any other port could not be advertised at all. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="RTSP — the address in the CoT"
+            android:paddingTop="12dp" />
+        <LinearLayout style="@style/takFormRow">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Port" />
+                <EditText
+                    android:id="@+id/videoRtspPort"
+                    style="@style/takFieldStyle"
+                    android:text="8554"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Username" />
+                <EditText
+                    android:id="@+id/videoRtspUser"
+                    style="@style/takFieldStyle"
+                    android:inputType="text" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Password" />
+                <EditText
+                    android:id="@+id/videoRtspPassword"
+                    style="@style/takFieldStyle"
+                    android:inputType="textPassword" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- THE SRT BLOCK IS THE PUSH ONLY, thus it is shown only when SRT is selected.
+
+             ⚠ The passphrase is NOT the password beside it. The password authorises the
+             publish; the passphrase encrypts the stream. A server that sets
+             srtPublishPassphrase refuses an unencrypted publisher BEFORE it reads any
+             credential, and it sends the same refusal it sends for a wrong password — so an
+             empty passphrase looks exactly like a bad login (MediaMTX v1.20.0, 2026-08-29). -->
         <LinearLayout
-            android:id="@+id/videoSrtPassphraseRow"
+            android:id="@+id/videoSrtBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView style="@style/takLabelStyle" android:text="SRT passphrase" />
+            <TextView style="@style/takLabelStyle"
+                android:text="SRT — the push to the server"
+                android:paddingTop="12dp" />
+            <LinearLayout style="@style/takFormRow">
+                <LinearLayout style="@style/takColumn">
+                    <TextView style="@style/takLabelStyle" android:text="Port" />
+                    <EditText
+                        android:id="@+id/videoSrtPort"
+                        style="@style/takFieldStyle"
+                        android:text="8890"
+                        android:inputType="number" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/takColumn">
+                    <TextView style="@style/takLabelStyle" android:text="Username" />
+                    <EditText
+                        android:id="@+id/videoSrtUser"
+                        style="@style/takFieldStyle"
+                        android:inputType="text" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/takColumn">
+                    <TextView style="@style/takLabelStyle" android:text="Password" />
+                    <EditText
+                        android:id="@+id/videoSrtPassword"
+                        style="@style/takFieldStyle"
+                        android:inputType="textPassword" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView style="@style/takLabelStyle" android:text="Passphrase" />
             <EditText
                 android:id="@+id/videoSrtPassphrase"
                 style="@style/takFieldStyle"
@@ -592,7 +633,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingTop="2dp"
-                android:text="Not the video password. Your server administrator sets this. Leave it empty only if the server has no passphrase. 10 to 79 characters."
+                android:text="Not the password above. It encrypts the stream. Leave it empty if the server has no passphrase. 10 to 79 characters."
                 android:textColor="@color/tp_text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>
