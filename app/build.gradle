@@ -406,8 +406,74 @@ android {
         //        EVERYTHING this certificate sends, thus the aircraft position obeys it too,
         //        which the old feature never did. Proved on hardware 2026-08-16 in both
         //        directions; the evidence is in CHANNELS-FINDINGS.md.
-        versionCode 33
-        versionName "1.6.2"
+        // v1.7.0 — SRT, AS A SECOND WAY OUT FOR THE VIDEO. Pre-Flight has an RTSP/SRT choice
+        //        where the "Use TCP transport" checkbox was. RTSP is TCP always now: the box
+        //        offered RTSP over UDP, which cannot recover a lost packet at all, and it was
+        //        the wrong answer to the bad-link problem it looked like it solved.
+        //
+        //        SRT ASKS FOR A LOST PACKET AGAIN, inside a time budget. That is the whole
+        //        point of it on a cellular uplink: the picture degrades instead of stalling,
+        //        which is what TCP does when it holds every later packet behind a lost one.
+        //
+        //        ⚠ THIS CHANGES THE PUSH ONLY. No TAK client plays SRT, thus the address in
+        //        the CoT stays an RTSP address on port 8554 whichever transport is selected,
+        //        and the media server translates.
+        //
+        //        THE BUFFER IS 500 ms, and it is 500 because of a measurement, not a guess. A
+        //        ground test against MediaMTX v1.20.0 over LTE (RTT 116 ms) with a 250 ms
+        //        buffer had the server discard EVERY repaired packet — 193 retransmitted, 193
+        //        dropped, byte for byte — because a repair costs another round trip and 250 ms
+        //        was not enough time. Link capacity was 261 Mbps, so bandwidth was not the
+        //        constraint. The convention is 3-4x RTT. Still to be proved in the air: the
+        //        number to watch is packetsReceivedDrop from /v3/srtconns/list on the server.
+        //
+        //        The buffer is on the DEBUG screen, not Pre-Flight — it is a property of the
+        //        network, not a flight decision, and it must be changeable in the field
+        //        without a build going to a flying aircraft.
+        //
+        //        THE SRT CLIENT IS VENDORED SOURCE, not a dependency — see NOTICE.md for what
+        //        was taken and what was changed. It cannot be a dependency: every published
+        //        build of it needs Kotlin 1.9 and this project is on 1.7.20.
+        //
+        //        Also: the push now logs how the link is behaving every 10 seconds — rate, fps
+        //        and dropped frames — on both transports. Neither number left the process
+        //        before, so a stream that degraded in flight was invisible afterwards.
+        //
+        //        ⚠ A CONTROLLER THAT HAD THE TCP BOX CLEARED MOVES TO RTSP OVER TCP. The old
+        //        video_tcp setting is abandoned and no value is carried across.
+        //        SRT ALSO NEEDS THE SERVER'S PASSPHRASE, on Pre-Flight, shown only when SRT
+        //        is selected. It is NOT the video password: that authorises the publish, this
+        //        one encrypts the stream. A server with srtPublishPassphrase set REFUSES an
+        //        unencrypted publisher before it reads any credential, and the refusal it
+        //        sends (SRT_REJ_PEER) is the same one it sends for a wrong login — so an empty
+        //        passphrase is indistinguishable from bad credentials from the controller.
+        //        Found on the bench 2026-08-29 against MediaMTX v1.20.0.
+        //
+        //        A REFUSED STREAM NO LONGER RETRIES. The same bench run was refused twelve
+        //        times in 24 seconds; the server had decided at the first one. And the link
+        //        line only logs while the push is CONNECTED — it was reporting a rate and a
+        //        frame count for a stream the server had refused, which is the worst thing it
+        //        could say to somebody reading the log to find out why there was no video.
+        //        SRT PACKETS ARE SMALLER, because they were too big for the network. The
+        //        library sizes a packet from a 1500 "MTU" and does NOT take the IP and UDP
+        //        headers off it, thus it put 1360 bytes on the wire. The measured path to the
+        //        live server carries 1342 (2026-08-29, from the fleet controller). The local
+        //        stack refused the oversized ones with EMSGSIZE, and because only a large
+        //        frame fills a packet, the stream connected, ran, and died on a keyframe.
+        //        Packets are 1172 bytes now. Cost: header overhead 3.2% -> 3.8%.
+        //        THE LATENCY SETTING NOW REACHES THE STREAM. SRT's handshake carries a
+        //        receiver delay and a sender delay; the library sent the value as the RECEIVER
+        //        one and hardcoded the sender one to zero. This application publishes and
+        //        receives nothing, thus its receiver delay governs nothing, and the server
+        //        used its own 120 ms default for our video. Measured in flight 2026-08-29:
+        //        msSendTsbPdDelay 500, msReceiveTsbPdDelay 120. Both fields carry the value
+        //        now, which is what libsrt's own SRTO_LATENCY does.
+        //        The pilot-facing text for the transport choice is cut back to what it is: two
+        //        protocols, and which network each one suits. It told the pilot which one to
+        //        pick, claimed what the team would see, and carried a delay figure that went
+        //        stale when the buffer moved to 500 ms (operator, 2026-08-29).
+        versionCode 38
+        versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
@@ -491,6 +557,22 @@ dependencies {
     // --- TAKPilot2-Autel additions ---
     // RTSP push client (raw H.264 injection, no re-encode) — era-matched with AGP 7.2/Kotlin 1.7
     implementation 'com.github.pedroSG94.rtmp-rtsp-stream-client-java:rtsp:2.2.6'
+    // THE SRT PUSH CLIENT IS NOT A DEPENDENCY. It is VENDORED SOURCE in app/src/main/java/
+    // com/pedro/srt and com/pedro/common, taken from RootEncoder 2.4.7 (Apache 2.0) — see
+    // NOTICE.md.
+    //
+    // It cannot be a dependency. The same author publishes an `srt` module, but every
+    // published version is compiled by Kotlin 1.9 or 2.0, and this project compiles with
+    // Kotlin 1.7.20. A 1.7 compiler refuses to read 1.9 metadata, thus the aar does not
+    // build here. The alternative was to move the whole application to Kotlin 1.9, which is
+    // a large change to a build that flies on a fleet. The source is 4400 lines, it uses
+    // only the Android SDK and coroutines, and it needed one change to compile (an enum
+    // `.entries` call, a Kotlin 1.9 idiom). Vendoring is the smaller risk, and the DJI v5
+    // sibling already vendors this author's RTSP client for the same class of reason.
+    //
+    // Coroutines is a NEW dependency of this application and the vendored SRT code is its
+    // only user. 1.6.4 is the last release that Kotlin 1.7.20 can read.
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
     // Flight-map (OSM tiles, offline-cacheable) for TAK markers / drop pins
     implementation 'org.osmdroid:osmdroid-android:6.1.14'
     // Imported-DTED region tracking (terrain-corrected SPoI) — ported from the DJI sibling

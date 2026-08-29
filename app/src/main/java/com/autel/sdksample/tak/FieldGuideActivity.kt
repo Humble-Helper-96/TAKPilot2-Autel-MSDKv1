@@ -173,6 +173,9 @@ class FieldGuideActivity : AppCompatActivity() {
         body("Optional. Type the address of the video server of your team, the port, the " +
             "broadcast ID and the login. Then select the quality. Select Standard. If the " +
             "connection is weak, select Low. Select the codec H.264 for compatibility.")
+        body("The video has two protocols: RTSP and SRT. RTSP gives the lowest delay on a " +
+            "reliable network. SRT gives a low delay on a less reliable network, for example " +
+            "a cellular network.")
 
         sub("3. TAK Server Connection")
         body("Type the address of the TAK server, your username, your password and the " +

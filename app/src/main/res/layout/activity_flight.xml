@@ -270,7 +270,7 @@
             android:layout_height="34dp"
             android:layout_marginHorizontal="6dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Start/stop the RTSP video stream to TAK" />
+            android:contentDescription="Start/stop the video stream to TAK" />
 
         <com.autel.sdksample.tak.RecordToggleView
             android:id="@+id/flightRecordButton"

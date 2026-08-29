@@ -220,7 +220,10 @@ class TakConnectActivity : AppCompatActivity() {
         val vUser = findViewById<EditText>(R.id.videoUser)
         val vPass = findViewById<EditText>(R.id.videoPassword)
         val vStreamId = findViewById<EditText>(R.id.videoStreamId)
-        val vTcp = findViewById<android.widget.CheckBox>(R.id.videoTcp)
+        val vTransportGroup = findViewById<android.widget.RadioGroup>(R.id.videoTransportGroup)
+        val vSrtPass = findViewById<EditText>(R.id.videoSrtPassphrase)
+        val vSrtPassRow = findViewById<android.widget.LinearLayout>(R.id.videoSrtPassphraseRow)
+        val vTransportHint = findViewById<TextView>(R.id.videoTransportHint)
         val vProfileGroup = findViewById<android.widget.RadioGroup>(R.id.videoProfileGroup)
         val vCodecGroup = findViewById<android.widget.RadioGroup>(R.id.videoCodecGroup)
         val vCodecHint = findViewById<TextView>(R.id.videoCodecHint)
@@ -253,7 +256,13 @@ class TakConnectActivity : AppCompatActivity() {
             // OTHER server's value the moment the pilot switches.
             vPass.setText(prefs.getString(vKey(slot, "pass"), "") ?: "")
             vStreamId.setText(prefs.getString(vKey(slot, "streamid"), "") ?: "")
-            vTcp.isChecked = prefs.getBoolean(vKey(slot, "tcp"), true)
+            // ⚠ SAME TRAP AS THE PASSWORD ABOVE — a field filled here must be saved by
+            // saveSlot, or switching servers erases the other one's value.
+            vSrtPass.setText(prefs.getString(vKey(slot, "srtpass"), "") ?: "")
+            when (VideoTransport.fromPref(prefs.getString(vKey(slot, "transport"), null))) {
+                VideoTransport.SRT -> vTransportGroup.check(R.id.videoTransportSrt)
+                VideoTransport.RTSP -> vTransportGroup.check(R.id.videoTransportRtsp)
+            }
             when (prefs.getString(vKey(slot, "profile"), "standard")) {
                 "low" -> vProfileGroup.check(R.id.videoProfileLow)
                 "high" -> vProfileGroup.check(R.id.videoProfileHigh)
@@ -277,6 +286,30 @@ class TakConnectActivity : AppCompatActivity() {
             else -> VideoCodec.H264
         }
 
+        fun selectedTransport(): VideoTransport = when (vTransportGroup.checkedRadioButtonId) {
+            R.id.videoTransportSrt -> VideoTransport.SRT
+            else -> VideoTransport.RTSP
+        }
+
+        /**
+         * States the difference between the two and nothing else.
+         *
+         * ⚠ Describe the choice, do not make it, and do not quote a number that lives
+         * somewhere else. This hint told the pilot which one to pick and carried a delay
+         * figure that went stale when the buffer changed (operator, 2026-08-29).
+         */
+        fun refreshTransportHint() {
+            // The passphrase row rides with the hint because both answer to the same choice
+            // and every call site that repaints one must repaint the other.
+            vSrtPassRow.visibility =
+                if (selectedTransport() == VideoTransport.SRT) android.view.View.VISIBLE
+                else android.view.View.GONE
+            vTransportHint.text = if (selectedTransport() == VideoTransport.SRT)
+                "Low delay on a less reliable network, for example a cellular network."
+            else
+                "The lowest delay on a reliable network."
+        }
+
         // The trade is not obvious and its cost lands on someone the pilot cannot see, so the
         // screen states it. Deliberately NO named clients: which player supports which codec
         // changes with every release, and a hint that names one is wrong the day that changes.
@@ -293,7 +326,8 @@ class TakConnectActivity : AppCompatActivity() {
             username = vUser.text.toString().trim(),
             password = vPass.text.toString(),
             streamId = vStreamId.text.toString().trim(),
-            tcp = vTcp.isChecked,
+            transport = selectedTransport(),
+            srtPassphrase = vSrtPass.text.toString(),
             profile = selectedProfile(),
             codec = selectedCodec().prefValue,
         )
@@ -310,7 +344,7 @@ class TakConnectActivity : AppCompatActivity() {
         val refreshAndSave = {
             val cfg = buildConfig()
             vFullUrl.text = if (cfg.host.isEmpty() || cfg.streamId.isEmpty())
-                "rtsp://…  (enter host + identifier)" else cfg.urlSafe()
+                "${cfg.transport.scheme}://…  (enter host + identifier)" else cfg.urlSafe()
             val slot = activeVideoSlot(prefs)
             prefs.edit()
                 // The slot is where the value LIVES. Both servers keep a complete set,
@@ -321,7 +355,8 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(vKey(slot, "user"), cfg.username)
                 .putString(vKey(slot, "pass"), cfg.password)
                 .putString(vKey(slot, "streamid"), cfg.streamId)
-                .putBoolean(vKey(slot, "tcp"), cfg.tcp)
+                .putString(vKey(slot, "transport"), cfg.transport.prefValue)
+                .putString(vKey(slot, "srtpass"), cfg.srtPassphrase)
                 .putString(vKey(slot, "profile"), cfg.profile)
                 .putString(vKey(slot, "codec"), cfg.codec)
                 // ⚠ AND MIRROR THE ACTIVE SLOT ONTO THE PLAIN KEYS. These are what
@@ -334,7 +369,8 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(KEY_V_USER, cfg.username)
                 .putString(KEY_V_PASS, cfg.password)
                 .putString(KEY_V_STREAMID, cfg.streamId)
-                .putBoolean(KEY_V_TCP, cfg.tcp)
+                .putString(KEY_V_TRANSPORT, cfg.transport.prefValue)
+                .putString(KEY_V_SRT_PASS, cfg.srtPassphrase)
                 .putString(KEY_V_PROFILE, cfg.profile)
                 .putString(KEY_V_CODEC, cfg.codec)
                 .apply()
@@ -352,9 +388,30 @@ class TakConnectActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
-        listOf(vName, vHost, vPort, vUser, vPass, vStreamId)
+        listOf(vName, vHost, vPort, vUser, vPass, vStreamId, vSrtPass)
             .forEach { it.addTextChangedListener(watcher) }
-        vTcp.setOnCheckedChangeListener { _, _ -> if (!loadingSlot) refreshAndSave() }
+        /**
+         * The transport choice, and the ONE place the port field is written for the pilot.
+         *
+         * The two transports do not use the same port — the media server ingests RTSP and SRT
+         * on different ones — so a pilot who moves the toggle and nothing else would push to a
+         * port with nothing listening on it, and see only a stream that never starts.
+         *
+         * ⚠ **It moves the port ONLY when the port is still the other transport's default.** A
+         * pilot who typed a port typed it for a reason, and overwriting that would be a worse
+         * fault than the one this prevents.
+         */
+        vTransportGroup.setOnCheckedChangeListener { _, _ ->
+            refreshTransportHint()
+            if (loadingSlot) return@setOnCheckedChangeListener
+            val now = selectedTransport()
+            val other = if (now == VideoTransport.SRT) VideoTransport.RTSP else VideoTransport.SRT
+            if (vPort.text.toString().trim().toIntOrNull() == other.defaultPort) {
+                vPort.setText(now.defaultPort.toString())   // the watcher saves it
+            }
+            AppLog.i(TAG, "video transport -> ${now.prefValue}")
+            refreshAndSave()
+        }
         // Persist the profile the moment it changes, so the flight-screen LIVE button (which
         // reads prefs, not this screen's live state) always uses the pilot's current choice.
         // It goes through refreshAndSave because the profile belongs to the SLOT now, and only
@@ -394,6 +451,7 @@ class TakConnectActivity : AppCompatActivity() {
             // still go to the old server.
             refreshAndSave()
             refreshCodecHint()
+            refreshTransportHint()
             AppLog.i(TAG, "active video server -> slot $slot (${vName.text.toString().trim()})")
         }
 
@@ -404,6 +462,7 @@ class TakConnectActivity : AppCompatActivity() {
         loadSlot(activeVideoSlot(prefs))
         refreshServerLabels()
         refreshCodecHint()
+        refreshTransportHint()
         refreshAndSave()
     }
 
@@ -434,14 +493,17 @@ class TakConnectActivity : AppCompatActivity() {
             .putString(vKey(1, "user"), prefs.getString(KEY_V_USER, "") ?: "")
             .putString(vKey(1, "pass"), prefs.getString(KEY_V_PASS, "") ?: "")
             .putString(vKey(1, "streamid"), prefs.getString(KEY_V_STREAMID, "") ?: "")
-            .putBoolean(vKey(1, "tcp"), prefs.getBoolean(KEY_V_TCP, true))
+            // The old `video_tcp` boolean is NOT read across. It could only say UDP or TCP,
+            // and UDP no longer exists; every upgrading controller starts on RTSP, which is
+            // what all of them were flying.
+            .putString(vKey(1, "transport"), VideoTransport.RTSP.prefValue)
             .putString(vKey(1, "profile"), prefs.getString(KEY_V_PROFILE, "standard") ?: "standard")
             .putString(vKey(1, "codec"), prefs.getString(KEY_V_CODEC, null) ?: VideoCodec.H264.prefValue)
             // Slot 2 starts empty and inherits only the defaults. A half-filled second server
             // would be worse than an obviously blank one.
             .putString(vKey(2, "name"), "Server 2")
             .putInt(vKey(2, "port"), 8554)
-            .putBoolean(vKey(2, "tcp"), true)
+            .putString(vKey(2, "transport"), VideoTransport.RTSP.prefValue)
             .putString(vKey(2, "profile"), "standard")
             .putString(vKey(2, "codec"), VideoCodec.H264.prefValue)
             .putInt(KEY_V_ACTIVE_SLOT, 1)
@@ -1024,7 +1086,7 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.takUsername, R.id.takPassword, R.id.takCallsign,
         R.id.takDisconnectButton,
     )
-    /** Codec and TCP transport are part of WHAT the stream is — the wrong codec breaks playback
+    /** Codec and transport are part of WHAT the stream is — the wrong codec breaks playback
      *  outright (CloudTAK cannot play H.265), so they lock with the server fields (operator,
      *  2026-08-06). The quality profile stays live; see [setupConfigLocks]. The two codec
      *  RadioButtons are listed individually because disabling a RadioGroup does not disable its
@@ -1033,7 +1095,8 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.videoName,
         R.id.videoHost, R.id.videoPort, R.id.videoStreamId,
         R.id.videoUser, R.id.videoPassword,
-        R.id.videoCodecH264, R.id.videoCodecH265, R.id.videoTcp,
+        R.id.videoCodecH264, R.id.videoCodecH265,
+        R.id.videoTransportRtsp, R.id.videoTransportSrt, R.id.videoSrtPassphrase,
     )
     // ⚠ videoServer1/videoServer2 are NOT in that list, and this is deliberate. applyLock dims
     // to 45%, which on a radio button greys the DOT as well as the label — and the dot is the
@@ -1054,7 +1117,7 @@ class TakConnectActivity : AppCompatActivity() {
      * **Locks the FIELDS only.** Enroll & Connect, Log Out, the video QUALITY choice and
      * Apply to Aircraft stay live: needing to reconnect, or to drop to Low on a marginal
      * link, is exactly when a pilot must not be fighting a lock. The lock guards what the
-     * configuration IS, not what you do with it. Codec and TCP transport moved INSIDE the
+     * configuration IS, not what you do with it. Codec and transport moved INSIDE the
      * video lock (operator, 2026-08-06): they are part of what the stream is — a codec the
      * server can't play is a dead stream, not a tuning choice.
      *
@@ -1582,7 +1645,13 @@ class TakConnectActivity : AppCompatActivity() {
          *  restore site did not exist at all — a constant makes the pair impossible to miss. */
         private const val KEY_V_PASS = "video_pass"
         private const val KEY_V_STREAMID = "video_streamid"
-        private const val KEY_V_TCP = "video_tcp"
+        /** ⚠ REPLACES `video_tcp`, which was a boolean and is now abandoned. A controller
+         *  that had the old TCP box cleared moves to RTSP over TCP on upgrade: UDP is gone
+         *  and SRT is the answer to the problem it was cleared for. See [VideoTransport]. */
+        private const val KEY_V_TRANSPORT = "video_transport"
+        /** The SRT passphrase — the stream ENCRYPTION key, not the publish login. Must match
+         *  the literal read in AutelVideoStreamer.startFromPrefs. */
+        private const val KEY_V_SRT_PASS = "video_srt_passphrase"
         private const val KEY_V_PROFILE = "video_profile"
         /** Must match the literal read in AutelVideoStreamer.startFromPrefs. */
         private const val KEY_V_CODEC = "video_codec"

@@ -17,7 +17,7 @@ KDoc on FieldGuideActivity for the rule set to hold edits to.
 The quick-marker name shows as E419 here. The app draws one callsign per install
 from a pool of 24, so each controller shows its own.
 
-App version: 1.6.2
+App version: 1.7.0
 -->
 
 # TAKPilot2 Field Guide
@@ -47,6 +47,8 @@ Max altitude, max distance and RTH altitude, in feet. The app sends them to the 
 ### 2. Video Streaming
 
 Optional. Type the address of the video server of your team, the port, the broadcast ID and the login. Then select the quality. Select Standard. If the connection is weak, select Low. Select the codec H.264 for compatibility.
+
+The video has two protocols: RTSP and SRT. RTSP gives the lowest delay on a reliable network. SRT gives a low delay on a less reliable network, for example a cellular network.
 
 ### 3. TAK Server Connection
 

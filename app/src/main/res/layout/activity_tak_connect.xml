@@ -528,28 +528,77 @@
             android:textColor="@color/tp_text_secondary"
             android:textSize="11sp" />
 
-        <LinearLayout
+        <!-- HOW THE VIDEO LEAVES THE CONTROLLER. This replaced a "Use TCP transport" checkbox
+             on 2026-08-29. That control offered RTSP over UDP, which has no way to recover a
+             lost packet — the wrong answer to the bad-link problem it looked like it solved.
+             SRT is the right answer and it is here instead. RTSP is TCP always now.
+
+             ⚠ This changes the PUSH only. The advertised address stays RTSP either way —
+             see VideoTransport. -->
+        <TextView style="@style/takLabelStyle" android:text="Video transport (to the server)" />
+        <RadioGroup
+            android:id="@+id/videoTransportGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="12dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/videoTcp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:buttonTint="@color/tp_btn_info" />
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/videoTransportRtsp"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="RTSP" />
+
+            <RadioButton
+                android:id="@+id/videoTransportSrt"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="SRT" />
+
+        </RadioGroup>
+
+        <!-- Same reasoning as the codec hint below the codec row: the trade is real, it is not
+             visible from the controller, and the pilot makes this choice on a tailgate. -->
+        <TextView
+            android:id="@+id/videoTransportHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="11sp" />
+
+        <!-- SRT PASSPHRASE. Shown only when SRT is selected, because it means nothing to RTSP.
+
+             ⚠ It is NOT the video password above. That one authorises the publish; this one
+             encrypts the stream, and a server that sets srtPublishPassphrase REFUSES an
+             unencrypted publisher before it looks at any credential. The refusal reads as
+             SRT_REJ_PEER, which is the same thing it says for a wrong password — so an empty
+             box here is indistinguishable from a bad login (measured against MediaMTX v1.20.0,
+             2026-08-29). Hence its own field and its own caption. -->
+        <LinearLayout
+            android:id="@+id/videoSrtPassphraseRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView style="@style/takLabelStyle" android:text="SRT passphrase" />
+            <EditText
+                android:id="@+id/videoSrtPassphrase"
+                style="@style/takFieldStyle"
+                android:inputType="textPassword" />
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Use TCP transport (append ?tcp)"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
+                android:paddingTop="2dp"
+                android:text="Not the video password. Your server administrator sets this. Leave it empty only if the server has no passphrase. 10 to 79 characters."
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <TextView style="@style/takLabelStyle"
-            android:text="Full stream URL (push + advertised to ATAK)"
+            android:text="Push address"
             android:paddingTop="8dp" />
         <TextView
             android:id="@+id/videoFullUrl"
