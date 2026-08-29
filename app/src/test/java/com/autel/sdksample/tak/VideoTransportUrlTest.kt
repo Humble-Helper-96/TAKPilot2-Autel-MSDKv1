@@ -31,14 +31,12 @@ class VideoTransportUrlTest {
         srtPort: Int = VideoTransport.SRT.defaultPort,
         rtspUser: String = "rtspuser",
         rtspPass: String = "rtsppass",
-        srtUser: String = "srtuser",
-        srtPass: String = "srtpass",
     ) = AutelVideoStreamer.VideoConfig(
         host = "stream.example.com",
         streamId = "UAS-ALPHA",
         transport = transport,
         rtspPort = rtspPort, rtspUser = rtspUser, rtspPass = rtspPass,
-        srtPort = srtPort, srtUser = srtUser, srtPass = srtPass,
+        srtPort = srtPort,
     )
 
     // ---- RTSP: unchanged behaviour, credentials in the protocol ----
@@ -71,17 +69,17 @@ class VideoTransportUrlTest {
     @Test
     fun srtPutsThePublisherPathAndCredentialsInTheStreamId() {
         assertEquals(
-            "srt://stream.example.com:8890/publish:UAS-ALPHA-Low:srtuser:srtpass",
+            "srt://stream.example.com:8890/publish:UAS-ALPHA-Low:rtspuser:rtsppass",
             cfg(VideoTransport.SRT).pushUrl())
     }
 
     @Test
-    fun srtWithNoUsernameSendsThePathAlone() {
+    fun srtWithNoLoginSendsThePathAlone() {
         // Not "publish:path::" — a server reading an empty user and an empty password is a
         // different request from a server reading no credentials at all.
         assertEquals(
             "srt://stream.example.com:8890/publish:UAS-ALPHA-Low",
-            cfg(VideoTransport.SRT, srtUser = "", srtPass = "").pushUrl())
+            cfg(VideoTransport.SRT, rtspUser = "", rtspPass = "").pushUrl())
     }
 
     /**
@@ -94,7 +92,6 @@ class VideoTransportUrlTest {
         // ⚠ The RTSP login and the RTSP port, NOT the SRT ones — the SRT pair authorises a
         // publish and its port is an ingest port. Neither means anything to a viewer.
         assertEquals("rtsp://rtspuser:rtsppass@stream.example.com:8554/UAS-ALPHA-Low?tcp", url)
-        assertFalse("SRT credentials leaked into the CoT address", "srtuser" in url)
         assertFalse("the CoT must never carry an srt address", url.startsWith("srt://"))
         assertFalse("8890 is the ingest port, not a playback port", "8890" in url)
     }
@@ -129,7 +126,6 @@ class VideoTransportUrlTest {
         for (t in VideoTransport.values()) {
             val safe = cfg(t).urlSafe()
             assertFalse("password leaked into $t preview: $safe", "rtsppass" in safe)
-            assertFalse("password leaked into $t preview: $safe", "srtpass" in safe)
             assertTrue("$t preview lost the mask: $safe", "***" in safe)
         }
     }
@@ -141,7 +137,7 @@ class VideoTransportUrlTest {
     @Test
     fun anEmptyPasswordSaysSoRatherThanShowingStars() {
         for (t in VideoTransport.values()) {
-            val safe = cfg(t, rtspPass = "", srtPass = "").urlSafe()
+            val safe = cfg(t, rtspPass = "").urlSafe()
             assertTrue("$t hid an empty password: $safe", "(NO PASSWORD)" in safe)
         }
     }

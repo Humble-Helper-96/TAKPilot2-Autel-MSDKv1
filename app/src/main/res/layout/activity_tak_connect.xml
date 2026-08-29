@@ -582,11 +582,13 @@
 
         <!-- THE SRT BLOCK IS THE PUSH ONLY, thus it is shown only when SRT is selected.
 
-             ⚠ The passphrase is NOT the password beside it. The password authorises the
-             publish; the passphrase encrypts the stream. A server that sets
-             srtPublishPassphrase refuses an unencrypted publisher BEFORE it reads any
-             credential, and it sends the same refusal it sends for a wrong password — so an
-             empty passphrase looks exactly like a bad login (MediaMTX v1.20.0, 2026-08-29). -->
+             SRT has a port and a passphrase. The username and the password belong to RTSP
+             (operator, 2026-08-29).
+
+             ⚠ A server that sets srtPublishPassphrase refuses an unencrypted publisher BEFORE
+             it reads any credential, and it sends the same refusal it sends for a wrong
+             login — so an empty passphrase looks exactly like bad credentials from the
+             controller (MediaMTX v1.20.0, 2026-08-29). -->
         <LinearLayout
             android:id="@+id/videoSrtBlock"
             android:layout_width="match_parent"
@@ -608,32 +610,18 @@
                 </LinearLayout>
 
                 <LinearLayout style="@style/takColumn">
-                    <TextView style="@style/takLabelStyle" android:text="Username" />
+                    <TextView style="@style/takLabelStyle" android:text="Passphrase" />
                     <EditText
-                        android:id="@+id/videoSrtUser"
-                        style="@style/takFieldStyle"
-                        android:inputType="text" />
-                </LinearLayout>
-
-                <LinearLayout style="@style/takColumn">
-                    <TextView style="@style/takLabelStyle" android:text="Password" />
-                    <EditText
-                        android:id="@+id/videoSrtPassword"
+                        android:id="@+id/videoSrtPassphrase"
                         style="@style/takFieldStyle"
                         android:inputType="textPassword" />
                 </LinearLayout>
             </LinearLayout>
-
-            <TextView style="@style/takLabelStyle" android:text="Passphrase" />
-            <EditText
-                android:id="@+id/videoSrtPassphrase"
-                style="@style/takFieldStyle"
-                android:inputType="textPassword" />
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingTop="2dp"
-                android:text="Not the password above. It encrypts the stream. Leave it empty if the server has no passphrase. 10 to 79 characters."
+                android:text="The passphrase encrypts the stream. Leave it empty if the server has no passphrase. 10 to 79 characters."
                 android:textColor="@color/tp_text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>

@@ -486,7 +486,11 @@ android {
         //        The upgrade keeps everything. A slot already on SRT had an SRT ingest port,
         //        so that value goes to the SRT block and the RTSP block takes 8554 — which is
         //        what the build was using for it. The one login is copied to both protocols.
-        versionCode 39
+        //        SRT HAS A PORT AND A PASSPHRASE, NOT A LOGIN (operator, 2026-08-29). The
+        //        username and the password belong to RTSP and are entered once. The stream id
+        //        still carries them, because that is the only place SRT can put a credential,
+        //        but they are the RTSP pair — one login for the server, not two.
+        versionCode 40
         versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

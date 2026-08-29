@@ -221,8 +221,6 @@ class TakConnectActivity : AppCompatActivity() {
         val vRtspUser = findViewById<EditText>(R.id.videoRtspUser)
         val vRtspPass = findViewById<EditText>(R.id.videoRtspPassword)
         val vSrtPort = findViewById<EditText>(R.id.videoSrtPort)
-        val vSrtUser = findViewById<EditText>(R.id.videoSrtUser)
-        val vSrtPass2 = findViewById<EditText>(R.id.videoSrtPassword)
         val vStreamId = findViewById<EditText>(R.id.videoStreamId)
         val vTransportGroup = findViewById<android.widget.RadioGroup>(R.id.videoTransportGroup)
         val vSrtPhrase = findViewById<EditText>(R.id.videoSrtPassphrase)
@@ -247,8 +245,7 @@ class TakConnectActivity : AppCompatActivity() {
             vRtspUser.setText(prefs.getString(vKey(slot, "rtsp_user"), "") ?: "")
             vSrtPort.setText(
                 prefs.getInt(vKey(slot, "srt_port"), VideoTransport.SRT.defaultPort).toString())
-            vSrtUser.setText(prefs.getString(vKey(slot, "srt_user"), "") ?: "")
-            vSrtPass2.setText(prefs.getString(vKey(slot, "srt_pass"), "") ?: "")
+
             // ⚠ THIS LINE WAS MISSING ONCE, AND ITS ABSENCE ERASED THE SAVED PASSWORD.
             //
             // Every other field was restored; this one was not, so the box came up blank. The
@@ -339,8 +336,6 @@ class TakConnectActivity : AppCompatActivity() {
             rtspPass = vRtspPass.text.toString(),
             srtPort = vSrtPort.text.toString().trim().toIntOrNull()
                 ?: VideoTransport.SRT.defaultPort,
-            srtUser = vSrtUser.text.toString().trim(),
-            srtPass = vSrtPass2.text.toString(),
             srtPassphrase = vSrtPhrase.text.toString(),
             profile = selectedProfile(),
             codec = selectedCodec().prefValue,
@@ -369,8 +364,6 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(vKey(slot, "rtsp_user"), cfg.rtspUser)
                 .putString(vKey(slot, "rtsp_pass"), cfg.rtspPass)
                 .putInt(vKey(slot, "srt_port"), cfg.srtPort)
-                .putString(vKey(slot, "srt_user"), cfg.srtUser)
-                .putString(vKey(slot, "srt_pass"), cfg.srtPass)
                 .putString(vKey(slot, "streamid"), cfg.streamId)
                 .putString(vKey(slot, "transport"), cfg.transport.prefValue)
                 .putString(vKey(slot, "srt_phrase"), cfg.srtPassphrase)
@@ -386,8 +379,6 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(KEY_V_RTSP_USER, cfg.rtspUser)
                 .putString(KEY_V_RTSP_PASS, cfg.rtspPass)
                 .putInt(KEY_V_SRT_PORT, cfg.srtPort)
-                .putString(KEY_V_SRT_USER, cfg.srtUser)
-                .putString(KEY_V_SRT_PASS, cfg.srtPass)
                 .putString(KEY_V_STREAMID, cfg.streamId)
                 .putString(KEY_V_TRANSPORT, cfg.transport.prefValue)
                 .putString(KEY_V_SRT_PHRASE, cfg.srtPassphrase)
@@ -410,7 +401,7 @@ class TakConnectActivity : AppCompatActivity() {
         }
         listOf(vName, vHost, vStreamId,
                vRtspPort, vRtspUser, vRtspPass,
-               vSrtPort, vSrtUser, vSrtPass2, vSrtPhrase)
+               vSrtPort, vSrtPhrase)
             .forEach { it.addTextChangedListener(watcher) }
         /**
          * The transport choice, and the ONE place the port field is written for the pilot.
@@ -496,9 +487,8 @@ class TakConnectActivity : AppCompatActivity() {
      * left on RTSP had an RTSP port; a slot already switched to SRT had an SRT ingest port, and
      * its RTSP port was never asked for — it was the constant 8554, so that is what goes in.
      *
-     * The single login is copied to BOTH protocols. It was one credential that authorised
-     * whatever was in use, and pre-filling the other protocol with it is what a pilot who
-     * switches transport expects. They are independent from here on.
+     * The login goes to the RTSP block, which is where it belongs: SRT has no login of its
+     * own, only a passphrase.
      */
     private fun migrateVideoProtocolSplit(prefs: android.content.SharedPreferences) {
         if (prefs.getBoolean(KEY_V_PROTO_SPLIT_MIGRATED, false)) return
@@ -515,8 +505,6 @@ class TakConnectActivity : AppCompatActivity() {
                 if (onSrt) oldPort else VideoTransport.SRT.defaultPort)
             e.putString(vKey(slot, "rtsp_user"), user)
             e.putString(vKey(slot, "rtsp_pass"), pass)
-            e.putString(vKey(slot, "srt_user"), user)
-            e.putString(vKey(slot, "srt_pass"), pass)
             // The passphrase only changed key name.
             e.putString(vKey(slot, "srt_phrase"), prefs.getString(vKey(slot, "srtpass"), "") ?: "")
         }
@@ -1153,8 +1141,7 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.videoName,
         R.id.videoHost, R.id.videoStreamId,
         R.id.videoRtspPort, R.id.videoRtspUser, R.id.videoRtspPassword,
-        R.id.videoSrtPort, R.id.videoSrtUser, R.id.videoSrtPassword,
-        R.id.videoSrtPassphrase,
+        R.id.videoSrtPort, R.id.videoSrtPassphrase,
         R.id.videoCodecH264, R.id.videoCodecH265,
         R.id.videoTransportRtsp, R.id.videoTransportSrt, R.id.videoSrtPassphrase,
     )
@@ -1716,8 +1703,6 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_V_RTSP_USER = "video_rtsp_user"
         private const val KEY_V_RTSP_PASS = "video_rtsp_pass"
         private const val KEY_V_SRT_PORT = "video_srt_port"
-        private const val KEY_V_SRT_USER = "video_srt_user"
-        private const val KEY_V_SRT_PASS = "video_srt_pass"
         /** The SRT passphrase — the stream ENCRYPTION key, not the publish login. Must match
          *  the literal read in AutelVideoStreamer.startFromPrefs. */
         private const val KEY_V_SRT_PHRASE = "video_srt_passphrase"

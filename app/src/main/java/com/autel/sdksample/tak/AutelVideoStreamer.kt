@@ -71,9 +71,12 @@ class AutelVideoStreamer(
         val rtspPass: String,
 
         // ---- SRT: the PUSH details, used only when SRT is the transport ----
+        //
+        // SRT has a PORT and a PASSPHRASE. It has no login of its own: the username and the
+        // password belong to RTSP (operator, 2026-08-29). The stream id still carries them,
+        // because that is the only place SRT can put a credential, but they are the RTSP
+        // pair — one login for the server, not two.
         val srtPort: Int = VideoTransport.SRT.defaultPort,
-        val srtUser: String = "",
-        val srtPass: String = "",
         /** How the video leaves the controller. See [VideoTransport]. */
         val transport: VideoTransport = VideoTransport.RTSP,
         /** SRT only, and MILLISECONDS. The evidence for the number, the units trap and the
@@ -131,15 +134,11 @@ class AutelVideoStreamer(
         fun pushUrl(): String = when (transport) {
             VideoTransport.RTSP -> "rtsp://$host:$rtspPort/${path()}"
             VideoTransport.SRT ->
-                if (srtUser.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                else "srt://$host:$srtPort/publish:${path()}:$srtUser:$srtPass"
+                if (rtspUser.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
+                else "srt://$host:$srtPort/publish:${path()}:$rtspUser:$rtspPass"
         }
 
-        /** The credentials the PUSH uses, which is the pair that belongs to [transport]. */
-        val pushUser: String get() =
-            if (transport == VideoTransport.SRT) srtUser else rtspUser
-        val pushPass: String get() =
-            if (transport == VideoTransport.SRT) srtPass else rtspPass
+        /** The port the PUSH uses. The login is [rtspUser] either way. */
         val pushPort: Int get() =
             if (transport == VideoTransport.SRT) srtPort else rtspPort
 
@@ -174,8 +173,8 @@ class AutelVideoStreamer(
          */
         fun urlSafe(): String {
             val secret = when {
-                pushUser.isEmpty() -> ""
-                pushPass.isEmpty() -> "(NO PASSWORD)"
+                rtspUser.isEmpty() -> ""
+                rtspPass.isEmpty() -> "(NO PASSWORD)"
                 else -> "***"
             }
             return when (transport) {
@@ -184,8 +183,8 @@ class AutelVideoStreamer(
                     "rtsp://$who$host:$rtspPort/${path()}?tcp"
                 }
                 VideoTransport.SRT ->
-                    if (srtUser.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                    else "srt://$host:$srtPort/publish:${path()}:$srtUser:$secret"
+                    if (rtspUser.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
+                    else "srt://$host:$srtPort/publish:${path()}:$rtspUser:$secret"
             }
         }
         private fun enc(s: String): String =
@@ -277,7 +276,7 @@ class AutelVideoStreamer(
         // ⚠ SRT carries the credentials inside the stream id, and the colon separates its
         // parts. A password with a colon in it produces a stream id the server reads wrongly
         // and refuses, and the pilot sees only "the stream will not start". Say so in the log.
-        if (config.transport == VideoTransport.SRT && config.srtPass.contains(':')) {
+        if (config.transport == VideoTransport.SRT && config.rtspPass.contains(':')) {
             AppLog.w(TAG, "the video password contains a colon — SRT cannot carry it, " +
                     "the server will refuse this stream. Change the password or use RTSP.")
         }
@@ -591,8 +590,6 @@ object VideoStreamerHolder {
             rtspUser = p.getString("video_rtsp_user", "") ?: "",
             rtspPass = p.getString("video_rtsp_pass", "") ?: "",
             srtPort = p.getInt("video_srt_port", VideoTransport.SRT.defaultPort),
-            srtUser = p.getString("video_srt_user", "") ?: "",
-            srtPass = p.getString("video_srt_pass", "") ?: "",
             transport = transport,
             // Read on every start, so a change on the Debug screen takes effect at the next
             // LIVE and not at the next application launch.
