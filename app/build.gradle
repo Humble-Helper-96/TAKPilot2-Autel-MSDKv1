@@ -530,7 +530,12 @@ android {
         //        Renamed to stop three identical-looking rows reading as the same control:
         //        "Video codec" is Encoding, "Video transport" is Connection, and the two
         //        secrets are "Server password" and "SRT passphrase".
-        versionCode 43
+        //        The link line's "wire" figure is averaged over the same ten seconds as the
+        //        rate beside it. It printed the most recent one-second sample against a
+        //        ten-second mean, and video is bursty, so it read anywhere from 26 to 2497
+        //        kbps on a link that was doing neither — a bandwidth fault where there was
+        //        none, which is the opposite of what the line is for.
+        versionCode 44
         versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

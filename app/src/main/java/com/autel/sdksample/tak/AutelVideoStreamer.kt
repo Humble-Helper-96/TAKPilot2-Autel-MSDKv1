@@ -270,7 +270,16 @@ class AutelVideoStreamer(
     private var lastRateLogMs = 0L
     private var framesAtLastLog = 0
     private var bytesSinceLastLog = 0L
-    @Volatile private var lastReportedBitrate = 0L
+    // ⚠ ACCUMULATED, NOT SNAPSHOT. The library reports a rate about once a SECOND; the link
+    // line covers TEN. Keeping only the most recent callback printed one arbitrary second
+    // beside a ten-second mean, and video is bursty — the second holding a keyframe carries
+    // several times the bytes of its neighbours. That produced readings from 26 to 2497 kbps
+    // on a link that was doing neither, which is the opposite of what the line is for.
+    //
+    // Written on the main thread (the library posts there) and drained on the encoder thread,
+    // hence the atomics.
+    private val wireBitsSum = java.util.concurrent.atomic.AtomicLong(0)
+    private val wireSamples = java.util.concurrent.atomic.AtomicInteger(0)
 
     private var screenEncoder: ScreenCaptureEncoder? = null
 
@@ -430,9 +439,13 @@ class AutelVideoStreamer(
         val frames = frameCount - framesAtLastLog
         val kbps = (bytesSinceLastLog * 8L) / elapsed          // bytes/ms*8 == kbit/s
         val fps = frames * 1000L / elapsed
-        // The library's own measure includes the packet headers and the reports, thus it reads
-        // a little above the payload rate calculated here. It is 0 until the first callback.
-        val wire = if (lastReportedBitrate > 0) " wire=${lastReportedBitrate / 1000}kbps" else ""
+        // The library's own measure, averaged over the SAME window as the rate above it. It
+        // counts what reaches the socket — protocol headers, the MPEG-TS packing under SRT,
+        // and any retransmission — thus it sits above the payload rate. Well above it means
+        // the link is repairing itself. Absent until the first callback.
+        val wireBits = wireBitsSum.getAndSet(0)
+        val wireN = wireSamples.getAndSet(0)
+        val wire = if (wireN > 0) " wire=${wireBits / wireN / 1000}kbps" else ""
         AppLog.i(TAG, "link [${config.transport.label}]: ${kbps}kbps$wire  ${fps}fps  " +
                 "drops=${client?.droppedVideoFrames ?: 0}  frames=$frameCount")
 
@@ -486,7 +499,7 @@ class AutelVideoStreamer(
     override fun onDisconnectRtsp() { streaming = false; AppLog.i(TAG, "disconnected") }
     override fun onAuthErrorRtsp() { streaming = false; onStatus(false, "Stream auth error (check user/pass)") }
     override fun onAuthSuccessRtsp() { AppLog.i(TAG, "auth ok") }
-    override fun onNewBitrateRtsp(bitrate: Long) { lastReportedBitrate = bitrate }
+    override fun onNewBitrateRtsp(bitrate: Long) = recordWireBitrate(bitrate)
 
     // ---- ConnectChecker (the SRT client) ----
 
@@ -498,7 +511,13 @@ class AutelVideoStreamer(
      *  refused connection, not as this. Kept because the interface has it. */
     override fun onAuthError() { streaming = false; onStatus(false, "Stream auth error (check user/pass)") }
     override fun onAuthSuccess() { AppLog.i(TAG, "auth ok") }
-    override fun onNewBitrate(bitrate: Long) { lastReportedBitrate = bitrate }
+    override fun onNewBitrate(bitrate: Long) = recordWireBitrate(bitrate)
+
+    /** One per-second sample from whichever client is running. Averaged in [countFrame]. */
+    private fun recordWireBitrate(bitrate: Long) {
+        wireBitsSum.addAndGet(bitrate)
+        wireSamples.incrementAndGet()
+    }
 
     companion object {
         private const val RATE_LOG_INTERVAL_MS = 10_000L
