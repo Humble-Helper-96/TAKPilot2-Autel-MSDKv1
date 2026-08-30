@@ -77,6 +77,25 @@ class AutelVideoStreamer(
         val rtspPort: Int = VideoTransport.RTSP.defaultPort,
         val srtPort: Int = VideoTransport.SRT.defaultPort,
 
+        // ---- What the CoT advertises, which is NOT always where the video is pushed ----
+        //
+        // A media server can be unreachable from where the team is and still be the right
+        // place to push: an internal server that forwards to an external one. The push and
+        // the advertisement are two independent facts, so these carry the advertised address
+        // rather than deriving it from the push (operator, 2026-08-29).
+        //
+        // The screen resolves them — "this server", the other configured server, or nothing —
+        // and mirrors the answer here, so this class never has to know a server slot exists.
+        //
+        // ⚠ [advertiseEnabled] false means NO VIDEO BLOCK IN THE CoT AT ALL. That is the
+        // honest state when no address works: a play control that cannot connect reads to the
+        // team as a dead feed, which is worse than no control.
+        val advertiseEnabled: Boolean = true,
+        val advertiseHost: String = "",
+        val advertisePort: Int = VideoTransport.RTSP.defaultPort,
+        val advertiseUser: String = "",
+        val advertisePass: String = "",
+
         /** How the video leaves the controller. See [VideoTransport]. */
         val transport: VideoTransport = VideoTransport.RTSP,
         /** SRT only, and MILLISECONDS. The evidence for the number, the units trap and the
@@ -150,13 +169,18 @@ class AutelVideoStreamer(
          * the wire that every viewer would fail to open, and the failure would look like a dead
          * feed rather than a wrong address.
          *
-         * It is built from the RTSP fields ALWAYS — never from the SRT ones, whose port is an
-         * ingest port and whose login authorises a publish.
+         * It is built from the ADVERTISE fields, never the SRT ones (whose port is an ingest
+         * port) and not necessarily this server's own — see them above. An empty string means
+         * the pilot turned the advertisement off, and no video block goes in the CoT.
          */
         fun advertiseUrl(): String {
-            val cred = if (username.isNotEmpty()) "${enc(username)}:${enc(password)}@" else ""
-            return "rtsp://$cred$host:$rtspPort/${path()}?tcp"
+            if (!advertiseEnabled) return ""
+            val h = advertiseHost.ifEmpty { host }
+            val cred = if (advertiseUser.isNotEmpty())
+                "${enc(advertiseUser)}:${enc(advertisePass)}@" else ""
+            return "rtsp://$cred$h:$advertisePort/${path()}?tcp"
         }
+
         /**
          * The url with the password masked, for the screen and the log.
          *
@@ -589,6 +613,12 @@ object VideoStreamerHolder {
             username = p.getString("video_user", "") ?: "",
             password = p.getString("video_pass", "") ?: "",
             rtspPort = p.getInt("video_rtsp_port", VideoTransport.RTSP.defaultPort),
+            // Resolved by TakConnectActivity: which server the team is pointed at, or none.
+            advertiseEnabled = p.getBoolean("video_adv_on", true),
+            advertiseHost = p.getString("video_adv_host", "") ?: "",
+            advertisePort = p.getInt("video_adv_port", VideoTransport.RTSP.defaultPort),
+            advertiseUser = p.getString("video_adv_user", "") ?: "",
+            advertisePass = p.getString("video_adv_pass", "") ?: "",
             srtPort = p.getInt("video_srt_port", VideoTransport.SRT.defaultPort),
             transport = transport,
             // Read on every start, so a change on the Debug screen takes effect at the next
@@ -613,7 +643,10 @@ object VideoStreamerHolder {
         // published only after the push succeeded. It never was, and the behaviour it described
         // is not the behaviour that is wanted.
         val ok = start(context, cfg, { st, msg ->
-            if (st) TakBridgeHolder.setVideoUrl(cfg.advertiseUrl())
+            // An empty url means the pilot turned the advertisement off. Pass null, which is
+            // what clears it — CotBuilder omits the video block for either, but null is the
+            // state the rest of the app already understands as "no video address".
+            if (st) TakBridgeHolder.setVideoUrl(cfg.advertiseUrl().ifEmpty { null })
             onStatus(st, msg)
         }, projection)
         return if (ok) StartResult.STARTED else StartResult.FAILED

@@ -37,6 +37,9 @@ class VideoTransportUrlTest {
         transport = transport,
         username = user, password = pass,
         rtspPort = rtspPort, srtPort = srtPort,
+        // "this server" — what the screen resolves for the default choice.
+        advertiseHost = "stream.example.com", advertisePort = rtspPort,
+        advertiseUser = user, advertisePass = pass,
     )
 
     // ---- RTSP: unchanged behaviour, credentials in the protocol ----
@@ -117,6 +120,62 @@ class VideoTransportUrlTest {
         assertEquals(
             "rtsp://viewer:vpass@stream.example.com:8654/UAS-ALPHA-Low?tcp",
             c.advertiseUrl())
+    }
+
+    // ---- What the CoT advertises, which is not always where the video is pushed ----
+
+    /**
+     * An internal server can be the right place to push and unreachable from where the team
+     * is. When it forwards to a server that is reachable, the CoT must carry THAT address —
+     * the forwarded stream keeps its path name, so only the host, the port and the login come
+     * from the other server (operator, 2026-08-29).
+     */
+    @Test
+    fun theCotCanPointAtADifferentServerFromTheOneBeingPushedTo() {
+        val c = cfg(VideoTransport.RTSP, rtspPort = 8554).copy(
+            host = "192.168.1.5",                 // internal, pushed to
+            advertiseHost = "mmtx03.example.com", // external, reachable by the team
+            advertisePort = 8554,
+            advertiseUser = "viewer",
+            advertisePass = "vpass",
+        )
+        assertTrue("the push must still go to the internal server", "192.168.1.5" in c.pushUrl())
+        assertEquals(
+            "rtsp://viewer:vpass@mmtx03.example.com:8554/UAS-ALPHA-Low?tcp",
+            c.advertiseUrl())
+    }
+
+    /** The same holds under SRT: the push is srt:// to one host, the advertisement rtsp:// to
+     *  another. Two independent facts. */
+    @Test
+    fun theAdvertisedServerIsIndependentOfTheTransport() {
+        val c = cfg(VideoTransport.SRT).copy(
+            host = "192.168.1.5",
+            advertiseHost = "mmtx03.example.com", advertisePort = 8554,
+            advertiseUser = "viewer", advertisePass = "vpass",
+        )
+        assertTrue(c.pushUrl().startsWith("srt://192.168.1.5:8890/"))
+        assertTrue(c.advertiseUrl().startsWith("rtsp://viewer:vpass@mmtx03.example.com:8554/"))
+    }
+
+    /**
+     * ⚠ Off means NO ADDRESS, not a broken one. An empty string is what stops the video block
+     * being written into the CoT at all — a play control that cannot connect reads as a dead
+     * feed, which is worse than no control.
+     */
+    @Test
+    fun advertisingOffProducesNoAddressAtAll() {
+        assertEquals("", cfg(VideoTransport.RTSP).copy(advertiseEnabled = false).advertiseUrl())
+        assertEquals("", cfg(VideoTransport.SRT).copy(advertiseEnabled = false).advertiseUrl())
+    }
+
+    /** With no advertise host set, the push host is used — the "this server" case. */
+    @Test
+    fun anEmptyAdvertiseHostFallsBackToTheServerBeingPushedTo() {
+        val c = cfg(VideoTransport.RTSP).copy(advertiseHost = "", advertiseUser = "tak",
+            advertisePass = "s3cret", advertisePort = 8554)
+        assertEquals(
+            "rtsp://tak:s3cret@stream.example.com:8554/UAS-ALPHA-Low?tcp", c.advertiseUrl())
     }
 
     // ---- The masked form: what the screen and the log are allowed to show ----

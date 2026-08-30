@@ -625,6 +625,53 @@
                 android:textSize="11sp" />
         </LinearLayout>
 
+        <!-- WHERE THE TEAM IS POINTED, which is not always where the video is pushed. An
+             internal server can be the right place to push and unreachable from where the
+             team is; if it forwards to a server that is reachable, the CoT must carry THAT
+             address (operator, 2026-08-29).
+
+             Off is a real answer, not a fallback: a play control that cannot connect reads to
+             the team as a dead feed, which is worse than no control. -->
+        <TextView style="@style/takLabelStyle"
+            android:text="Advertise to the team"
+            android:paddingTop="12dp" />
+        <RadioGroup
+            android:id="@+id/videoAdvertiseGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/videoAdvertiseSelf"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="This server" />
+
+            <RadioButton
+                android:id="@+id/videoAdvertiseOther"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Other server" />
+
+            <RadioButton
+                android:id="@+id/videoAdvertiseOff"
+                style="@style/takColumnRadio"
+                android:buttonTint="@color/tp_btn_info"
+                android:textSize="12sp"
+                android:text="Off" />
+
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/videoAdvertiseHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="11sp" />
+
         <TextView style="@style/takLabelStyle"
             android:text="Push address"
             android:paddingTop="8dp" />

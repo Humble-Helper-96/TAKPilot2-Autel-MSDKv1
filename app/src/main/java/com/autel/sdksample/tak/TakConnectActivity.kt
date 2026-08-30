@@ -222,6 +222,9 @@ class TakConnectActivity : AppCompatActivity() {
         val vRtspPort = findViewById<EditText>(R.id.videoRtspPort)
         val vRtspBlock = findViewById<android.widget.LinearLayout>(R.id.videoRtspBlock)
         val vSrtPort = findViewById<EditText>(R.id.videoSrtPort)
+        val vAdvGroup = findViewById<android.widget.RadioGroup>(R.id.videoAdvertiseGroup)
+        val vAdvOther = findViewById<android.widget.RadioButton>(R.id.videoAdvertiseOther)
+        val vAdvHint = findViewById<TextView>(R.id.videoAdvertiseHint)
         val vStreamId = findViewById<EditText>(R.id.videoStreamId)
         val vTransportGroup = findViewById<android.widget.RadioGroup>(R.id.videoTransportGroup)
         val vSrtPhrase = findViewById<EditText>(R.id.videoSrtPassphrase)
@@ -266,6 +269,11 @@ class TakConnectActivity : AppCompatActivity() {
             // ⚠ SAME TRAP AS THE PASSWORD ABOVE — a field filled here must be saved by
             // saveSlot, or switching servers erases the other one's value.
             vSrtPhrase.setText(prefs.getString(vKey(slot, "srt_phrase"), "") ?: "")
+            when (prefs.getString(vKey(slot, "advertise"), ADV_SELF)) {
+                ADV_OTHER -> vAdvGroup.check(R.id.videoAdvertiseOther)
+                ADV_OFF -> vAdvGroup.check(R.id.videoAdvertiseOff)
+                else -> vAdvGroup.check(R.id.videoAdvertiseSelf)
+            }
             when (VideoTransport.fromPref(prefs.getString(vKey(slot, "transport"), null))) {
                 VideoTransport.SRT -> vTransportGroup.check(R.id.videoTransportSrt)
                 VideoTransport.RTSP -> vTransportGroup.check(R.id.videoTransportRtsp)
@@ -291,6 +299,43 @@ class TakConnectActivity : AppCompatActivity() {
         fun selectedCodec(): VideoCodec = when (vCodecGroup.checkedRadioButtonId) {
             R.id.videoCodecH265 -> VideoCodec.H265
             else -> VideoCodec.H264
+        }
+
+        fun selectedAdvertise(): String = when (vAdvGroup.checkedRadioButtonId) {
+            R.id.videoAdvertiseOther -> ADV_OTHER
+            R.id.videoAdvertiseOff -> ADV_OFF
+            else -> ADV_SELF
+        }
+
+        /**
+         * Resolves the address the CoT will carry, from the choice and the OTHER slot.
+         *
+         * ⚠ Reads the other server from PREFS, never from the screen — the screen is showing
+         * this slot. The other slot's own RTSP port and login are used, because that is the
+         * server the team connects to; only the Broadcast ID stays this slot's, since the
+         * forwarded stream keeps its path name (operator, 2026-08-29).
+         */
+        fun resolveAdvertise(cfg: AutelVideoStreamer.VideoConfig, slot: Int):
+                AutelVideoStreamer.VideoConfig = when (selectedAdvertise()) {
+            ADV_OFF -> cfg.copy(advertiseEnabled = false)
+            ADV_OTHER -> {
+                val o = if (slot == 1) 2 else 1
+                cfg.copy(
+                    advertiseEnabled = true,
+                    advertiseHost = prefs.getString(vKey(o, "host"), "") ?: "",
+                    advertisePort = prefs.getInt(vKey(o, "rtsp_port"),
+                        VideoTransport.RTSP.defaultPort),
+                    advertiseUser = prefs.getString(vKey(o, "user"), "") ?: "",
+                    advertisePass = prefs.getString(vKey(o, "pass"), "") ?: "",
+                )
+            }
+            else -> cfg.copy(
+                advertiseEnabled = true,
+                advertiseHost = cfg.host,
+                advertisePort = cfg.rtspPort,
+                advertiseUser = cfg.username,
+                advertisePass = cfg.password,
+            )
         }
 
         fun selectedTransport(): VideoTransport = when (vTransportGroup.checkedRadioButtonId) {
@@ -344,6 +389,19 @@ class TakConnectActivity : AppCompatActivity() {
 
         /** Puts the button labels back to the pilot's names, so the choice reads as the servers
          *  they know. An unnamed slot keeps its position as its label — never a blank button. */
+        /** Names the other server on its button, and says what the CoT will carry. */
+        fun refreshAdvertise() {
+            val slotNow = activeVideoSlot(prefs)
+            val o = if (slotNow == 1) 2 else 1
+            vAdvOther.text = prefs.getString(vKey(o, "name"), "")?.takeIf { it.isNotBlank() }
+                ?: "Server $o"
+            val cfg = resolveAdvertise(buildConfig(), slotNow)
+            vAdvHint.text = when {
+                !cfg.advertiseEnabled -> "The CoT carries no video address."
+                else -> "The CoT carries ${cfg.advertiseHost.ifEmpty { "…" }}:${cfg.advertisePort}"
+            }
+        }
+
         fun refreshServerLabels() {
             vServer1.text = prefs.getString(vKey(1, "name"), "")?.takeIf { it.isNotBlank() }
                 ?: "Server 1"
@@ -352,7 +410,8 @@ class TakConnectActivity : AppCompatActivity() {
         }
 
         val refreshAndSave = {
-            val cfg = buildConfig()
+            val slotNow = activeVideoSlot(prefs)
+            val cfg = resolveAdvertise(buildConfig(), slotNow)
             vFullUrl.text = if (cfg.host.isEmpty() || cfg.streamId.isEmpty())
                 "${cfg.transport.scheme}://…  (enter host + identifier)" else cfg.urlSafe()
             val slot = activeVideoSlot(prefs)
@@ -368,6 +427,7 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(vKey(slot, "streamid"), cfg.streamId)
                 .putString(vKey(slot, "transport"), cfg.transport.prefValue)
                 .putString(vKey(slot, "srt_phrase"), cfg.srtPassphrase)
+                .putString(vKey(slot, "advertise"), selectedAdvertise())
                 .putString(vKey(slot, "profile"), cfg.profile)
                 .putString(vKey(slot, "codec"), cfg.codec)
                 // ⚠ AND MIRROR THE ACTIVE SLOT ONTO THE PLAIN KEYS. These are what
@@ -383,10 +443,18 @@ class TakConnectActivity : AppCompatActivity() {
                 .putString(KEY_V_STREAMID, cfg.streamId)
                 .putString(KEY_V_TRANSPORT, cfg.transport.prefValue)
                 .putString(KEY_V_SRT_PHRASE, cfg.srtPassphrase)
+                // The RESOLVED advertisement, so AutelVideoStreamer never has to know that a
+                // server slot exists — same reasoning as the mirror above it.
+                .putBoolean(KEY_V_ADV_ON, cfg.advertiseEnabled)
+                .putString(KEY_V_ADV_HOST, cfg.advertiseHost)
+                .putInt(KEY_V_ADV_PORT, cfg.advertisePort)
+                .putString(KEY_V_ADV_USER, cfg.advertiseUser)
+                .putString(KEY_V_ADV_PASS, cfg.advertisePass)
                 .putString(KEY_V_PROFILE, cfg.profile)
                 .putString(KEY_V_CODEC, cfg.codec)
                 .apply()
             refreshServerLabels()
+            refreshAdvertise()
         }
         val watcher = object : android.text.TextWatcher {
             // ⚠ The guard is not optional. loadSlot fills the fields one at a time, and without
@@ -414,6 +482,11 @@ class TakConnectActivity : AppCompatActivity() {
          * pilot who typed a port typed it for a reason, and overwriting that would be a worse
          * fault than the one this prevents.
          */
+        vAdvGroup.setOnCheckedChangeListener { _, _ ->
+            if (loadingSlot) return@setOnCheckedChangeListener
+            AppLog.i(TAG, "video advertise -> ${selectedAdvertise()}")
+            refreshAndSave()
+        }
         vTransportGroup.setOnCheckedChangeListener { _, _ ->
             refreshTransportHint()
             if (loadingSlot) return@setOnCheckedChangeListener
@@ -475,6 +548,7 @@ class TakConnectActivity : AppCompatActivity() {
         refreshCodecHint()
         refreshTransportHint()
         refreshAndSave()
+        refreshAdvertise()
     }
 
     /**
@@ -1159,6 +1233,7 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.videoName,
         R.id.videoHost, R.id.videoStreamId,
         R.id.videoUser, R.id.videoPassword, R.id.videoRtspPort,
+        R.id.videoAdvertiseSelf, R.id.videoAdvertiseOther, R.id.videoAdvertiseOff,
         R.id.videoSrtPort, R.id.videoSrtPassphrase,
         R.id.videoCodecH264, R.id.videoCodecH265,
         R.id.videoTransportRtsp, R.id.videoTransportSrt, R.id.videoSrtPassphrase,
@@ -1733,6 +1808,17 @@ class TakConnectActivity : AppCompatActivity() {
         /** Guard for [migrateVideoProtocolSplit]. Separate from the slot-migration flag, which
          *  has already run everywhere and cannot carry a second meaning. */
         private const val KEY_V_PROTO_SPLIT_MIGRATED = "video_port_per_protocol_migrated"
+
+        /** Which server the CoT points the team at: [ADV_SELF], [ADV_OTHER] or [ADV_OFF]. */
+        private const val ADV_SELF = "self"
+        private const val ADV_OTHER = "other"
+        private const val ADV_OFF = "off"
+        // ⚠ Must match the literals read in AutelVideoStreamer.startFromPrefs.
+        private const val KEY_V_ADV_ON = "video_adv_on"
+        private const val KEY_V_ADV_HOST = "video_adv_host"
+        private const val KEY_V_ADV_PORT = "video_adv_port"
+        private const val KEY_V_ADV_USER = "video_adv_user"
+        private const val KEY_V_ADV_PASS = "video_adv_pass"
         /** Set once the single-server configuration has been copied into slot 1. See
          *  migrateVideoSlots for why this must never run twice. */
         private const val KEY_V_SLOTS_MIGRATED = "video_slots_migrated"

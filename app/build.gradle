@@ -499,7 +499,18 @@ android {
         //
         //        ⚠ The RTSP port is used while SRT is selected, although its field is hidden
         //        then: it is the port in the CoT address. Toggle back to RTSP to change it.
-        versionCode 41
+        //        THE CoT CAN POINT THE TEAM AT A DIFFERENT SERVER FROM THE ONE THE VIDEO IS
+        //        PUSHED TO. An internal media server can be the right place to push and
+        //        unreachable from where the team is; when it forwards to a server that is
+        //        reachable, the CoT must carry THAT address. Each server has an Advertise
+        //        choice: this server, the other server, or off. "The other server" uses that
+        //        server's host, port and login with this one's Broadcast ID, because the
+        //        forwarded stream keeps its path name (operator, 2026-08-29).
+        //
+        //        OFF IS A REAL ANSWER. No video block goes in the CoT at all. A play control
+        //        that cannot connect reads to the team as a dead feed, which is worse than no
+        //        control.
+        versionCode 42
         versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
