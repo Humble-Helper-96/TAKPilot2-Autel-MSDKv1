@@ -384,22 +384,15 @@
 
         </RadioGroup>
 
-        <!-- TWO MEDIA SERVERS, ONE ACTIVE. A fleet flies on an internal mediaMTX on one callout
-             and an external one on the next, and re-typing a host on a tailgate is how a stream
-             gets lost. Each server keeps its own complete settings, including the encoding: an
-             external server often needs a different profile from an internal one.
+        <!-- WHICH SERVER IS LIVE. This and the quality above it are the only video controls
+             that change in the field — a fleet flies on an internal media server on one
+             callout and an external one on the next. Everything else about a server is
+             entered one time on the Video Servers screen and then locked (operator,
+             2026-08-30).
 
-             The fields below edit whichever server is selected here. Selecting a server also
-             makes it the live one — see setupVideoControls for what that costs and why it is
-             acceptable (the stream is stopped whenever this screen is showing).
-
-             The names come from the pilot and label the buttons, so the choice reads as
-             "MMTX01 or MMTX03" and not "Server 1 or Server 2". -->
+             The lock stays here because it guards this toggle as well as that screen: this is
+             the video control a pilot is most likely to hit by accident. -->
         <TextView style="@style/takLabelStyle" android:text="Active server" />
-        <!-- Three columns: the two servers and the lock that guards the choice. The lock rides
-             with the toggle instead of sitting at the foot of the section, because it is the
-             toggle a pilot is most likely to hit by accident. Two thirds go to the servers so
-             a long name still fits. -->
         <LinearLayout style="@style/takFormRow">
             <RadioGroup
                 android:id="@+id/videoServerGroup"
@@ -436,256 +429,25 @@
             </LinearLayout>
         </LinearLayout>
 
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Server name" />
-                <EditText
-                    android:id="@+id/videoName"
-                    style="@style/takFieldStyle"
-                    android:hint="MMTX01"
-                    android:inputType="text" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Broadcast ID" />
-                <EditText
-                    android:id="@+id/videoStreamId"
-                    style="@style/takFieldStyle"
-                    android:hint="UAS-CALLSIGN"
-                    android:inputType="text" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Server host" />
-                <EditText
-                    android:id="@+id/videoHost"
-                    style="@style/takFieldStyle"
-                    android:hint="stream.example.com"
-                    android:inputType="textUri" />
-            </LinearLayout>
-
-            <!-- ONE LOGIN FOR THE SERVER, not one per protocol (operator, 2026-08-29). SRT has
-                 no login of its own: the stream id is an opaque string and the media server
-                 reads a user and a password out of it by its own convention. -->
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Username" />
-                <EditText
-                    android:id="@+id/videoUser"
-                    style="@style/takFieldStyle"
-                    android:inputType="text" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Password" />
-                <EditText
-                    android:id="@+id/videoPassword"
-                    style="@style/takFieldStyle"
-                    android:inputType="textPassword" />
-            </LinearLayout>
-        </LinearLayout>
-
-
-        <TextView style="@style/takLabelStyle" android:text="Video codec" />
-        <RadioGroup
-            android:id="@+id/videoCodecGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/videoCodecH264"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="H.264" />
-
-            <RadioButton
-                android:id="@+id/videoCodecH265"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="H.265" />
-
-        </RadioGroup>
-
-        <!-- The consequence of this choice is invisible from the controller: an H.265 stream
-             looks perfectly healthy here while browser viewers get an HTTP 500 they cannot
-             interpret. Say so on the screen rather than making a pilot learn it in the field. -->
+        <!-- Generated, so it always states where the video actually goes and what the team is
+             actually told. It is the whole of the configuration a pilot needs to read before a
+             flight; the rest is on the servers screen. -->
         <TextView
-            android:id="@+id/videoCodecHint"
+            android:id="@+id/videoSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingTop="2dp"
+            android:paddingTop="6dp"
             android:textColor="@color/tp_text_secondary"
-            android:textSize="11sp" />
+            android:textSize="13sp"
+            android:text="" />
 
-        <!-- HOW THE VIDEO LEAVES THE CONTROLLER. This replaced a "Use TCP transport" checkbox
-             on 2026-08-29. That control offered RTSP over UDP, which has no way to recover a
-             lost packet — the wrong answer to the bad-link problem it looked like it solved.
-             SRT is the right answer and it is here instead. RTSP is TCP always now.
-
-             ⚠ This changes the PUSH only. The advertised address stays RTSP either way —
-             see VideoTransport. -->
-        <TextView style="@style/takLabelStyle" android:text="Video transport (to the server)" />
-        <RadioGroup
-            android:id="@+id/videoTransportGroup"
-            android:layout_width="match_parent"
+        <Button
+            style="@style/TakButton.Neutral"
+            android:id="@+id/videoConfigureServers"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/videoTransportRtsp"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="RTSP" />
-
-            <RadioButton
-                android:id="@+id/videoTransportSrt"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="SRT" />
-
-        </RadioGroup>
-
-        <!-- Same reasoning as the codec hint below the codec row: the trade is real, it is not
-             visible from the controller, and the pilot makes this choice on a tailgate. -->
-        <TextView
-            android:id="@+id/videoTransportHint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="2dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="11sp" />
-
-        <!-- ONLY THE PORT DIFFERS BETWEEN THE PROTOCOLS, and SRT adds a passphrase. Each
-             block keeps its own values, so a toggle back and forth restores what was last
-             entered for that protocol (operator, 2026-08-29).
-
-             ⚠ THE RTSP PORT IS USED WHILE SRT IS SELECTED, even though this block is hidden
-             then: it is the port in the CoT address, because no TAK client plays SRT. Toggle
-             back to RTSP to change it. -->
-        <LinearLayout
-            android:id="@+id/videoRtspBlock"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <LinearLayout style="@style/takFormRow">
-                <LinearLayout style="@style/takColumn">
-                    <TextView style="@style/takLabelStyle" android:text="RTSP port" />
-                    <EditText
-                        android:id="@+id/videoRtspPort"
-                        style="@style/takFieldStyle"
-                        android:text="8554"
-                        android:inputType="number" />
-                </LinearLayout>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- ⚠ The passphrase encrypts the stream; it is not a credential. A server that sets
-             srtPublishPassphrase refuses an unencrypted publisher BEFORE it reads the stream
-             id, and it sends the same refusal it sends for a wrong password — so an empty
-             passphrase looks exactly like a bad login (MediaMTX v1.20.0, 2026-08-29). -->
-        <LinearLayout
-            android:id="@+id/videoSrtBlock"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <LinearLayout style="@style/takFormRow">
-                <LinearLayout style="@style/takColumn">
-                    <TextView style="@style/takLabelStyle" android:text="SRT port" />
-                    <EditText
-                        android:id="@+id/videoSrtPort"
-                        style="@style/takFieldStyle"
-                        android:text="8890"
-                        android:inputType="number" />
-                </LinearLayout>
-
-                <LinearLayout style="@style/takColumn">
-                    <TextView style="@style/takLabelStyle" android:text="Passphrase" />
-                    <EditText
-                        android:id="@+id/videoSrtPassphrase"
-                        style="@style/takFieldStyle"
-                        android:inputType="textPassword" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingTop="2dp"
-                android:text="The passphrase encrypts the stream. Leave it empty if the server has no passphrase. 10 to 79 characters."
-                android:textColor="@color/tp_text_secondary"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <!-- WHERE THE TEAM IS POINTED, which is not always where the video is pushed. An
-             internal server can be the right place to push and unreachable from where the
-             team is; if it forwards to a server that is reachable, the CoT must carry THAT
-             address (operator, 2026-08-29).
-
-             Off is a real answer, not a fallback: a play control that cannot connect reads to
-             the team as a dead feed, which is worse than no control. -->
-        <TextView style="@style/takLabelStyle"
-            android:text="Advertise to the team"
-            android:paddingTop="12dp" />
-        <RadioGroup
-            android:id="@+id/videoAdvertiseGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/videoAdvertiseSelf"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="This server" />
-
-            <RadioButton
-                android:id="@+id/videoAdvertiseOther"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Other server" />
-
-            <RadioButton
-                android:id="@+id/videoAdvertiseOff"
-                style="@style/takColumnRadio"
-                android:buttonTint="@color/tp_btn_info"
-                android:textSize="12sp"
-                android:text="Off" />
-
-        </RadioGroup>
-
-        <TextView
-            android:id="@+id/videoAdvertiseHint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="2dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="11sp" />
-
-        <TextView style="@style/takLabelStyle"
-            android:text="Push address"
-            android:paddingTop="8dp" />
-        <TextView
-            android:id="@+id/videoFullUrl"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@color/tp_surface_dialog"
-            android:padding="12dp"
-            android:textColor="@color/tp_state_go"
-            android:textSize="14sp"
-            android:textIsSelectable="true"
-            android:fontFamily="monospace"
-            android:text="rtsp://…" />
+            android:layout_marginTop="10dp"
+            android:text="Configure Video Servers…" />
 
         <View
             android:layout_width="match_parent"

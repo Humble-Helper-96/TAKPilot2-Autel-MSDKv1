@@ -510,7 +510,27 @@ android {
         //        OFF IS A REAL ANSWER. No video block goes in the CoT at all. A play control
         //        that cannot connect reads to the team as a dead feed, which is worse than no
         //        control.
-        versionCode 42
+        //        THE VIDEO SERVER CONFIGURATION HAS ITS OWN SCREEN. Pre-Flight section 2 keeps
+        //        the two controls that change — the video quality, every flight, and which
+        //        server is active, per callout — plus one generated line that states where the
+        //        video goes and what the team is told. Everything else is behind Configure
+        //        Video Servers (operator, 2026-08-30). Twenty set-once controls in one column
+        //        made the sub-sections easy to mix up with each other.
+        //
+        //        ⚠ THE TWO SERVERS ARE SIDE BY SIDE ON THAT SCREEN, and that is the point. On
+        //        Pre-Flight every field belonged to whichever server the toggle above it had
+        //        selected, and nothing said which one once the pilot had scrolled into them.
+        //        Each card writes its own server now; there is no active-slot binding to get
+        //        wrong.
+        //
+        //        The lock stays on Pre-Flight, where it guards the active-server toggle as
+        //        well; the servers screen reads it and stops taking touches. Nothing moved in
+        //        the preference store, thus there is no migration.
+        //
+        //        Renamed to stop three identical-looking rows reading as the same control:
+        //        "Video codec" is Encoding, "Video transport" is Connection, and the two
+        //        secrets are "Server password" and "SRT passphrase".
+        versionCode 43
         versionName "1.7.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

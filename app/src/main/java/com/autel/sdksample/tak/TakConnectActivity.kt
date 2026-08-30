@@ -209,86 +209,27 @@ class TakConnectActivity : AppCompatActivity() {
      * Video" button was tapped, so edits made here and never "started" would have been silently
      * lost the moment the buttons went away.
      */
+    /**
+     * The video controls that change in the field: the quality, every flight, and which server
+     * is active, per callout.
+     *
+     * ⚠ **Everything else moved to [VideoServersActivity]** (operator, 2026-08-30). Twenty
+     * set-once controls in one column made the sub-sections easy to mix up, and the worst of
+     * it was that every field belonged to whichever server the toggle above had selected —
+     * nothing said which one once the pilot had scrolled into them. The servers screen shows
+     * both at once and each field writes its own.
+     *
+     * The summary line is generated so it cannot go stale: it states where the video is pushed
+     * and what the CoT will tell the team, which is what a pilot needs to read before a flight.
+     */
     private fun setupVideoControls(prefs: android.content.SharedPreferences) {
         migrateVideoSlots(prefs)
         migrateVideoProtocolSplit(prefs)
-        val vName = findViewById<EditText>(R.id.videoName)
         val vServerGroup = findViewById<android.widget.RadioGroup>(R.id.videoServerGroup)
         val vServer1 = findViewById<android.widget.RadioButton>(R.id.videoServer1)
         val vServer2 = findViewById<android.widget.RadioButton>(R.id.videoServer2)
-        val vHost = findViewById<EditText>(R.id.videoHost)
-        val vUser = findViewById<EditText>(R.id.videoUser)
-        val vPass = findViewById<EditText>(R.id.videoPassword)
-        val vRtspPort = findViewById<EditText>(R.id.videoRtspPort)
-        val vRtspBlock = findViewById<android.widget.LinearLayout>(R.id.videoRtspBlock)
-        val vSrtPort = findViewById<EditText>(R.id.videoSrtPort)
-        val vAdvGroup = findViewById<android.widget.RadioGroup>(R.id.videoAdvertiseGroup)
-        val vAdvOther = findViewById<android.widget.RadioButton>(R.id.videoAdvertiseOther)
-        val vAdvHint = findViewById<TextView>(R.id.videoAdvertiseHint)
-        val vStreamId = findViewById<EditText>(R.id.videoStreamId)
-        val vTransportGroup = findViewById<android.widget.RadioGroup>(R.id.videoTransportGroup)
-        val vSrtPhrase = findViewById<EditText>(R.id.videoSrtPassphrase)
-        val vSrtBlock = findViewById<android.widget.LinearLayout>(R.id.videoSrtBlock)
-        val vTransportHint = findViewById<TextView>(R.id.videoTransportHint)
         val vProfileGroup = findViewById<android.widget.RadioGroup>(R.id.videoProfileGroup)
-        val vCodecGroup = findViewById<android.widget.RadioGroup>(R.id.videoCodecGroup)
-        val vCodecHint = findViewById<TextView>(R.id.videoCodecHint)
-        val vFullUrl = findViewById<TextView>(R.id.videoFullUrl)
-
-        /** True while the fields are being filled from a slot, so the watchers below do not
-         *  treat the repopulation as a pilot's edit and write it straight back. */
-        var loadingSlot = false
-
-        /** Fills every field from the given server slot. */
-        fun loadSlot(slot: Int) {
-            loadingSlot = true
-            vName.setText(prefs.getString(vKey(slot, "name"), "") ?: "")
-            vHost.setText(prefs.getString(vKey(slot, "host"), "") ?: "")
-            vRtspPort.setText(
-                prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort).toString())
-            vUser.setText(prefs.getString(vKey(slot, "user"), "") ?: "")
-            vSrtPort.setText(
-                prefs.getInt(vKey(slot, "srt_port"), VideoTransport.SRT.defaultPort).toString())
-
-            // ⚠ THIS LINE WAS MISSING ONCE, AND ITS ABSENCE ERASED THE SAVED PASSWORD.
-            //
-            // Every other field was restored; this one was not, so the box came up blank. The
-            // TextWatcher below then saved the WHOLE config on any edit, writing that blank over
-            // the stored value. So the password survived until the pilot next opened this screen
-            // and touched anything, and then it was gone — which is why it looked like it never
-            // saved.
-            //
-            // Observed on the wire 2026-08-05: `rtsp://tak:@host:8554/…`, empty password, and
-            // CloudTAK refusing the feed with "username and password must be both provided".
-            //
-            // ⚠ THE SAME TRAP IS NOW PER SLOT. Every field this function fills must also be
-            // written by saveSlot below. A field read here and not written there loses the
-            // OTHER server's value the moment the pilot switches.
-            vPass.setText(prefs.getString(vKey(slot, "pass"), "") ?: "")
-            vStreamId.setText(prefs.getString(vKey(slot, "streamid"), "") ?: "")
-            // ⚠ SAME TRAP AS THE PASSWORD ABOVE — a field filled here must be saved by
-            // saveSlot, or switching servers erases the other one's value.
-            vSrtPhrase.setText(prefs.getString(vKey(slot, "srt_phrase"), "") ?: "")
-            when (prefs.getString(vKey(slot, "advertise"), ADV_SELF)) {
-                ADV_OTHER -> vAdvGroup.check(R.id.videoAdvertiseOther)
-                ADV_OFF -> vAdvGroup.check(R.id.videoAdvertiseOff)
-                else -> vAdvGroup.check(R.id.videoAdvertiseSelf)
-            }
-            when (VideoTransport.fromPref(prefs.getString(vKey(slot, "transport"), null))) {
-                VideoTransport.SRT -> vTransportGroup.check(R.id.videoTransportSrt)
-                VideoTransport.RTSP -> vTransportGroup.check(R.id.videoTransportRtsp)
-            }
-            when (prefs.getString(vKey(slot, "profile"), "standard")) {
-                "low" -> vProfileGroup.check(R.id.videoProfileLow)
-                "high" -> vProfileGroup.check(R.id.videoProfileHigh)
-                else -> vProfileGroup.check(R.id.videoProfileStandard)
-            }
-            when (VideoCodec.fromPref(prefs.getString(vKey(slot, "codec"), null))) {
-                VideoCodec.H265 -> vCodecGroup.check(R.id.videoCodecH265)
-                VideoCodec.H264 -> vCodecGroup.check(R.id.videoCodecH264)
-            }
-            loadingSlot = false
-        }
+        val vSummary = findViewById<TextView>(R.id.videoSummary)
 
         fun selectedProfile(): String = when (vProfileGroup.checkedRadioButtonId) {
             R.id.videoProfileLow -> "low"
@@ -296,259 +237,136 @@ class TakConnectActivity : AppCompatActivity() {
             else -> "standard"
         }
 
-        fun selectedCodec(): VideoCodec = when (vCodecGroup.checkedRadioButtonId) {
-            R.id.videoCodecH265 -> VideoCodec.H265
-            else -> VideoCodec.H264
-        }
-
-        fun selectedAdvertise(): String = when (vAdvGroup.checkedRadioButtonId) {
-            R.id.videoAdvertiseOther -> ADV_OTHER
-            R.id.videoAdvertiseOff -> ADV_OFF
-            else -> ADV_SELF
-        }
-
-        /**
-         * Resolves the address the CoT will carry, from the choice and the OTHER slot.
-         *
-         * ⚠ Reads the other server from PREFS, never from the screen — the screen is showing
-         * this slot. The other slot's own RTSP port and login are used, because that is the
-         * server the team connects to; only the Broadcast ID stays this slot's, since the
-         * forwarded stream keeps its path name (operator, 2026-08-29).
-         */
-        fun resolveAdvertise(cfg: AutelVideoStreamer.VideoConfig, slot: Int):
-                AutelVideoStreamer.VideoConfig = when (selectedAdvertise()) {
-            ADV_OFF -> cfg.copy(advertiseEnabled = false)
-            ADV_OTHER -> {
-                val o = if (slot == 1) 2 else 1
-                cfg.copy(
-                    advertiseEnabled = true,
-                    advertiseHost = prefs.getString(vKey(o, "host"), "") ?: "",
-                    advertisePort = prefs.getInt(vKey(o, "rtsp_port"),
-                        VideoTransport.RTSP.defaultPort),
-                    advertiseUser = prefs.getString(vKey(o, "user"), "") ?: "",
-                    advertisePass = prefs.getString(vKey(o, "pass"), "") ?: "",
-                )
-            }
-            else -> cfg.copy(
-                advertiseEnabled = true,
-                advertiseHost = cfg.host,
-                advertisePort = cfg.rtspPort,
-                advertiseUser = cfg.username,
-                advertisePass = cfg.password,
-            )
-        }
-
-        fun selectedTransport(): VideoTransport = when (vTransportGroup.checkedRadioButtonId) {
-            R.id.videoTransportSrt -> VideoTransport.SRT
-            else -> VideoTransport.RTSP
-        }
-
-        /**
-         * States the difference between the two and nothing else.
-         *
-         * ⚠ Describe the choice, do not make it, and do not quote a number that lives
-         * somewhere else. This hint told the pilot which one to pick and carried a delay
-         * figure that went stale when the buffer changed (operator, 2026-08-29).
-         */
-        fun refreshTransportHint() {
-            // The passphrase row rides with the hint because both answer to the same choice
-            // and every call site that repaints one must repaint the other.
-            val srt = selectedTransport() == VideoTransport.SRT
-            vSrtBlock.visibility = if (srt) android.view.View.VISIBLE else android.view.View.GONE
-            vRtspBlock.visibility = if (srt) android.view.View.GONE else android.view.View.VISIBLE
-            vTransportHint.text = if (selectedTransport() == VideoTransport.SRT)
-                "Low delay on a less reliable network, for example a cellular network."
-            else
-                "The lowest delay on a reliable network."
-        }
-
-        // The trade is not obvious and its cost lands on someone the pilot cannot see, so the
-        // screen states it. Deliberately NO named clients: which player supports which codec
-        // changes with every release, and a hint that names one is wrong the day that changes.
-        fun refreshCodecHint() {
-            vCodecHint.text = if (selectedCodec() == VideoCodec.H265)
-                "More efficient. Better picture for the bandwidth, but fewer clients play it."
-            else
-                "Most compatible. Plays on the widest range of clients."
-        }
-
-        fun buildConfig(): AutelVideoStreamer.VideoConfig = AutelVideoStreamer.VideoConfig(
-            host = vHost.text.toString().trim(),
-            streamId = vStreamId.text.toString().trim(),
-            transport = selectedTransport(),
-            username = vUser.text.toString().trim(),
-            password = vPass.text.toString(),
-            rtspPort = vRtspPort.text.toString().trim().toIntOrNull()
-                ?: VideoTransport.RTSP.defaultPort,
-            srtPort = vSrtPort.text.toString().trim().toIntOrNull()
-                ?: VideoTransport.SRT.defaultPort,
-            srtPassphrase = vSrtPhrase.text.toString(),
-            profile = selectedProfile(),
-            codec = selectedCodec().prefValue,
-        )
-
-        /** Puts the button labels back to the pilot's names, so the choice reads as the servers
-         *  they know. An unnamed slot keeps its position as its label — never a blank button. */
-        /** Names the other server on its button, and says what the CoT will carry. */
-        fun refreshAdvertise() {
-            val slotNow = activeVideoSlot(prefs)
-            val o = if (slotNow == 1) 2 else 1
-            vAdvOther.text = prefs.getString(vKey(o, "name"), "")?.takeIf { it.isNotBlank() }
-                ?: "Server $o"
-            val cfg = resolveAdvertise(buildConfig(), slotNow)
-            vAdvHint.text = when {
-                !cfg.advertiseEnabled -> "The CoT carries no video address."
-                else -> "The CoT carries ${cfg.advertiseHost.ifEmpty { "…" }}:${cfg.advertisePort}"
-            }
-        }
-
-        fun refreshServerLabels() {
-            vServer1.text = prefs.getString(vKey(1, "name"), "")?.takeIf { it.isNotBlank() }
-                ?: "Server 1"
-            vServer2.text = prefs.getString(vKey(2, "name"), "")?.takeIf { it.isNotBlank() }
-                ?: "Server 2"
-        }
-
-        val refreshAndSave = {
-            val slotNow = activeVideoSlot(prefs)
-            val cfg = resolveAdvertise(buildConfig(), slotNow)
-            vFullUrl.text = if (cfg.host.isEmpty() || cfg.streamId.isEmpty())
-                "${cfg.transport.scheme}://…  (enter host + identifier)" else cfg.urlSafe()
+        // The quality belongs to the SLOT, so both servers keep their own — an external server
+        // often wants a different one from an internal server. It is written straight through
+        // because the flight screen's LIVE button reads the mirror, not this screen.
+        vProfileGroup.setOnCheckedChangeListener { _, _ ->
             val slot = activeVideoSlot(prefs)
             prefs.edit()
-                // The slot is where the value LIVES. Both servers keep a complete set,
-                // including the encoding, so swapping networks can also swap the profile.
-                .putString(vKey(slot, "name"), vName.text.toString().trim())
-                .putString(vKey(slot, "host"), cfg.host)
-                .putInt(vKey(slot, "rtsp_port"), cfg.rtspPort)
-                .putString(vKey(slot, "user"), cfg.username)
-                .putString(vKey(slot, "pass"), cfg.password)
-                .putInt(vKey(slot, "srt_port"), cfg.srtPort)
-                .putString(vKey(slot, "streamid"), cfg.streamId)
-                .putString(vKey(slot, "transport"), cfg.transport.prefValue)
-                .putString(vKey(slot, "srt_phrase"), cfg.srtPassphrase)
-                .putString(vKey(slot, "advertise"), selectedAdvertise())
-                .putString(vKey(slot, "profile"), cfg.profile)
-                .putString(vKey(slot, "codec"), cfg.codec)
-                // ⚠ AND MIRROR THE ACTIVE SLOT ONTO THE PLAIN KEYS. These are what
-                // AutelVideoStreamer.startFromPrefs and the flight screen's LIVE pill read, and
-                // two of those three sites read them as STRING LITERALS. Mirroring keeps the
-                // whole idea of "two servers" inside this screen: no consumer has to know a slot
-                // exists, and the stream still starts if this mirror is ever the only thing left.
-                .putString(KEY_V_HOST, cfg.host)
-                .putInt(KEY_V_RTSP_PORT, cfg.rtspPort)
-                .putString(KEY_V_USER, cfg.username)
-                .putString(KEY_V_PASS, cfg.password)
-                .putInt(KEY_V_SRT_PORT, cfg.srtPort)
-                .putString(KEY_V_STREAMID, cfg.streamId)
-                .putString(KEY_V_TRANSPORT, cfg.transport.prefValue)
-                .putString(KEY_V_SRT_PHRASE, cfg.srtPassphrase)
-                // The RESOLVED advertisement, so AutelVideoStreamer never has to know that a
-                // server slot exists — same reasoning as the mirror above it.
-                .putBoolean(KEY_V_ADV_ON, cfg.advertiseEnabled)
-                .putString(KEY_V_ADV_HOST, cfg.advertiseHost)
-                .putInt(KEY_V_ADV_PORT, cfg.advertisePort)
-                .putString(KEY_V_ADV_USER, cfg.advertiseUser)
-                .putString(KEY_V_ADV_PASS, cfg.advertisePass)
-                .putString(KEY_V_PROFILE, cfg.profile)
-                .putString(KEY_V_CODEC, cfg.codec)
+                .putString(vKey(slot, "profile"), selectedProfile())
+                .putString(KEY_V_PROFILE, selectedProfile())
                 .apply()
-            refreshServerLabels()
-            refreshAdvertise()
-        }
-        val watcher = object : android.text.TextWatcher {
-            // ⚠ The guard is not optional. loadSlot fills the fields one at a time, and without
-            // it each setText saves a HALF-SWAPPED config: after the name is the new server's
-            // and the host is still the old one, that mixture goes to the slot. The final save
-            // corrects it, but the intermediate writes are real and one crash inside the
-            // sequence would leave them.
-            override fun afterTextChanged(s: android.text.Editable?) {
-                if (!loadingSlot) refreshAndSave()
-            }
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        }
-        listOf(vName, vHost, vStreamId, vUser, vPass,
-               vRtspPort, vSrtPort, vSrtPhrase)
-            .forEach { it.addTextChangedListener(watcher) }
-        /**
-         * The transport choice, and the ONE place the port field is written for the pilot.
-         *
-         * The two transports do not use the same port — the media server ingests RTSP and SRT
-         * on different ones — so a pilot who moves the toggle and nothing else would push to a
-         * port with nothing listening on it, and see only a stream that never starts.
-         *
-         * ⚠ **It moves the port ONLY when the port is still the other transport's default.** A
-         * pilot who typed a port typed it for a reason, and overwriting that would be a worse
-         * fault than the one this prevents.
-         */
-        vAdvGroup.setOnCheckedChangeListener { _, _ ->
-            if (loadingSlot) return@setOnCheckedChangeListener
-            AppLog.i(TAG, "video advertise -> ${selectedAdvertise()}")
-            refreshAndSave()
-        }
-        vTransportGroup.setOnCheckedChangeListener { _, _ ->
-            refreshTransportHint()
-            if (loadingSlot) return@setOnCheckedChangeListener
-            // ⚠ NOTHING MOVES THE PORT ANY MORE. It used to copy the new protocol's default
-            // into the one shared port field when the old one was untouched — a guess, and one
-            // that could only be right by luck. Each protocol keeps its own port now.
-            AppLog.i(TAG, "video transport -> ${selectedTransport().prefValue}")
-            refreshAndSave()
-        }
-        // Persist the profile the moment it changes, so the flight-screen LIVE button (which
-        // reads prefs, not this screen's live state) always uses the pilot's current choice.
-        // It goes through refreshAndSave because the profile belongs to the SLOT now, and only
-        // that function knows which slot is active and how to mirror it.
-        vProfileGroup.setOnCheckedChangeListener { _, _ ->
-            if (loadingSlot) return@setOnCheckedChangeListener
             AppLog.v(TAG, "video profile -> ${selectedProfile()}")
-            refreshAndSave()
-        }
-        // Same reasoning as the profile group: the LIVE pill reads prefs, so persist immediately.
-        vCodecGroup.setOnCheckedChangeListener { _, _ ->
-            refreshCodecHint()
-            if (loadingSlot) return@setOnCheckedChangeListener
-            AppLog.v(TAG, "video codec -> ${selectedCodec().prefValue}")
-            refreshAndSave()
         }
 
         /**
-         * The active-server choice.
-         *
-         * The fields below show the SELECTED server, thus selecting one also makes it live. That
-         * is acceptable here and nowhere else: the flight screen stops the stream in onStop, so
-         * nothing can be streaming while this screen is showing. The swap therefore cannot cut a
-         * feed the team is watching — it decides where the NEXT start goes.
-         *
-         * The order matters. The active slot is written FIRST, so the fields that follow load
-         * from the new slot and every later save lands on it.
+         * The active-server choice. Selecting one makes it live, which is acceptable here and
+         * nowhere else: the flight screen stops the stream in onStop, so nothing can be
+         * streaming while this screen is showing.
          */
         vServerGroup.setOnCheckedChangeListener { _, checkedId ->
-            if (loadingSlot) return@setOnCheckedChangeListener
             val slot = if (checkedId == R.id.videoServer2) 2 else 1
             if (slot == activeVideoSlot(prefs)) return@setOnCheckedChangeListener
             prefs.edit().putInt(KEY_V_ACTIVE_SLOT, slot).apply()
-            loadSlot(slot)
-            // Mirror the newly selected server onto the plain keys the streamer reads, and
-            // repaint the URL line. Without this the toggle would move and the stream would
-            // still go to the old server.
-            refreshAndSave()
-            refreshCodecHint()
-            refreshTransportHint()
-            AppLog.i(TAG, "active video server -> slot $slot (${vName.text.toString().trim()})")
+            mirrorActiveSlot(prefs)
+            when (prefs.getString(vKey(slot, "profile"), "standard")) {
+                "low" -> vProfileGroup.check(R.id.videoProfileLow)
+                "high" -> vProfileGroup.check(R.id.videoProfileHigh)
+                else -> vProfileGroup.check(R.id.videoProfileStandard)
+            }
+            paintVideoSummary(prefs)
+            AppLog.i(TAG, "active video server -> slot $slot (${slotName(prefs, slot)})")
         }
 
-        // Fill the screen from whichever server is active, then paint the derived text.
-        loadingSlot = true
-        vServerGroup.check(if (activeVideoSlot(prefs) == 2) R.id.videoServer2 else R.id.videoServer1)
-        loadingSlot = false
-        loadSlot(activeVideoSlot(prefs))
-        refreshServerLabels()
-        refreshCodecHint()
-        refreshTransportHint()
-        refreshAndSave()
-        refreshAdvertise()
+        findViewById<android.widget.Button>(R.id.videoConfigureServers).setOnClickListener {
+            startActivity(android.content.Intent(this, VideoServersActivity::class.java))
+        }
+
+        vServerGroup.check(
+            if (activeVideoSlot(prefs) == 2) R.id.videoServer2 else R.id.videoServer1)
+        when (prefs.getString(vKey(activeVideoSlot(prefs), "profile"), "standard")) {
+            "low" -> vProfileGroup.check(R.id.videoProfileLow)
+            "high" -> vProfileGroup.check(R.id.videoProfileHigh)
+            else -> vProfileGroup.check(R.id.videoProfileStandard)
+        }
+        paintVideoSummary(prefs)
+        mirrorActiveSlot(prefs)
+    }
+
+    /**
+     * ⚠ The servers screen can rename a server, change its transport or change where it
+     * advertises, and all three show in section 2. Without this the pilot comes back to a
+     * summary line describing the configuration as it was BEFORE they edited it — which is
+     * worse than no summary, because it reads as authoritative.
+     */
+    override fun onResume() {
+        super.onResume()
+        val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        paintVideoSummary(p)
+        mirrorActiveSlot(p)
+    }
+
+    private fun slotName(prefs: android.content.SharedPreferences, slot: Int): String =
+        prefs.getString(vKey(slot, "name"), "")?.takeIf { it.isNotBlank() } ?: "Server $slot"
+
+    /**
+     * The server buttons and the one-line summary — everything in section 2 that the servers
+     * screen can change.
+     *
+     * Derived text only, so it is safe to call on every resume: it attaches no listener and
+     * touches no field the pilot is editing.
+     */
+    private fun paintVideoSummary(prefs: android.content.SharedPreferences) {
+        val summary = findViewById<TextView>(R.id.videoSummary) ?: return
+        findViewById<android.widget.RadioButton>(R.id.videoServer1)?.text = slotName(prefs, 1)
+        findViewById<android.widget.RadioButton>(R.id.videoServer2)?.text = slotName(prefs, 2)
+
+        val slot = activeVideoSlot(prefs)
+        val host = prefs.getString(vKey(slot, "host"), "") ?: ""
+        if (host.isEmpty()) {
+            summary.text = "No video server set. Touch Configure Video Servers."
+            return
+        }
+        val transport = VideoTransport.fromPref(prefs.getString(vKey(slot, "transport"), null))
+        val port = prefs.getInt(
+            vKey(slot, if (transport == VideoTransport.SRT) "srt_port" else "rtsp_port"),
+            transport.defaultPort)
+        val other = if (slot == 1) 2 else 1
+        val team = when (prefs.getString(vKey(slot, "advertise"), "self")) {
+            "off" -> "the team gets no video address"
+            "other" -> "team plays from ${prefs.getString(vKey(other, "host"), "") ?: ""}:" +
+                    prefs.getInt(vKey(other, "rtsp_port"), VideoTransport.RTSP.defaultPort)
+            else -> "team plays from $host:" +
+                    prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort)
+        }
+        summary.text = "${slotName(prefs, slot)} · $host · ${transport.label} $port · $team"
+    }
+
+    /**
+     * Copies the ACTIVE slot onto the plain `video_*` keys that [AutelVideoStreamer] reads.
+     *
+     * ⚠ It knows nothing about slots, so an edit that is not mirrored is an edit the stream
+     * never sees. [VideoServersActivity.mirrorActiveSlot] does the same after an edit there;
+     * this call covers a change of WHICH slot is active, which only this screen can make.
+     */
+    private fun mirrorActiveSlot(prefs: android.content.SharedPreferences) {
+        val slot = activeVideoSlot(prefs)
+        val advertise = prefs.getString(vKey(slot, "advertise"), "self")
+        val other = if (slot == 1) 2 else 1
+        val src = if (advertise == "other") other else slot
+        prefs.edit()
+            .putString(KEY_V_HOST, prefs.getString(vKey(slot, "host"), "") ?: "")
+            .putString(KEY_V_STREAMID, prefs.getString(vKey(slot, "streamid"), "") ?: "")
+            .putString(KEY_V_USER, prefs.getString(vKey(slot, "user"), "") ?: "")
+            .putString(KEY_V_PASS, prefs.getString(vKey(slot, "pass"), "") ?: "")
+            .putInt(KEY_V_RTSP_PORT,
+                prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort))
+            .putInt(KEY_V_SRT_PORT,
+                prefs.getInt(vKey(slot, "srt_port"), VideoTransport.SRT.defaultPort))
+            .putString(KEY_V_TRANSPORT, VideoTransport.fromPref(
+                prefs.getString(vKey(slot, "transport"), null)).prefValue)
+            .putString(KEY_V_SRT_PHRASE, prefs.getString(vKey(slot, "srt_phrase"), "") ?: "")
+            .putString(KEY_V_CODEC, prefs.getString(vKey(slot, "codec"), null)
+                ?: VideoCodec.H264.prefValue)
+            .putString(KEY_V_PROFILE, prefs.getString(vKey(slot, "profile"), "standard")
+                ?: "standard")
+            .putBoolean(KEY_V_ADV_ON, advertise != "off")
+            .putString(KEY_V_ADV_HOST, prefs.getString(vKey(src, "host"), "") ?: "")
+            .putInt(KEY_V_ADV_PORT,
+                prefs.getInt(vKey(src, "rtsp_port"), VideoTransport.RTSP.defaultPort))
+            .putString(KEY_V_ADV_USER, prefs.getString(vKey(src, "user"), "") ?: "")
+            .putString(KEY_V_ADV_PASS, prefs.getString(vKey(src, "pass"), "") ?: "")
+            .apply()
     }
 
     /**
@@ -1229,23 +1047,14 @@ class TakConnectActivity : AppCompatActivity() {
      *  2026-08-06). The quality profile stays live; see [setupConfigLocks]. The two codec
      *  RadioButtons are listed individually because disabling a RadioGroup does not disable its
      *  children. */
-    private val videoLockedFields = listOf(
-        R.id.videoName,
-        R.id.videoHost, R.id.videoStreamId,
-        R.id.videoUser, R.id.videoPassword, R.id.videoRtspPort,
-        R.id.videoAdvertiseSelf, R.id.videoAdvertiseOther, R.id.videoAdvertiseOff,
-        R.id.videoSrtPort, R.id.videoSrtPassphrase,
-        R.id.videoCodecH264, R.id.videoCodecH265,
-        R.id.videoTransportRtsp, R.id.videoTransportSrt, R.id.videoSrtPassphrase,
-    )
-    // ⚠ videoServer1/videoServer2 are NOT in that list, and this is deliberate. applyLock dims
-    // to 45%, which on a radio button greys the DOT as well as the label — and the dot is the
-    // one thing a pilot must be able to read while locked: which server the video is going to.
-    // The channel rows hit exactly this and it made the ticks unreadable (operator,
-    // 2026-08-16). The toggle is locked by lockVideoServerToggle instead: full contrast, no
-    // touch response.
-    /** The two battery percentages only. The numeric limits and Apply to Aircraft stay live —
-     *  a locked configuration must still be pushable to a freshly connected aircraft. */
+    /**
+     * ⚠ EMPTY ON PURPOSE. The video configuration fields moved to [VideoServersActivity]
+     * (operator, 2026-08-30), so there is nothing on THIS screen for the generic lock to
+     * disable. The lock still does its two jobs: `afterChange` stops the active-server toggle
+     * taking touches, and the servers screen reads `video_config_locked` when it opens.
+     */
+    private val videoLockedFields = emptyList<Int>()
+
     private val batteryLockedFields = listOf(
         R.id.limitLowBattery, R.id.limitCriticalBattery,
     )
