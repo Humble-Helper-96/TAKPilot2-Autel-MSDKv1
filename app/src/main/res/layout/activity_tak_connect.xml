@@ -11,6 +11,89 @@
         android:orientation="vertical"
         android:padding="24dp">
 
+        <!-- 0. Memory Card.
+             Styled exactly like sections 1 to 5 — a 22sp heading and takLabelStyle labels
+             (operator, 2026-08-31: the compact one-row version fitted but read as a different
+             kind of thing). The room it needs was taken back from the VERTICAL PADDING in
+             takLabelStyle and takFieldStyle instead, which tightens every section evenly.
+
+             ⚠ Sections 0 and 1 TOGETHER must fit the screen without scrolling. Measured on the
+             controller: the scroll viewport is 1264 px. Re-measure after any change here or to
+             those two styles — "Apply Updated Settings to Aircraft" going below the fold is the
+             failure this rule exists to prevent, and it is invisible in the layout editor.
+
+             ⚠ CAPACITY IS NOT SHOWN BECAUSE THE SDK DOES NOT REPORT IT. XT706CameraInfo gives
+             getSDcardFreeSpace() and no total; the whole aar was searched and only free-space
+             getters exist for the SD card (the INTERNAL flash has both, which is what makes the
+             absence look like an oversight rather than a rule). A capacity figure here would
+             have to be inferred, and an inferred number on a pre-flight screen is worse than an
+             absent one. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0. Memory Card"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <!-- gravity=bottom so the columns align on their BOTTOM edge. The Format button is a
+             full-height button and the readouts are one line of text; bottom alignment lets the
+             button grow UPWARD through the space the third column's label would have occupied,
+             instead of hanging below the readouts and reading as a second line. -->
+        <LinearLayout style="@style/takFormRow" android:gravity="bottom">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Card" />
+                <TextView
+                    android:id="@+id/sdCardState"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/tp_text_bright"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Free space" />
+                <TextView
+                    android:id="@+id/sdCardFree"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/tp_text_bright"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <!-- NO placeholder label here. The blank label that used to hold this column's
+                 top edge is exactly the space the button now grows into. -->
+            <LinearLayout style="@style/takColumn">
+                <Button
+                    android:id="@+id/sdCardFormatButton"
+                    style="@style/TakButton.Danger"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Format Card"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- GONE, not INVISIBLE: an invisible line still holds its height, and the height is
+             exactly what there is no room for. renderSdCard() shows it only when it has text. -->
+        <TextView
+            android:id="@+id/sdCardStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:textColor="@color/tp_text_caption"
+            android:textSize="12sp" />
+
+        <!-- Section rule, the same 1dp tp_border with a 20dp lead-in that separates every
+             other section. It costs 42 px of the sections 0+1 height budget; see the note on
+             section 0 and re-measure if either section grows. -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="20dp"
+            android:background="@color/tp_border" />
+
         <!-- 1. Aircraft Settings.
              LAID OUT TO FIT ONE SCREEN WITHOUT SCROLLING (operator, 2026-08-04), because this is
              the pre-flight check: a setting the pilot has to scroll to find is a setting that

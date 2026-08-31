@@ -87,8 +87,11 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tp_text_secondary</item>
         <item name="android:textSize">13sp</item>
-        <item name="android:paddingTop">12dp</item>
-        <item name="android:paddingBottom">4dp</item>
+        <!-- Vertical padding trimmed 12/4 -> 6/2 on 2026-08-31 to make room for section 0
+             without shrinking any text. Every label on every section tightens by 8dp, which
+             is where the space came from. Horizontal spacing is deliberately unchanged. -->
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">2dp</item>
     </style>
     <style name="takFieldStyle">
         <item name="android:layout_width">match_parent</item>
@@ -96,7 +99,12 @@
         <item name="android:textColor">@color/tp_text_primary</item>
         <item name="android:textColorHint">@color/tp_text_disabled</item>
         <item name="android:background">@color/tp_surface_field</item>
-        <item name="android:padding">12dp</item>
+        <!-- Was a uniform 12dp. Split so the fields lose HEIGHT (the scarce axis) and keep
+             their horizontal breathing room and touch width. -->
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
         <item name="android:textSize">15sp</item>
     </style>
     <style name="homeCard">

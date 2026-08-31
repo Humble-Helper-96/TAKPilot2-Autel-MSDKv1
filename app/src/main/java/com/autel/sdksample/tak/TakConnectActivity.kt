@@ -294,6 +294,166 @@ class TakConnectActivity : AppCompatActivity() {
         val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
         paintVideoSummary(p)
         mirrorActiveSlot(p)
+        setupSdCardSection()
+        sdHandler.post(sdTick)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sdHandler.removeCallbacks(sdTick)
+    }
+
+
+    // ---- 0. Memory Card ---------------------------------------------------------------
+
+    private val sdHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /**
+     * Paints the card state and free space, and drives the Format button.
+     *
+     * READ-ONLY POLLING. Nothing here asks the aircraft for anything: [AutelProductHolder] already
+     * receives the card state and the free space on the camera's own ~2 Hz push, thus this only
+     * re-reads fields that are already being kept current. A tick is the simplest way to follow
+     * them, and a read tick is not the timer the fly-controller rule forbids.
+     *
+     * ⚠ NO CAPACITY. The SDK reports free space for the SD card and no total — see the layout
+     * comment for the search that established it.
+     */
+    private val sdTick = object : Runnable {
+        override fun run() {
+            renderSdCard()
+            sdHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private fun setupSdCardSection() {
+        findViewById<android.widget.Button>(R.id.sdCardFormatButton).setOnClickListener {
+            confirmFormatSdCard()
+        }
+        renderSdCard()
+    }
+
+    /** Human text for the card state. Every value the SDK can report is named: an unnamed state
+     *  would read as a fault when several of them are normal. */
+    private fun sdStateText(s: com.autel.common.camera.base.SDCardState?): String = when (s) {
+        null -> "Not known"
+        com.autel.common.camera.base.SDCardState.CARD_READY -> "Ready"
+        com.autel.common.camera.base.SDCardState.NO_CARD -> "No card"
+        com.autel.common.camera.base.SDCardState.CARD_FULL -> "Full"
+        com.autel.common.camera.base.SDCardState.CARD_ERROR -> "Error"
+        com.autel.common.camera.base.SDCardState.CARD_PROTECT -> "Write protected"
+        com.autel.common.camera.base.SDCardState.FORMATTING -> "Formatting"
+        com.autel.common.camera.base.SDCardState.LOW_SPEED_CARD -> "Slow card"
+        com.autel.common.camera.base.SDCardState.LOW_SPEED_CARD_STOP_RECORD -> "Slow card — recording stopped"
+        com.autel.common.camera.base.SDCardState.UNKNOWN_FILE_SYSTEM_FAT -> "Unknown file system"
+        else -> s.name
+    }
+
+    private fun freeText(mb: Long?): String = when {
+        mb == null -> "Not known"
+        mb >= 1024 -> String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0)
+        else -> "$mb MB"
+    }
+
+    /**
+     * Why the Format button is not available, or null when it is.
+     *
+     * The reasons are separate strings because the pilot needs to know WHICH one applies — a
+     * disabled button with no reason is the fault the exterior-lights button already taught us.
+     */
+    private fun formatBlockedReason(): String? {
+        val state = AutelProductHolder.sdCardState
+        return when {
+            AutelProductHolder.xt706 == null -> "No aircraft"
+            AutelTakBridge.airborne -> "Not while the aircraft is flying"
+            AutelProductHolder.isRecording -> "Not while recording"
+            state == null -> "Waiting for the camera"
+            state == com.autel.common.camera.base.SDCardState.NO_CARD -> "No card"
+            state == com.autel.common.camera.base.SDCardState.CARD_PROTECT -> "Card is write protected"
+            state == com.autel.common.camera.base.SDCardState.FORMATTING -> "Formatting"
+            else -> null
+        }
+    }
+
+    private fun renderSdCard() {
+        val stateView = findViewById<TextView>(R.id.sdCardState) ?: return
+        val freeView = findViewById<TextView>(R.id.sdCardFree)
+        val status = findViewById<TextView>(R.id.sdCardStatus)
+        val button = findViewById<android.widget.Button>(R.id.sdCardFormatButton)
+
+        stateView.text = sdStateText(AutelProductHolder.sdCardState)
+        freeView.text = freeText(AutelProductHolder.sdFreeMb)
+
+        val blocked = formatBlockedReason()
+        button.isEnabled = blocked == null
+        button.alpha = if (blocked == null) 1.0f else 0.45f
+        // The status line carries the reason, and ALSO the fact that the camera is not writing
+        // to this card — formatting an SD the camera is not recording to is legal but almost
+        // never what the pilot meant.
+        val notTarget = AutelProductHolder.storageTarget ==
+            com.autel.common.camera.media.SaveLocation.FLASH_CARD
+        val text = when {
+            blocked != null -> blocked
+            notTarget -> "The camera is recording to internal storage, not this card."
+            else -> ""
+        }
+        status.text = text
+        // GONE when it has nothing to say: an empty line still costs its height, and the height
+        // is what sections 0 and 1 have none of. See the layout note.
+        status.visibility = if (text.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+    }
+
+    /**
+     * ⚠ IRREVERSIBLE, AND ON A PUBLIC-SAFETY AIRFRAME THE FILES MAY BE EVIDENCE.
+     *
+     * Thus: the aircraft is named, the free space is quoted so the pilot can see whether the card
+     * holds anything, and the positive button says what it does rather than "OK". The result
+     * reports what the CAMERA did — the same rule the exterior-lights button follows, because
+     * this camera has answered success for things it did not do (see startRecordVerified).
+     */
+    private fun confirmFormatSdCard() {
+        val cam = AutelProductHolder.xt706 ?: return
+        android.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
+            .setTitle("Format the memory card?")
+            .setMessage(
+                "This erases everything on the SD card in the aircraft. " +
+                "Photographs and video cannot be recovered.\n\n" +
+                "Free space now: ${freeText(AutelProductHolder.sdFreeMb)}")
+            .setPositiveButton("Format") { _, _ -> doFormatSdCard(cam) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun doFormatSdCard(cam: com.autel.sdk.camera.AutelXT706) {
+        val button = findViewById<android.widget.Button>(R.id.sdCardFormatButton)
+        val status = findViewById<TextView>(R.id.sdCardStatus)
+        button.isEnabled = false
+        button.alpha = 0.45f
+        showSdStatus(status, "Formatting…")
+        AppLog.i(TAG, "format SD card requested")
+        runCatching {
+            cam.formatSDCard(object : com.autel.common.CallbackWithNoParam {
+                override fun onSuccess() {
+                    AppLog.i(TAG, "format SD card accepted by the camera")
+                    // NOT "done". The camera has taken the request; the CARD STATE is what says
+                    // it finished, and it arrives on the 2 Hz push that renderSdCard() reads.
+                    runOnUiThread { showSdStatus(status, "The camera accepted the request.") }
+                }
+                override fun onFailure(error: com.autel.common.error.AutelError?) {
+                    AppLog.w(TAG, "format SD card refused: ${error?.description}")
+                    runOnUiThread { showSdStatus(status, "The aircraft did not format the card.") }
+                }
+            })
+        }.onFailure {
+            AppLog.w(TAG, "format SD card threw: ${it.message}")
+            runOnUiThread { showSdStatus(status, "The aircraft did not format the card.") }
+        }
+    }
+
+    /** Sets the status line and makes it visible. It is GONE by default — see the layout. */
+    private fun showSdStatus(v: TextView, text: String) {
+        v.text = text
+        v.visibility = android.view.View.VISIBLE
     }
 
     private fun slotName(prefs: android.content.SharedPreferences, slot: Int): String =
