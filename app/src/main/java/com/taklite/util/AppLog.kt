@@ -34,7 +34,6 @@ import java.util.Locale
 object AppLog {
     private const val PREFS_NAME = "app_log_prefs"
     private const val KEY_ENABLED = "debug_logging_enabled"
-    private const val KEY_VERBOSE = "debug_logging_verbose"
     private const val KEY_TAK = "debug_logging_tak"
     private const val KEY_RADAR = "debug_logging_radar"
     private const val KEY_RESOURCE_MONITOR = "debug_resource_monitor"
@@ -66,6 +65,12 @@ object AppLog {
         sweepExpiredLogs()
     }
 
+    /**
+     * The ONE logging switch. Off by default.
+     *
+     * It turns on the file sink AND full detail together — see [verbose] for why those stopped
+     * being two decisions.
+     */
     @JvmStatic
     var enabled: Boolean
         get() = initialized && prefs.getBoolean(KEY_ENABLED, false)
@@ -74,17 +79,28 @@ object AppLog {
         }
 
     /**
-     * Detail level. false ("Standard") = only the pre-existing bridge/TAK Log.* call
-     * sites (state changes, warnings, errors). true ("Detailed") = also captures the
-     * whole-app instrumentation added via [v] — screen navigation, button presses,
-     * toggle changes, per-tick telemetry — for full-app field diagnosis.
+     * Detail level — now DERIVED from [enabled] and no longer separately settable
+     * (2026-08-30, operator).
+     *
+     * It was its own Debug-screen check box: "Standard" wrote only the bridge/TAK call sites,
+     * "Detailed" also wrote the whole-app instrumentation from [v] — screen navigation, button
+     * presses, per-tick telemetry. The combination that a pilot actually needs is "logging on,
+     * everything captured": the reason to turn logging on at all is that something needs
+     * diagnosing, and a log that was running in Standard when the interesting thing happened
+     * cannot be made detailed after the fact. Standard mode only ever produced a log that had
+     * to be re-created.
+     *
+     * ⚠ **This makes the log files grow faster**, thus the rotating archive holds LESS TIME
+     * than it did. If a diagnosis needs a longer history, raise [PUBLIC_ARCHIVE_MAX_BYTES] —
+     * do not bring back a quieter mode, because the quiet log is the one that turns out to be
+     * missing the line that mattered.
+     *
+     * The [takLogging] and [radarLogging] filters are untouched and remain the way to cut
+     * volume: they suppress whole SUBSYSTEMS, which is a choice about what is being
+     * investigated, rather than a choice to record less about it.
      */
     @JvmStatic
-    var verbose: Boolean
-        get() = initialized && prefs.getBoolean(KEY_VERBOSE, false)
-        set(value) {
-            if (initialized) prefs.edit().putBoolean(KEY_VERBOSE, value).apply()
-        }
+    val verbose: Boolean get() = enabled
 
     /**
      * Whether TAK/CoT-subsystem lines (see [TAK_TAGS]) reach the log file. Default true.

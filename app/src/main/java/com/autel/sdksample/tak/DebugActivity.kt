@@ -7,6 +7,8 @@ import android.view.MotionEvent
 import android.widget.CheckBox
 import android.widget.ScrollView
 import android.widget.TextView
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.autel.sdksample.BuildConfig
@@ -35,6 +37,10 @@ class DebugActivity : AppCompatActivity() {
     // The instant the user puts a finger down on the log, we stop auto-scrolling; we
     // only resume following once they've scrolled back to the bottom themselves.
     private var pinnedToBottom = true
+
+    /** Commits the SRT latency box. Set in [setupSrtLatencyControl]; called from the Done key,
+     *  from focus loss, and from [onPause] so leaving the screen does not discard the value. */
+    private var commitSrtLatency: (() -> Unit)? = null
 
     private val poll = object : Runnable {
         override fun run() {
@@ -84,13 +90,6 @@ class DebugActivity : AppCompatActivity() {
         toggle.setOnCheckedChangeListener { _, on ->
             AppLog.enabled = on
             AppLog.v(TAG, "logging ${if (on) "enabled" else "disabled"}")
-        }
-
-        val verboseToggle = findViewById<CheckBox>(R.id.debugVerboseToggle)
-        verboseToggle.isChecked = AppLog.verbose
-        verboseToggle.setOnCheckedChangeListener { _, on ->
-            AppLog.verbose = on
-            AppLog.v(TAG, "detail level set to ${if (on) "Detailed" else "Standard"}")
         }
 
         val takToggle = findViewById<CheckBox>(R.id.debugTakToggle)
@@ -149,6 +148,9 @@ class DebugActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(poll)
+        // Leaving the screen is a commit point: a pilot who types a value and taps the menu
+        // button has made a decision, and losing it silently is worse than storing it.
+        commitSrtLatency?.invoke()
     }
 
     private fun refreshLogView() {
@@ -180,8 +182,25 @@ class DebugActivity : AppCompatActivity() {
 
         // Only auto-scroll if the user hasn't manually scrolled away from the bottom —
         // otherwise a 1s poll would yank them back down mid scroll-back through history.
+        //
+        // ⚠ **This MUST NOT be `fullScroll(FOCUS_DOWN)`** (fixed 2026-08-30). That method does
+        // not only scroll: it calls `scrollAndFocus`, which finds a focusable view at the new
+        // position and calls `requestFocus()` on it. Focus is window-wide, thus a scroll of
+        // the LOG pane took the focus off the SRT latency box in the options column — once a
+        // second, for as long as the screen was open.
+        //
+        // The result was a field that could not be typed into at all. The keyboard opened, then
+        // the next poll took the focus away, the focus-loss handler wrote the SAVED value back
+        // into the box, and the pilot saw the number snap back to 500 with every keystroke. It
+        // read as a read-only control; it was a fight with a timer.
+        //
+        // `scrollTo` moves the same distance and leaves the focus alone. Keep it that way: any
+        // ScrollView method with `Focus` in the name will bring the fault back.
         if (pinnedToBottom) {
-            logScroll.post { logScroll.fullScroll(android.view.View.FOCUS_DOWN) }
+            logScroll.post {
+                val child = logScroll.getChildAt(0) ?: return@post
+                logScroll.scrollTo(0, maxOf(0, child.bottom - logScroll.height))
+            }
         }
     }
 
@@ -321,6 +340,19 @@ class DebugActivity : AppCompatActivity() {
      * microsecond form (500000) is told that the value is 500 and not left believing the box.
      *
      * The value is read at every stream start, so a change here takes effect at the next LIVE.
+     *
+     * ## Three commit points, because focus loss alone is not reachable
+     *
+     * The value was saved ONLY when the box lost the focus. This is the one text field on the
+     * screen, and every other control (check boxes, buttons) is `focusableInTouchMode=false`
+     * by default — thus in touch mode there is NOTHING for the focus to move to. The only
+     * thing that ever took it was the log pane's own auto-scroll, which is the fault that made
+     * the box unusable (see [refreshLogView]). With that corrected, focus loss became
+     * unreachable, and a save that waits for it would never run.
+     *
+     * So the value commits on the keyboard's Done key, on leaving the screen, AND on focus
+     * loss if it ever happens. [commitSrtLatency] is idempotent, thus more than one of them
+     * firing is harmless.
      */
     private fun setupSrtLatencyControl() {
         val field = findViewById<android.widget.EditText>(R.id.debugSrtLatency)
@@ -336,12 +368,13 @@ class DebugActivity : AppCompatActivity() {
         field.setText(VideoTransport.srtLatencyMs(prefs).toString())
         renderStatus()
 
-        // Saved when the box loses the focus, not on each keystroke: a partly typed "5" out of
-        // "500" is inside the sane range and would be stored as a real value.
-        field.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) return@setOnFocusChangeListener
+        // Not saved on each keystroke: a partly typed "5" out of "500" is inside the sane
+        // range and would be stored as a real value.
+        commitSrtLatency = commit@{
             val typed = field.text.toString().trim().toIntOrNull()
             val use = VideoTransport.clampLatencyMs(typed ?: VideoTransport.SRT_LATENCY_DEFAULT_MS)
+            // Idempotent: a second commit with nothing changed writes nothing and says nothing.
+            if (typed == use && use == VideoTransport.srtLatencyMs(prefs)) return@commit
             prefs.edit().putInt(VideoTransport.KEY_SRT_LATENCY_MS, use).apply()
             if (typed != null && typed != use) {
                 toast("$typed ms is outside ${VideoTransport.SRT_LATENCY_MIN_MS}–" +
@@ -350,6 +383,21 @@ class DebugActivity : AppCompatActivity() {
             field.setText(use.toString())
             renderStatus()
             AppLog.i(TAG, "SRT latency -> $use ms")
+        }
+
+        field.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) commitSrtLatency?.invoke()
+        }
+
+        // The Done key. This is the commit point a pilot will actually reach.
+        field.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                commitSrtLatency?.invoke()
+                field.clearFocus()
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .hideSoftInputFromWindow(field.windowToken, 0)
+                true
+            } else false
         }
     }
 
