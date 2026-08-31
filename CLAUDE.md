@@ -114,8 +114,35 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.6.2 IS RELEASED** — tag `v1.6.2`, versionCode 33, 2026-08-16. Bench and flight tested the
-same day; the results are `FLIGHT-TEST-CHECKLIST.md` section 4A. New work takes a new version.
+**v1.7.1 IS RELEASED** — tag `v1.7.1`, versionCode 50, 2026-08-30. It carries the whole of the
+never-released v1.7.0 (SRT as a second transport, the video-server screen, two servers, a port
+and a passphrase per protocol) AND the video work of 30 August. Flown by the operator before
+release. New work takes a new version.
+
+⚠ **There is no `v1.7.0` tag and there never was a v1.7.0 in the field.** The fleet went from
+v1.6.2 to v1.7.1. Do not read the gap as a lost release.
+
+Landing in v1.7.1 on 30 August, all measured on the controller and recorded in the code:
+
+- **Intra refresh is always on.** A full intra frame every 2 s cost 169 KB against a 9 KB P
+  frame — 39 % of the whole data rate for 3 % of the frames, about 770 ms of link time at
+  1800 kbps. Spread across 30 frames the keyframe share fell to 6.5 % (H.264 High) and 4.5 %
+  (H.265 Standard). Both hardware encoders took the key on the FIRST attempt.
+- ⚠ **The controller was never the problem.** `CAPABILITY` reports 159 fps at 1440x1080 for
+  AVC against a need of 15, the GPU idles at 160-266 MHz while streaming, and the media server
+  counted zero loss, zero retransmission and 2.18 ms RTT. Do not re-open "the hardware cannot
+  keep up" without new evidence.
+- ⚠ **A LAN cannot judge the video transport.** The bench path is clean, thus SRT latency and
+  intra refresh both show nothing there. Judge them by `packetsReceivedDrop` from
+  `GET /v3/srtconns/list` over LTE. **The media server API is `127.0.0.1:9898`, NOT 9997** —
+  9997 belongs to the CloudTAK container on the same host.
+- **The thermal picture is shown whole**, visible-light still fills and still cuts 25 % off the
+  sides. That second decision has NOT been made.
+- **The Debug SRT latency box could not be typed into** — the log pane's `fullScroll(FOCUS_DOWN)`
+  took the window focus once a second. Never use a ScrollView method with `Focus` in the name.
+
+**v1.6.2 was released** — tag `v1.6.2`, versionCode 33, 2026-08-16. Bench and flight tested the
+same day; the results are `FLIGHT-TEST-CHECKLIST.md` section 4A.
 
 ⚠ Section 4A also records TWO BEHAVIOURS CONFIRMED CORRECT. Do not re-diagnose either as a
 fault: the aircraft marker and the SPI stay after a channel change until they go stale (they are
