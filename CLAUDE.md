@@ -114,7 +114,21 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.7.1 IS RELEASED** — tag `v1.7.1`, versionCode 50, 2026-08-30. It carries the whole of the
+**v1.7.2 IS RELEASED** — tag `v1.7.2`, versionCode 52, 2026-08-31. It carries one fix: the
+flight screen reads the camera and the exterior lamps when the AIRCRAFT ARRIVES, not when the
+screen opens.
+
+⚠ **A read at `onResume` is not a read at connect, and a warm restart hides the difference.**
+`syncIrStateFromCamera()` begins `xt706 ?: return` and `AutelLights.refresh()` ran in
+`onCreate`; on a cold start both ran 11 minutes before `productConnected` (measured
+2026-08-31) and nothing asked again. Every earlier log looks correct because the application
+was restarted with the aircraft already connected. `AutelProductHolder` now has a
+**camera-ready observer**, fired where a real `AutelXT706` is confirmed — NOT at
+`productConnected`, which fires first with `UnknownCamera` and fails every call.
+
+⚠ **The cold-start sequence is not yet flight tested.**
+
+**v1.7.1 was released** — tag `v1.7.1`, versionCode 50, 2026-08-30. It carries the whole of the
 never-released v1.7.0 (SRT as a second transport, the video-server screen, two servers, a port
 and a passphrase per protocol) AND the video work of 30 August. Flown by the operator before
 release. New work takes a new version.
