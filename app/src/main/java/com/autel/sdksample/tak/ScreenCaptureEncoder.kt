@@ -10,6 +10,8 @@ import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Surface
 import android.view.WindowManager
@@ -52,6 +54,8 @@ class ScreenCaptureEncoder(
     @Volatile private var running = false
     private var encFrameCount = 0
     private var encBytesSinceLog = 0L
+    /** Monotonic mark for the achieved-rate line. -1 until the first 150-frame boundary. */
+    private var lastRateLogMs = -1L
 
     // I-frame vs P-frame accounting. This ratio — not the mode the encoder reports back — is the
     // ground truth for whether VBR is doing anything: a legacy OMX component will accept
@@ -66,16 +70,19 @@ class ScreenCaptureEncoder(
     private val screenW: Int
     private val screenH: Int
     private val densityDpi: Int
+    private val refreshHz: Float
 
     init {
         @Suppress("DEPRECATION")
-        val metrics = DisplayMetrics().also {
-            (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-                .defaultDisplay.getRealMetrics(it)
-        }
+        val display = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay
+        val metrics = DisplayMetrics().also { display.getRealMetrics(it) }
         screenW = metrics.widthPixels
         screenH = metrics.heightPixels
         densityDpi = metrics.densityDpi
+        // The panel rate is the INPUT rate to the encoder when the frame-rate cap does not
+        // apply — see logCapability(). This controller reports 60.0.
+        refreshHz = runCatching { display.refreshRate }.getOrDefault(60f).takeIf { it > 1f } ?: 60f
     }
 
     /** Registered with the projection so a stop from the system side tears this down too. */
@@ -92,8 +99,19 @@ class ScreenCaptureEncoder(
         targetW -= targetW % 2   // even dims for the encoder
         targetH -= targetH % 2
 
+        logCapability(targetW, targetH)
+
         return runCatching {
-            val (enc, variant) = configureEncoder(targetW, targetH)
+            // Intra refresh is asked for FIRST and given up as a whole if nothing configures
+            // with it. A component that does not implement KEY_INTRA_REFRESH_PERIOD must not
+            // cost us the stream, and the key is not in the variant ladder because it changes
+            // the IDR interval too — the two belong together or not at all.
+            val (enc, variant) = configureEncoder(targetW, targetH, USE_INTRA_REFRESH)
+                ?: (if (USE_INTRA_REFRESH) {
+                        AppLog.w(TAG, "no configuration accepted intra refresh — " +
+                            "falling back to periodic IDR")
+                        configureEncoder(targetW, targetH, false)
+                    } else null)
                 ?: throw IllegalStateException("no usable encoder configuration")
             val surface = enc.createInputSurface()
             enc.start()
@@ -113,7 +131,9 @@ class ScreenCaptureEncoder(
             AppLog.i(TAG, "screen capture [${profile.name}] ${codec.label}: " +
                 "${screenW}x$screenH -> " +
                 "${targetW}x$targetH @ ${profile.fps}fps ${profile.bitrateBps / 1000}kbps, " +
-                "${I_FRAME_INTERVAL_S}s IDR — variant: $variant")
+                "${idrIntervalS(USE_INTRA_REFRESH)}s IDR" +
+                (if (USE_INTRA_REFRESH) ", intra refresh ${intraRefreshPeriodFrames()}f" else "") +
+                " — variant: $variant")
             true
         }.onFailure {
             AppLog.e(TAG, "screen capture start failed: ${it.message}", it)
@@ -133,8 +153,14 @@ class ScreenCaptureEncoder(
      * The order below drops the least important first, so a device that accepts everything
      * still gets CBR and an explicit profile. Which variant won is logged, so a future device
      * tells us what it supports instead of us guessing again.
+     *
+     * ⚠ **KEY_MAX_FPS_TO_ENCODER outranks KEY_PROFILE in this ladder** (changed 2026-08-30).
+     * The profile keys are cosmetic here; the frame-rate cap is the only thing that stops the
+     * encoder receiving the panel's 60fps. See the rung comment below.
      */
-    private fun configureEncoder(w: Int, h: Int): Pair<MediaCodec, String>? {
+    private fun configureEncoder(
+        w: Int, h: Int, withIntraRefresh: Boolean,
+    ): Pair<MediaCodec, String>? {
         data class Variant(val name: String, val apply: (MediaFormat) -> Unit)
 
         // Bitrate modes to try, best first. VBR lets a keyframe borrow bits from the cheap
@@ -157,6 +183,26 @@ class ScreenCaptureEncoder(
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
                     f.setInteger(MediaFormat.KEY_PROFILE, codec.profile)
                     f.setInteger(MediaFormat.KEY_LEVEL, codec.level)
+                },
+                // KEEP THE FRAME-RATE CAP WHEN THE PROFILE KEYS GO. Until 2026-08-30 the
+                // max-fps key was only on the rung above the two profile rungs, thus a
+                // component that refused KEY_PROFILE lost the cap with it, although the cap
+                // was not the key it refused. That is a costly loss on this controller: the
+                // VirtualDisplay gives frames at the panel rate (60Hz), KEY_FRAME_RATE is
+                // only a hint to the rate controller on a Surface input, and
+                // KEY_MAX_FPS_TO_ENCODER is the only key that makes the framework DISCARD
+                // input frames. Without it the encoder receives 60fps while the bitrate
+                // budget is set for [TranscodeProfile.fps].
+                //
+                // The order is now: cap+profile, profile, CAP ALONE, mode alone. The profile
+                // keys are the ones to give up first — the file already holds that neither is
+                // load-bearing, and the block-rate arithmetic in logCapability() shows what
+                // the cap is worth.
+                Variant("max-fps, no profile/level ($label)") { f ->
+                    f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, profile.fps.toFloat())
+                    }
                 },
                 Variant("$label only (no profile/level)") { f ->
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
@@ -188,7 +234,11 @@ class ScreenCaptureEncoder(
                         MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                     setInteger(MediaFormat.KEY_BIT_RATE, profile.bitrateBps)
                     setInteger(MediaFormat.KEY_FRAME_RATE, profile.fps)
-                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_S)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, idrIntervalS(withIntraRefresh))
+                    if (withIntraRefresh) {
+                        setInteger(MediaFormat.KEY_INTRA_REFRESH_PERIOD,
+                            intraRefreshPeriodFrames())
+                    }
                     v.apply(this)
                 }
                 val enc = runCatching {
@@ -198,13 +248,77 @@ class ScreenCaptureEncoder(
                 val ok = runCatching {
                     enc.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 }.isSuccess
-                if (ok) return enc to "${enc.name} / ${v.name}"
+                if (ok) return enc to "${enc.name} / ${v.name}" +
+                    (if (withIntraRefresh) " + intra-refresh" else "")
                 AppLog.w(TAG, "${name ?: "default"} rejected variant '${v.name}' — trying simpler")
                 runCatching { enc.release() }
             }
         }
         return null
     }
+
+    /**
+     * What the encoder says it can do at this size, BEFORE we ask it to do it.
+     *
+     * Added 2026-08-30 while looking for the cause of stream jitter. The controller's
+     * `/vendor/etc/media_codecs_sdm660_v1.xml` gives both hardware encoders the same ceiling —
+     * 244800 16x16 blocks per second — and the tiers cost:
+     *
+     * ```
+     *   Low       640x480    1200 blocks/frame   204 fps at the ceiling
+     *   Standard  960x720    2700 blocks/frame    91 fps
+     *   High     1440x1080   6120 blocks/frame    40 fps
+     * ```
+     *
+     * The panel is 60Hz. Thus an UNCAPPED High tier asks for about 150% of the declared
+     * ceiling, and the measured table (`media_codecs_performance_sdm660_v1.xml`) is stricter
+     * again — the AVC encoder measures 32-37 fps at 1280x720. So this is not a small overrun.
+     *
+     * ⚠ **Two DIFFERENT numbers are printed here and they answer different questions.**
+     * `achievable` is what the component declares for these exact dimensions; `asking` is the
+     * input rate the [android.hardware.display.VirtualDisplay] can deliver, which is the panel
+     * rate whether or not the profile asked for less. When `asking` is above `achievable` the
+     * encoder is being overrun, and the fix is the frame-rate cap, NOT the bitrate.
+     *
+     * Every read is optional — [android.media.MediaCodecInfo.VideoCapabilities] throws for a
+     * size a component does not support, and a legacy OMX component may not describe itself
+     * fully at all. A failure logs and returns; it must never stop a stream from starting.
+     */
+    private fun logCapability(w: Int, h: Int) {
+        runCatching {
+            val panelFps = displayRefreshHz()
+            var found = false
+            for (info in MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos) {
+                if (!info.isEncoder || outMime !in info.supportedTypes.map { it.lowercase() }) continue
+                if (!isHardware(info)) continue
+                val caps = info.getCapabilitiesForType(outMime).videoCapabilities ?: continue
+                val achievable = runCatching {
+                    caps.getSupportedFrameRatesFor(w, h).upper
+                }.getOrNull()
+                AppLog.i(TAG, "CAPABILITY: ${info.name} at ${w}x$h — " +
+                    "achievable=${achievable?.let { "%.0f".format(it) } ?: "?"}fps, " +
+                    "asking=${"%.0f".format(panelFps)}fps (panel), " +
+                    "profile wants ${profile.fps}fps" +
+                    if (achievable != null && panelFps > achievable)
+                        "  ⚠ UNCAPPED INPUT WOULD OVERRUN THIS ENCODER" else "")
+                found = true
+            }
+            if (!found) AppLog.w(TAG, "CAPABILITY: no hardware $outMime encoder described itself")
+        }.onFailure { AppLog.w(TAG, "CAPABILITY probe failed: ${it.message}") }
+    }
+
+    /** The panel refresh rate — the rate the VirtualDisplay can deliver frames at, thus the
+     *  input rate the encoder sees when the frame-rate cap is not applied. 60.0 if unreadable,
+     *  which is this controller's value and the common default. */
+    private fun displayRefreshHz(): Float = refreshHz
+
+    /**
+     * How many frames one complete refresh sweep takes.
+     *
+     * Two seconds' worth of frames, thus the picture is fully refreshed on the same cadence the
+     * IDR used to arrive on. The cost is spread over those frames instead of landing in one.
+     */
+    private fun intraRefreshPeriodFrames(): Int = profile.fps * 2
 
     /** Encoders to try, in order. null means "let the platform choose" (normally hardware).
      *
@@ -278,6 +392,18 @@ class ScreenCaptureEncoder(
     }
 
     private fun drainLoop() {
+        // The drain loop was at DEFAULT thread priority until 2026-08-30, which put it level
+        // with ordinary background work. It must not be: while it waits to be scheduled, the
+        // output buffers it has not released are buffers the encoder cannot reuse, thus the
+        // encoder stalls and the frames reach the network in bursts. That is jitter created on
+        // this end, and it gets worse exactly when the controller is busy.
+        //
+        // DISPLAY, not URGENT_DISPLAY: this thread must stay below the flight screen's own
+        // drawing. A stream that stutters is a fault; a flight screen that stutters is a
+        // safety matter.
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY) }
+            .onFailure { AppLog.w(TAG, "could not raise drain thread priority: ${it.message}") }
+
         val enc = encoder ?: return
         val info = MediaCodec.BufferInfo()
         try {
@@ -310,8 +436,7 @@ class ScreenCaptureEncoder(
                                     pFrameCount++; pFrameBytes += info.size
                                 }
                                 if (encFrameCount % 150 == 0) {
-                                    AppLog.v(TAG, "[${profile.name}] $encFrameCount frames encoded, " +
-                                        "${encBytesSinceLog / 1024}KB in last 150")
+                                    logRate()
                                     encBytesSinceLog = 0
                                     logFrameMix()
                                 }
@@ -335,8 +460,45 @@ class ScreenCaptureEncoder(
                 "${intOf(MediaFormat.KEY_HEIGHT)} bitrate=${intOf(MediaFormat.KEY_BIT_RATE)} " +
                 "mode=${runCatching { modeLabel(f.getInteger(MediaFormat.KEY_BITRATE_MODE)) }
                     .getOrDefault("not-reported")} " +
-                "iFrameInterval=${intOf(MediaFormat.KEY_I_FRAME_INTERVAL)}")
+                "iFrameInterval=${intOf(MediaFormat.KEY_I_FRAME_INTERVAL)} " +
+                "intraRefresh=${intOf(MediaFormat.KEY_INTRA_REFRESH_PERIOD)}")
         }.onFailure { AppLog.w(TAG, "could not read output format: ${it.message}") }
+    }
+
+    /**
+     * The ACHIEVED frame rate, against the two rates that bracket it.
+     *
+     * This line used to give a frame COUNT and a byte total, which says nothing about pacing:
+     * 150 frames is 150 frames whether they took 10 seconds or 2.5. The elapsed time is what
+     * separates the three states that matter, and they need different fixes:
+     *
+     *  - **about [TranscodeProfile.fps]** — correct. The frame-rate cap is applied.
+     *  - **about the panel rate (60)** — THE CAP IS NOT APPLIED. The encoder is doing four
+     *    times the work the profile asked for, and the bitrate budget is spread over four
+     *    times the frames. Read the `variant:` line to see which rung won.
+     *  - **BELOW the profile rate** — the encoder cannot keep up at this size. The tier is too
+     *    high for the hardware, and no format key fixes that. Compare with the `CAPABILITY`
+     *    line printed at start.
+     *
+     * Logged at I, not V, because it is the first thing to read when a stream looks uneven and
+     * Detailed logging is not always on. It costs one line per 150 frames.
+     */
+    private fun logRate() {
+        val now = SystemClock.elapsedRealtime()
+        val since = lastRateLogMs
+        lastRateLogMs = now
+        if (since <= 0L) return          // first mark — no interval to measure yet
+        val elapsedMs = now - since
+        if (elapsedMs <= 0L) return
+        val fps = 150_000.0 / elapsedMs
+        val verdict = when {
+            fps > profile.fps * 1.5 -> "  ⚠ ABOVE PROFILE — frame-rate cap not applied"
+            fps < profile.fps * 0.8 -> "  ⚠ BELOW PROFILE — encoder not keeping up"
+            else -> ""
+        }
+        AppLog.i(TAG, "[${profile.name}] rate: ${"%.1f".format(fps)}fps achieved " +
+            "(profile ${profile.fps}, panel ${"%.0f".format(refreshHz)}), " +
+            "${encBytesSinceLog / 1024}KB in last 150$verdict")
     }
 
     /**
@@ -450,6 +612,82 @@ class ScreenCaptureEncoder(
          * I/P line in the log before believing it did anything.
          */
         private const val PREFER_VBR = true
+
+        /**
+         * Intra refresh is ALWAYS ON (2026-08-30). It was a Debug-screen switch for one
+         * evening, long enough to measure it on both codecs, and the measurements did not
+         * leave a case for the switch:
+         *
+         * ```
+         *   H.264 High  1440x1080  keyframe share of bandwidth  39%  ->  6.5%
+         *   H.265 Std    960x720   keyframe share of bandwidth        ->  4.5%
+         * ```
+         *
+         * Both hardware encoders accepted it on the FIRST configuration attempt and echoed
+         * `intraRefresh=30` back, the frame rate held at 15.0, and the bitrate stayed on
+         * target. Nothing regressed, thus a switch would only have offered a worse setting.
+         *
+         * The fallback in [start] stays: a device whose encoder refuses the key still gets a
+         * stream, with periodic IDRs and a warning in the log.
+         */
+        private const val USE_INTRA_REFRESH = true
+
+        /**
+         * How INTRA REFRESH changes the shape of the stream, and why it is a field switch.
+         *
+         * A normal stream sends one full intra frame every [I_FRAME_INTERVAL_S] seconds. It is
+         * very large: measured on this controller at the High tier, an I frame averaged 169 KB
+         * against a P frame of 9 KB — 18 times the size, and 39% of ALL the bits in the stream
+         * for 3% of the frames. At 1800 kbps that one frame needs about 770 MILLISECONDS of
+         * link time, and it is produced in a single 67 ms frame slot.
+         *
+         * Intra refresh sends the same intra information as a BAND that moves across the
+         * picture, a slice of each frame at a time, over [intraRefreshPeriodFrames] frames.
+         * The total is similar; the DISTRIBUTION is flat. There is no burst to absorb.
+         *
+         * ## What this is for, and what it is not for
+         *
+         * It is for a link that cannot swallow a 770 ms burst every two seconds — which is a
+         * cellular uplink, the way the fleet actually flies.
+         *
+         * ⚠ **It is NOT expected to change anything on a good LAN.** Measured against the
+         * media server on 2026-08-30: `packetsReceivedLoss 0, packetsReceivedRetrans 0,
+         * packetsReceivedDrop 0`, RTT 2.18 ms. There is nothing wrong with that path and
+         * nothing here can improve it. A bench test that shows no difference has NOT
+         * disproved this; it has only confirmed the bench was never the problem. The test
+         * that means something is over LTE.
+         *
+         * ## The cost, stated honestly
+         *
+         * The IDR interval is lengthened (see [idrIntervalS]), thus there is no longer a full
+         * sync point every 2 s. `requestSyncFrame()` still asks for one when a viewer connects,
+         * so joining is unaffected. What changes is RECOVERY FROM A BREAK with no viewer
+         * action: instead of healing at the next 2 s keyframe, the picture heals as the refresh
+         * band sweeps past — about [intraRefreshPeriodFrames] frames, which is the same order.
+         *
+         * ⚠ **Verify with the `frame mix:` line, and read it correctly.** The I/P RATIO does
+         * NOT collapse — a periodic IDR is still a full intra frame, thus it stays around
+         * 6-7x. What changes is how OFTEN one arrives (every 10 s, not every 2 s) and the P
+         * frames growing, which is the intra information spread into them: measured 9KB -> 14KB
+         * on H.264 at an unchanged total bitrate. Count the I frames per minute; do not watch
+         * the ratio alone. An earlier version of this note predicted a collapse to 1x and was
+         * wrong.
+         */
+        /**
+         * Seconds between full IDRs, which depends on whether intra refresh carries the
+         * recovery.
+         *
+         * Without it, 2 s — unchanged, and see [I_FRAME_INTERVAL_S] for why that number is not
+         * a knob for the keyframe PULSE.
+         *
+         * With it, 10 s. Not "never": a periodic IDR is still the cheapest insurance against a
+         * decoder that has drifted in a way the refresh band does not repair, and at 10 s it
+         * costs one large frame in a hundred and fifty rather than one in thirty.
+         */
+        private fun idrIntervalS(withIntraRefresh: Boolean): Int =
+            if (withIntraRefresh) INTRA_REFRESH_IDR_INTERVAL_S else I_FRAME_INTERVAL_S
+
+        private const val INTRA_REFRESH_IDR_INTERVAL_S = 10
 
         /**
          * Prefer Google's SOFTWARE HEVC encoder over this chip's hardware one.
