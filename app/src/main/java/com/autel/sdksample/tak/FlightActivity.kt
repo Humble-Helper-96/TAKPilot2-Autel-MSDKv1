@@ -84,6 +84,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             field = value
             TakBridgeHolder.setActiveLens(
                 if (value) AutelTakBridge.Lens.IR else AutelTakBridge.Lens.EO)
+            // Thermal is shown FIT and the other modes FILL, thus the transform depends on this
+            // state. A mode change normally alters the frame size too and applyVideoFill re-runs
+            // on its own; this covers the order where the state lands before the first frame of
+            // the new mode does, which is what the connect-time resync does.
+            codecView?.let { v -> runOnUiThread { applyVideoFill(v) } }
         }
     /** The palettes the button cycles through, in tap order. A subset of the XT706's twelve
      *  on purpose (operator, 2026-08-07: Ironbow joins white/black hot): three is a cycle a
@@ -1753,7 +1758,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * RTSP push reads its own frame tap and is untouched.
      */
     /**
-     * Makes the FPV video FILL the screen in every camera mode, aspect preserved, centred.
+     * Makes the FPV video fill the screen in the VISIBLE-LIGHT modes, aspect preserved, centred.
+     * Thermal is the exception and is shown whole — see the scale decision in [applyVideoFill].
      *
      * THE PROBLEM THIS SOLVES. The camera emits a different shape per mode — photo 1280x960
      * (4:3), video 1280x720 (16:9), IR 640x512 (5:4) — and the SDK fits each one INSIDE the
@@ -1818,7 +1824,26 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // identity transform is the SDK's own behaviour and a safe resting state.
         if (vw <= 0f || vh <= 0f || videoAspect <= 0f) return
         val viewAspect = vw / vh
-        val scale = maxOf(videoAspect / viewAspect, viewAspect / videoAspect)
+        // FILL for the visible-light modes, FIT for thermal (operator, 2026-08-30).
+        //
+        // The thermal sensor is 640x512 and there is no more of it to be had. Filling a
+        // 2048x1536 view with it means a 1.067 magnification and, measured on the controller,
+        // an AR rect of 2048x1638 — thus 102 rows of a 512-row sensor never reach the screen.
+        // Giving up about 6% of a scarce sensor to remove a black bar is the wrong trade, so
+        // thermal is shown whole and the view is filled at the sides with the flight screen's
+        // own black.
+        //
+        // The visible-light modes are NOT changed. Their crop is far larger — 16:9 in a 4:3
+        // view magnifies by 1.333 and cuts 25% off the sides — but that camera has resolution
+        // to spare, the picture fills the screen, and the TAK feed is a capture of this screen,
+        // thus a change here changes what the whole team sees. That is a separate decision and
+        // it has not been made.
+        //
+        // A scale of exactly 1 is the SDK's own behaviour: it already fits content INSIDE the
+        // widget and centres it, so the identity transform IS the fit, and the bars are the
+        // root layout's tp_bg_flight (#000000) showing through the TextureView.
+        val scale = if (irOn) 1f
+            else maxOf(videoAspect / viewAspect, viewAspect / videoAspect)
         view.setTransform(android.graphics.Matrix().apply {
             setScale(scale, scale, vw / 2f, vh / 2f)   // anchor = view centre = reticle centre
         })
@@ -1847,7 +1872,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             vw / 2f - fullW / 2f, vh / 2f - fullH / 2f,
             vw / 2f + fullW / 2f, vh / 2f + fullH / 2f))
         AppLog.i(TAG, "AR video rect: ${fullW.toInt()}x${fullH.toInt()} in view ${vw.toInt()}x${vh.toInt()}")
-        AppLog.i(TAG, "video fill: view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
+        AppLog.i(TAG, "video ${if (irOn) "FIT (thermal)" else "FILL"}: " +
+            "view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
             "content aspect ${"%.3f".format(videoAspect)} -> scale ${"%.3f".format(scale)}")
     }
 

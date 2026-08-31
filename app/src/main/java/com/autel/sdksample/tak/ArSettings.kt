@@ -194,6 +194,13 @@ object ArSettings {
      * off-screen, so the left/right screen edge sits at only ~0.75 of the frame half-width — a
      * weak lever that is easy to overshoot. That asymmetry is the likely reason the two axes were
      * historically tuned into disagreement.
+     *
+     * ⚠ **That describes the VISIBLE-LIGHT modes, which is where this is calibrated.** Thermal
+     * has been shown whole since 2026-08-30 (see `FlightActivity.applyVideoFill`): nothing is
+     * cropped, the bars are at the sides, and every screen edge is a real frame edge. So the
+     * warning above does not apply to a thermal picture — but do not calibrate on one either.
+     * This value is ONE horizontal FOV for the whole app; the thermal lens is a different and
+     * much narrower one, and the bridge already switches between them by [AutelTakBridge.Lens].
      */
     fun loadFov(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
