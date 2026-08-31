@@ -90,6 +90,37 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // the new mode does, which is what the connect-time resync does.
             codecView?.let { v -> runOnUiThread { applyVideoFill(v) } }
         }
+    /**
+     * Re-reads the camera the moment a REAL one attaches, not at onResume.
+     *
+     * On a cold start the flight screen is up long before the aircraft. The onResume read then
+     * runs against no camera and nothing asks again, thus the buttons claimed "visible" while
+     * the aircraft streamed thermal. Held as a field so it can be removed in onPause.
+     */
+    private val cameraReadyObserver: () -> Unit = {
+        AppLog.i(TAG, "camera ready — re-reading thermal mode and palette")
+        syncIrStateFromCamera()
+        seedZoomFromCamera()
+    }
+
+    /** Re-renders the exterior-lamp button once the aircraft has answered. The READ is done by
+     *  [AutelProductHolder] at connect; this only puts the answer on the screen. */
+    private val connectionObserver: (Boolean) -> Unit = { connected ->
+        if (connected) {
+            // DELAYED, for the same not-ready window the other at-connect calls hit: the
+            // aircraft answers productConnected before the fly controller will serve a read.
+            // The read is done HERE rather than in the holder because the answer has to reach
+            // the button, and the 500 ms HUD tick does not re-render it.
+            handler.postDelayed({
+                AutelLights.refresh { runOnUiThread { renderLightsButton() } }
+            }, LAMP_READ_DELAY_MS)
+        } else {
+            // A disconnect clears the lamp to null, thus the button must dim back to "unknown"
+            // rather than keep claiming the last state of an aircraft that has gone.
+            renderLightsButton()
+        }
+    }
+
     /** The palettes the button cycles through, in tap order. A subset of the XT706's twelve
      *  on purpose (operator, 2026-08-07: Ironbow joins white/black hot): three is a cycle a
      *  pilot can predict blind; twelve is a settings menu. The camera may still be IN one of
@@ -566,6 +597,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         super.onResume()
         AppLog.v(TAG, "onResume")
         AutelProductHolder.install()   // reclaim the global product listener (see holder docs)
+        AutelProductHolder.addCameraReadyListener(cameraReadyObserver)
+        AutelProductHolder.addListener(connectionObserver)
         // Re-read the camera's real thermal state each time this screen comes up. Autel's own
         // app can have left the camera in IR, and the buttons must reflect the camera rather
         // than a default. No-ops when no camera is attached.
@@ -603,6 +636,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     override fun onPause() {
         super.onPause()
         AppLog.v(TAG, "onPause")
+        // Paired with the registrations in onResume. Both lists are also cleared when the link
+        // is released, thus a missed removal cannot leak an activity across a product cycle.
+        AutelProductHolder.removeCameraReadyListener(cameraReadyObserver)
+        AutelProductHolder.removeListener(connectionObserver)
         map.onPause()
         ControllerCompass.stop()
         // Dropped while this screen is not showing: the hardware button must not
@@ -3212,6 +3249,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     companion object {
+        /** The at-connect settling time the camera and fly-controller calls all need. Matches
+         *  the delay AutelProductHolder uses for the same reason. */
+        private const val LAMP_READ_DELAY_MS = 4500L
+
         private const val TAG = "FlightActivity"
 
         /** Which SDK custom button drives the quick marker: "A" or "B". Set from the

@@ -370,6 +370,20 @@ object AutelProductHolder {
             com.autel.sdksample.TestApplication.getInstance()?.let { ctx ->
                 AutelExposureController.applyDefaults(ctx, cam as? AutelXT706)
             }
+
+            // TELL THE SCREENS THE CAMERA IS REAL NOW.
+            //
+            // A screen that wants to know what mode the camera is IN cannot ask at onResume: on
+            // a cold start the flight screen is up long before the aircraft is. Measured on
+            // 2026-08-31 — onResume at 09:51:31, productConnected at 10:02:25, eleven minutes
+            // later. The read ran against no camera, returned, and nothing asked again, so the
+            // buttons said "visible" while the aircraft streamed thermal until the pilot cycled
+            // the mode by hand.
+            //
+            // productConnected is NOT the right moment either: this same listener fires first
+            // with UnknownCamera (measured 3 s before the real one), and every call on that
+            // placeholder fails. This point is the first at which a camera read is worth making.
+            (cam as? AutelXT706)?.let { notifyCameraReady() }
         }
         override fun onFailure(error: AutelError?) {
             AppLog.w(TAG, "camera change listener error: ${error?.description}")
@@ -572,6 +586,26 @@ object AutelProductHolder {
         zoomBaseRaw = null
         isRecording = false
         synchronized(listeners) { listeners.clear() }
+        synchronized(cameraReadyListeners) { cameraReadyListeners.clear() }
+    }
+
+    /**
+     * Observers of "a real camera is now attached and answering". See the call to
+     * [notifyCameraReady] for why this is a different event from [addListener]'s connect.
+     */
+    private val cameraReadyListeners = ArrayList<() -> Unit>()
+
+    fun addCameraReadyListener(l: () -> Unit) {
+        synchronized(cameraReadyListeners) { cameraReadyListeners.add(l) }
+    }
+
+    fun removeCameraReadyListener(l: () -> Unit) {
+        synchronized(cameraReadyListeners) { cameraReadyListeners.remove(l) }
+    }
+
+    private fun notifyCameraReady() {
+        val copy = synchronized(cameraReadyListeners) { cameraReadyListeners.toList() }
+        mainHandler.post { copy.forEach { runCatching { it() } } }
     }
 
     fun addListener(l: (Boolean) -> Unit) { synchronized(listeners) { listeners.add(l) } }
