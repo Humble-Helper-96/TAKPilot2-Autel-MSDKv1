@@ -114,7 +114,26 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.7.2 IS RELEASED** — tag `v1.7.2`, versionCode 52, 2026-08-31. It carries one fix: the
+**v1.7.3 IS RELEASED** — tag `v1.7.3`, versionCode 59, 2026-08-31. Pre-Flight gains section 0,
+Memory Card: card state, free space, and a Format Card button
+(`AutelBaseCamera.formatSDCard`). The internal flash has its own call,
+`formatFlashMemoryCard`, and is deliberately NOT offered.
+
+⚠ **SECTIONS 0 AND 1 MUST FIT THE SCREEN WITHOUT SCROLLING, and the layout editor cannot show
+you.** Measured on the controller: the scroll viewport is 1264 px and section 1 ends at 1376 of
+1440 — 64 px clear, with the section-0 status line SHOWING, which is the tall case. Re-measure
+with `dumpsys activity top` after any change to those sections or to `takLabelStyle` /
+`takFieldStyle`. The room for section 0 came from VERTICAL PADDING in those two styles
+(12/4 -> 6/2 and 12 -> 8 top/bottom), thus every section tightened evenly and no text shrank.
+
+⚠ **The SDK does not report SD CAPACITY.** `XT706CameraInfo` has `getSDcardFreeSpace()` and no
+total; the whole aar was searched and only free-space getters exist for the card, while the
+internal flash has both. Do not add an inferred capacity to a pre-flight screen.
+
+⚠ **A real format has NOT been run yet**, and section 0 is pilot-facing UI that the DJI trees
+do not have — see the UI conformance ledger.
+
+**v1.7.2 was released** — tag `v1.7.2`, versionCode 52, 2026-08-31. It carries one fix: the
 flight screen reads the camera and the exterior lamps when the AIRCRAFT ARRIVES, not when the
 screen opens.
 
