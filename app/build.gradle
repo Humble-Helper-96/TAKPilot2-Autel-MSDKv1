@@ -535,8 +535,8 @@ android {
         //        ten-second mean, and video is bursty, so it read anywhere from 26 to 2497
         //        kbps on a link that was doing neither — a bandwidth fault where there was
         //        none, which is the opposite of what the line is for.
-        versionCode 60
-        versionName "1.7.3"
+        versionCode 61
+        versionName "1.7.4"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
