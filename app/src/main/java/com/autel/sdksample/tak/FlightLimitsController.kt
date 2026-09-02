@@ -52,23 +52,32 @@ object FlightLimitsController {
     /**
      * Battery thresholds, percent.
      *
-     * THESE ARE THE AIRCRAFT'S OWN AUTOMATIC ACTIONS, not app warnings. Low is the level the
-     * aircraft starts bringing itself home at; Critical is the level it puts itself down at.
+     * THESE ARE THE AIRCRAFT'S OWN AUTOMATIC ACTIONS, not app warnings.
+     *
+     * **Low WARNS. Critical RETURNS HOME** (operator, 2026-09-01, flying 25/20 on the EVO II
+     * 640T). Low beeps and puts a low-battery warning on the screen; it does not start a return.
+     * The return begins at Critical.
+     *
+     * ⚠ THIS REPLACES THE EARLIER READING, which had Low starting the return and Critical forcing
+     * a landing. That reading is kept below because it came from a measured flight and a future
+     * observation may have to reconcile the two — but the operator flies this airframe daily and
+     * their determination governs. Do not "correct" the text back without a new flight.
      *
      * The defaults below (15 / 10) are the OPERATOR'S choice, not Autel's: more usable flight
      * time, with a smaller reserve. That is a deliberate trade and it is theirs to make.
      *
-     * **Flight-verified 2026-08-04, one full battery in the air at 15/10:**
+     * **SUPERSEDED — the 2026-08-04 flight record, one full battery in the air at 15/10.** Kept
+     * for the trigger-point finding, which still stands. Its Low/Critical ACTIONS do not:
      *  - The alert fires at the threshold EXACTLY — the controller read 15% when it beeped. An
      *    earlier note here claimed the action landed ~1% low (RTH "near 24%" at a 25% setting);
      *    that did not reproduce and should not be relied on. Those 25/15 numbers were the
      *    FACTORY values this airframe shipped with, observed 2026-08-02 — they were never
      *    properties of the aircraft, just what it was set to at the time. Read the thresholds
      *    from the log (`battery.lowNotifyThreshold`), never from memory of an older session.
-     *  - **The Low action is DEFERRABLE.** Acknowledging the alert with the controller's physical
-     *    RTH button cancels the automatic return and allows flight down to Critical. So Low is
-     *    "starts coming home unless the pilot says otherwise", not a hard turn-around — worth
-     *    knowing before treating it as a wall when planning a mission's endgame.
+     *  - The Low alert was recorded as a DEFERRABLE automatic return, cancelled by the physical
+     *    RTH button. Under the 2026-09-01 reading there is no return to defer at Low: the beep is
+     *    the whole action, and pressing RTH acknowledges the alert only. UNRESOLVED — if a future
+     *    flight sees the aircraft turn for home at the Low threshold, reopen this.
      *  - Confirmed applied BY THIS APP, not by Explorer: `applyBatteryThresholds` succeeded and
      *    the aircraft read back 0.15/0.1 on every connect that session.
      *
@@ -76,8 +85,8 @@ object FlightLimitsController {
      * rests on the operator reading the screen. Anything that needs to settle a battery question
      * from the log alone has to add that first.
      *
-     * ⚠ Do not set Low at or below Critical. The aircraft would begin its return and force a
-     * landing in the same moment, which is worse than either alone.
+     * ⚠ Do not set Low at or below Critical. The warning and the return home would arrive in the
+     * same moment, which removes the notice that Low exists to give.
      */
     fun savedLowBatteryPct(context: Context): String = pref(context, KEY_LOW_BATT_PCT, "15")
     fun savedCriticalBatteryPct(context: Context): String = pref(context, KEY_CRIT_BATT_PCT, "10")
