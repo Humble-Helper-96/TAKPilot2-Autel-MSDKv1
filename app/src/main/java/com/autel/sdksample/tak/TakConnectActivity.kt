@@ -188,6 +188,7 @@ class TakConnectActivity : AppCompatActivity() {
             latestChannels = emptyList()
             runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
             runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
+            channelsStatusIsEmptyNotice = false
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
                 androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
@@ -771,12 +772,24 @@ class TakConnectActivity : AppCompatActivity() {
         val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
         list.removeAllViews()
         latestChannels = channels
+        val status = findViewById<TextView>(R.id.takChannelsStatus)
         if (channels.isEmpty()) {
             // A server with channels turned off returns none. Say so, and offer no control:
             // writing to such a server is reported to cause real trouble on it.
-            findViewById<TextView>(R.id.takChannelsStatus).text =
-                "This server has no channels."
+            status.text = "This server has no channels."
+            status.setTextColor(androidx.core.content.ContextCompat.getColor(
+                applicationContext, R.color.tp_text_secondary))
+            channelsStatusIsEmptyNotice = true
             return
+        }
+        // ⚠ CLEAR THE "no channels" NOTICE. The list is empty on the first read, before the
+        // server answers, thus the notice is written once and then stood above a full list of
+        // channels (hardware, 2026-09-01). Only that message is cleared: a send, a server
+        // answer or a server-side change writes this same line and then re-reads the
+        // channels, and those messages must survive the repaint that follows.
+        if (channelsStatusIsEmptyNotice) {
+            status.text = ""
+            channelsStatusIsEmptyNotice = false
         }
         for (ch in channels) {
             val row = android.widget.CheckBox(this).apply {
@@ -840,6 +853,7 @@ class TakConnectActivity : AppCompatActivity() {
         }
         val bits = latestChannels.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
         val status = findViewById<TextView>(R.id.takChannelsStatus)
+        channelsStatusIsEmptyNotice = false
         status.text = "Sending ${bits.size} active channel(s) to the server…"
         TakMissionManager.setActiveChannels(bits) { ok ->
             status.text = if (ok) "Server accepted ${bits.size} active channel(s)."
@@ -866,6 +880,7 @@ class TakConnectActivity : AppCompatActivity() {
     private val groupChangeListener = TakManager.GroupChangeListener {
         AppLog.i(TAG, "channels changed on the server — re-reading")
         refreshChannels()
+        channelsStatusIsEmptyNotice = false
         findViewById<TextView>(R.id.takChannelsStatus)?.text =
             "The server changed the channels. The list is up to date."
     }
@@ -909,6 +924,10 @@ class TakConnectActivity : AppCompatActivity() {
     /** True while the check boxes are being set from server data, so the listener does not
      *  treat a repaint as a pilot's tap and PUT it straight back. */
     private var updatingChannels = false
+    /** True while takChannelsStatus holds the "no channels" notice that renderChannels wrote.
+     *  The other writers of that line (a send, a server answer, a server-side change) must not
+     *  be wiped by a later repaint, thus renderChannels clears only its own message. */
+    private var channelsStatusIsEmptyNotice = false
 
     // ---- 1. Aircraft Settings ----
 
