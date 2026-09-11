@@ -114,6 +114,33 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
+**v1.7.5 IS RELEASED** — tag `v1.7.5`, versionCode 65, 2026-09-10. Flown twice that day. Two
+faults from a real mission, both corrected in the shared core (`taklite-core` master first,
+then synced here — DJI v4/v5 NOT yet synced, `check-taklite.sh` shows the drift):
+
+- **The pilot marker goes out with no controller fix**, in the "position not known" form:
+  `how="h-g-i-g-o"`, 0,0, `hae`/`ce`/`le` at 9999999, no track, no GPS source
+  (`CotBuilder.buildPLINoFix`, `TakManager.sendPilotPLI` with a null location). Before, nothing
+  went out, thus the controller was not in any client's contact list and nobody could send it
+  a marker. A real fix now carries its true `ce`. The parser keeps a 0,0 event only for a live
+  client. The map takes a 0,0 contact's marker OFF (a teammate that lost its fix).
+- **Markers forwarded by TAK Aware drew as cyan dots.** TAK Aware puts a contact endpoint on a
+  forwarded marker, and the renderers read that as a live client. The rule is now in ONE place,
+  `CotParser.isLiveClient`: a persistent item is never a live client. `isPersistentType` takes
+  `hasTakv`: a client's own report is never a placed item. Renderers read the flag only.
+- A stale 2525 frame draws grey on the map and in AR. `ArSettings.categoryFor` takes the
+  live-client flag, thus the AR layer and the AR draw style agree.
+
+⚠ **With file logging ON, `AppLog` opens a MediaStore stream for EVERY log line**
+(`writePublicMediaStore`). Measured in flight 2026-09-10: MediaProvider at 120% CPU, more
+than the application, and the screen stuttered. Logging OFF, the same flight was smooth.
+Open item for v1.7.6: keep the stream open, flush on a timer or a size, and FLUSH IN THE
+CRASH HANDLER, or a buffered log ends before the crash it must explain. Also for v1.7.6:
+`AutelVideoStreamer.handleFailed` logs the server's normal close after a user stop as
+"connection failed" — check the `stopped` flag and log it as info.
+
+⚠ **Not yet flight tested:** a teammate that loses its fix, as seen from a SECOND controller.
+
 **v1.7.3 IS RELEASED** — tag `v1.7.3`, versionCode 59, 2026-08-31. Pre-Flight gains section 0,
 Memory Card: card state, free space, and a Format Card button
 (`AutelBaseCamera.formatSDCard`). The internal flash has its own call,
