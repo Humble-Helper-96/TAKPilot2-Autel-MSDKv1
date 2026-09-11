@@ -220,22 +220,26 @@ public class CotParser {
             }
 
             if (uid == null) return null;
+            // Both flags come from the ONE rule in isLiveClient, and the 0,0 test below needs
+            // them first.
+            boolean persistent = isPersistentType(type, archived, hasTakv);
+            boolean liveClient = isLiveClient(hasTakv, hasEndpoint, persistent);
             // A point at 0,0 is not a position. A marker or a track there is dropped, as before.
             // A LIVE CLIENT at 0,0 is kept: that is a client with no fix that says "I am here, my
             // position is not known" (CotBuilder.buildPLINoFix). It must enter the contact list,
-            // or nobody can send it a marker (operator, 2026-09-10). The map and the AR overlay
-            // do not draw a contact at 0,0 — TakMapMarkers.upsert and ArOverlayView each skip it.
-            if (lat == 0 && lon == 0 && !(hasTakv || hasEndpoint)) return null;
+            // or nobody can send it a marker (operator, 2026-09-10). Only a live client: a
+            // persistent item at 0,0 would never be swept and would hold a contact slot for the
+            // life of the process (review, 2026-09-10). The map and the AR overlay do not draw
+            // a contact at 0,0 — TakMapMarkers.upsert takes its marker off, ArOverlayView skips it.
+            if (lat == 0 && lon == 0 && !liveClient) return null;
             if (callsign == null || callsign.isEmpty()) callsign = uid;
             if (team == null) team = "Cyan";
             if (role == null) role = "Team Member";
 
             TakUser user = new TakUser(uid, callsign, lat, lon, alt, team, role, staleTime);
             user.setType(type);   // raw CoT type, used to resolve the map symbol/icon
-            user.setPersistent(isPersistentType(type, archived, hasTakv));
-            // The map needs both flags: together they separate a live client from a placed
-            // marker when the TYPE cannot. The rule is in isLiveClient, in ONE place.
-            user.setLiveClient(isLiveClient(hasTakv, hasEndpoint, user.isPersistent()));
+            user.setPersistent(persistent);
+            user.setLiveClient(liveClient);
 
             // Retention diagnostic — AIR DOMAIN EXCLUDED ON PURPOSE.
             //

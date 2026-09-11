@@ -398,8 +398,9 @@ class AutelTakBridge(
         // their own position, and the video is a capture of THEIR screen that keeps streaming
         // when the aircraft is down. Attaching the video to the drone marker meant that in
         // exactly the case screen capture exists for, nothing on the network said where the
-        // stream was. So the pilot marker carries it, and it is published whenever the
-        // CONTROLLER has a fix, aircraft or no aircraft.
+        // stream was. So the pilot marker carries it, and it is published on EVERY tick, aircraft
+        // or no aircraft: the real position when the controller has a fix, the "position not
+        // known" form when it does not (2026-09-10 — see pushPilotPli).
         pushPilotPli()
         // SNAPSHOT every field this push consumes, in one go. The SDK listeners write these on
         // their own thread; reading them live through the body would let one PLI mix position

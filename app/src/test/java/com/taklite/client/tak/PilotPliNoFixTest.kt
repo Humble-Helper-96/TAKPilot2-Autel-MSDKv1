@@ -57,6 +57,15 @@ class PilotPliNoFixTest {
     }
 
     @Test
+    fun ceIsRoundedToOneDecimalNotPrintedAsFloatResidue() {
+        // The receiver reports a float. Widened to a double, 4.567f is 4.566999912261963 and
+        // that is what went on the wire before (review, 2026-09-10).
+        val xml = withFix(4.567f.toDouble())
+        assertTrue("ce=\"4.6\"" in xml)
+        assertFalse("4.5669999" in xml)
+    }
+
+    @Test
     fun anUnknownAccuracyOnARealFixGoesOutAsUnknownNotZero() {
         // 0 means "the receiver gave no accuracy". It must not go on the wire as a 0 m error.
         val xml = withFix(0.0)

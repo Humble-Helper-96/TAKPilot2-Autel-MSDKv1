@@ -175,7 +175,10 @@ public class CotBuilder {
             sb.append("<point lat=\"").append(lat).append("\"");
             sb.append(" lon=\"").append(lon).append("\"");
             sb.append(" hae=\"").append(alt).append("\"");
-            sb.append(" ce=\"").append(ce > 0 ? String.valueOf(ce) : UNKNOWN).append("\"");
+            // One decimal. The value arrives as a float from the receiver; as a raw double it
+            // printed its float residue, 4.567 as "4.566999912261963" (review, 2026-09-10).
+            sb.append(" ce=\"").append(ce > 0 ? String.format(Locale.US, "%.1f", ce) : UNKNOWN)
+              .append("\"");
             sb.append(" le=\"").append(UNKNOWN).append("\" />");
         } else {
             sb.append("<point lat=\"0.0\" lon=\"0.0\"");

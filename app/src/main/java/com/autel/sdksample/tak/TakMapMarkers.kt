@@ -47,8 +47,9 @@ object TakMapMarkers {
     private const val MIL_ICON_DP = 14f    // shared markers AND the pilot's own dropped markers
     private const val AIR_ICON_DP = 12f    // ADS-B traffic — context, not something acted on
     private const val PLI_DOT_DP = 10f     // team position dots
-    /** Alpha of a stale 2525 frame, 0-255. Grey and faded, with the label still readable. */
-    private const val STALE_ALPHA = 150
+    /** Alpha of a stale 2525 frame, 0-255. Grey and faded, with the label still readable.
+     *  Shared with ArOverlayView so the map and the AR view age a frame the same way. */
+    internal const val STALE_ALPHA = 150
     /** Callsign label under a symbol. Small, because a long callsign makes the bitmap wider than
      *  the icon itself (`w = maxOf(size, labelW)`) and that width is what actually crowds the map. */
     private const val LABEL_SP = 8f
@@ -234,7 +235,16 @@ object TakMapMarkers {
 
     private fun upsert(user: TakUser) {
         val m = map ?: return
-        if (user.lat == 0.0 && user.lon == 0.0) return
+        // A contact at 0,0 has no position. It is not drawn — and a marker it HAD is taken off.
+        // Since 2026-09-10 the parser keeps a live client at 0,0 (a teammate with no fix, see
+        // CotParser). Each such report refreshes the contact, thus the stale sweep never runs
+        // for it. A plain `return` here left that teammate's old dot at their last real
+        // position, fresh-coloured, for as long as their receiver stayed cold (review,
+        // 2026-09-10). The dot comes back at their next real fix.
+        if (user.lat == 0.0 && user.lon == 0.0) {
+            remove(user.uid)
+            return
+        }
         // A LOCAL DELETE LASTS UNTIL THE SENDER SHARES THE MARKER AGAIN.
         //
         // Reaching this line with a hidden uid means a NEW inbound message arrived for it:

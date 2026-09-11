@@ -5,6 +5,8 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -147,6 +149,13 @@ class ArOverlayView @JvmOverloads constructor(
 
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
         alpha = OVERLAY_ALPHA
+    }
+    /** [iconPaint] for a STALE 2525 frame: grey and faded, the same treatment the map gives
+     *  it in TakMapMarkers.makeMilIcon and the same the dots get below. One paint, applied at
+     *  draw time, so the bitmap cache stays keyed on the resource alone. */
+    private val staleIconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        alpha = TakMapMarkers.STALE_ALPHA
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -549,7 +558,8 @@ class ArOverlayView @JvmOverloads constructor(
                     return
                 }
             }
-            canvas.drawBitmap(bmp, x - size / 2f, y - size / 2f, iconPaint)
+            canvas.drawBitmap(bmp, x - size / 2f, y - size / 2f,
+                if (u.isStale) staleIconPaint else iconPaint)
             if (withLabel) drawLabel(canvas, x, y + size / 2f, label)
         } else {
             val r = 7f * d
