@@ -53,15 +53,24 @@ object ArSettings {
      * Ordering matters — the checks run most-specific first:
      *  1. **Aircraft** by the CoT type's third field being `A` (air) rather than `G` (ground) —
      *     e.g. `a-f-A-C-F` for a civil fixed-wing from the ADS-B gateway.
-     *  2. Otherwise the existing ground split: a bare `a-{f,h,n,u}-G` is a placed marker,
-     *     anything longer is an entity reporting its own position.
+     *  2. **Live client** — a person or a machine that reports its own position is a POSITION,
+     *     whatever its type. The parser sets the flag (CotParser.isLiveClient). Without this
+     *     test a CloudTAK user (`a-f-G-E-V-C`) passed the marker test below and went into the
+     *     markers layer, while the overlay drew it as a team dot. The Markers switch then hid
+     *     live teammates and the Positions switch did not (review, 2026-09-10).
+     *  3. Otherwise the ground split: a type that has a 2525 frame is a placed marker, anything
+     *     else is an entity reporting its own position.
+     *
+     * The frame-or-dot test in ArOverlayView.drawContact uses the same [liveClient] flag, thus
+     * the layer a contact is in and the way it is drawn cannot disagree.
      *
      * METAR used to be checked first, by uid prefix. It no longer reaches this method — CotParser
      * drops those events entirely.
      */
-    fun categoryFor(uid: String?, type: String?): Category {
+    fun categoryFor(uid: String?, type: String?, liveClient: Boolean): Category {
         val parts = type?.split("-").orEmpty()
         if (parts.size >= 3 && parts[0] == "a" && parts[2] == "A") return Category.AIRCRAFT
+        if (liveClient) return Category.OTHER_POSITIONS
         return if (TakMapMarkers.milMarkerRes(type) != null) {
             Category.OTHER_MARKERS
         } else {

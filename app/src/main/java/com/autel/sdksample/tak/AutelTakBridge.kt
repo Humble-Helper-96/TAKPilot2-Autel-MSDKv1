@@ -589,38 +589,52 @@ class AutelTakBridge(
         return h to TakBridgeHolder.vFovFor(h)
     }
 
+    /** Latches for the two lines in pushPilotPli. Transition-only: this runs at 2Hz, so a line
+     *  on every tick would be useless as a diagnostic and would flood the log. */
+    private var pilotFixMissing = false
+    private var pilotFixOldLogged = false
+
     /**
      * Publishes the operator's own marker: `<callsign>-Pilot`, Cyan, at the CONTROLLER's position,
      * carrying the video url while a stream is running.
      *
-     * Silent when the controller has no fix. That is deliberate — the registration message sent at
-     * connect already sits at 0,0, and refreshing it with more zeros would keep a false marker
-     * alive on the team's map for ever instead of letting it go stale and disappear.
+     * ## With no fix, the marker still goes out (operator, 2026-09-10)
+     *
+     * Before this date the method stopped when the controller had no fix. Thus the application
+     * published no pilot marker, and the controller was not in the CONTACT LIST of the other
+     * clients. Nobody can send a marker to a client that is not in their list. A controller
+     * indoors, or with a cold GPS receiver, could not receive markers. That is a worse condition
+     * than an unknown position.
+     *
+     * The behaviour, and its cost, live in the shared core: `TakManager.sendPilotPLI` takes a
+     * null location and sends the "position not known" form (`how="h-g-i-g-o"`, 0,0, `hae`,
+     * `ce` and `le` not known, no track, no GPS source). Read the note there. This method only
+     * decides what to log, once, at each change of state.
      */
-    /** Latches for the two lines below. Transition-only: this runs at 2Hz, so a line on every
-     *  tick would be useless as a diagnostic and would flood the log. */
-    private var pilotFixMissing = false
-    private var pilotFixOldLogged = false
-
     private fun pushPilotPli() {
         val fix = OperatorLocation.latest
+
         if (fix == null) {
-            // ⚠ THE ONE LINE THAT EXPLAINS A DISAPPEARING PILOT MARKER. Publishing stops here,
-            // and nothing else in the application says so. Silence at this point is what makes
-            // the marker go stale on the team's map a few minutes later, and until 2026-08-15
-            // this return was silent — an operator reported exactly that failure and there was
-            // no trace of it anywhere in the log.
+            // ⚠ THE ONE LINE THAT EXPLAINS A PILOT MARKER WITH NO POSITION. The message on the
+            // wire shows it too: how="h-g-i-g-o" and ce not known, where a real fix carries
+            // how="m-g" and the true ce.
             if (!pilotFixMissing) {
                 pilotFixMissing = true
-                AppLog.w(TAG, "pilot marker SUSPENDED — the controller has no position fix. " +
-                    "Nothing more is published for it, thus it goes stale on the team's map. " +
-                    "See OperatorLocation for what feeds this.")
+                AppLog.w(TAG, "the controller has no position fix — the pilot marker goes out " +
+                    "in the \"position not known\" form (0,0). It stays in the contact list " +
+                    "of the team, thus you can still send markers to this controller. The " +
+                    "real position replaces it at the first fix. See OperatorLocation for " +
+                    "what feeds this.")
             }
+            // The age test below needs a real fix. Send, then stop here.
+            sendPilotPli(null)
             return
         }
+
         if (pilotFixMissing) {
             pilotFixMissing = false
-            AppLog.i(TAG, "pilot marker resumed — the controller has a fix again")
+            AppLog.i(TAG, "the controller has a fix — the pilot marker publishes a real " +
+                "position and no longer publishes 0,0")
         }
 
         // AGE OF THE FIX, not just its presence. A fix that stops refreshing keeps being
@@ -645,6 +659,11 @@ class AutelTakBridge(
             AppLog.i(TAG, "pilot position is fresh again")
         }
 
+        sendPilotPli(fix)
+    }
+
+    /** Sends one pilot PLI. [fix] is null when the controller has no position. */
+    private fun sendPilotPli(fix: android.location.Location?) {
         runCatching {
             // No team argument — the pilot marker's colour is TakManager's PILOT_TEAM, always.
             tak.sendPilotPLI(fix, droneCallsign, "Team Member",

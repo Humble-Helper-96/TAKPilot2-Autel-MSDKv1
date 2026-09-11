@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
@@ -45,6 +47,8 @@ object TakMapMarkers {
     private const val MIL_ICON_DP = 14f    // shared markers AND the pilot's own dropped markers
     private const val AIR_ICON_DP = 12f    // ADS-B traffic — context, not something acted on
     private const val PLI_DOT_DP = 10f     // team position dots
+    /** Alpha of a stale 2525 frame, 0-255. Grey and faded, with the label still readable. */
+    private const val STALE_ALPHA = 150
     /** Callsign label under a symbol. Small, because a long callsign makes the bitmap wider than
      *  the icon itself (`w = maxOf(size, labelW)`) and that width is what actually crowds the map. */
     private const val LABEL_SP = 8f
@@ -527,7 +531,8 @@ object TakMapMarkers {
         val team = (user.team ?: "Cyan").lowercase()
         val stale = if (user.isStale) "S" else "A"
         val drone = if (user.isDrone) "D" else "U"
-        // A live client never takes a 2525 frame, whatever its type says — see iconFor.
+        // A live client takes a team dot, never a 2525 frame. The parser decides what is a live
+        // client — see CotParser.isLiveClient. This key must agree with iconFor.
         val mil = if (user.isLiveClient) 0 else milMarkerRes(user.type) ?: 0
         // Air tracks bake their course into the bitmap (see makeAirIcon), so the key has to
         // include it — but BUCKETED to COURSE_BUCKET_DEG. Keying on the raw course would mint a
@@ -611,15 +616,12 @@ object TakMapMarkers {
                 else R.drawable.ic_air_track_nocourse,
                 if (user.hasCourse()) courseBucket(user.course).toDouble() else null,
             )
-            // ⚠ A LIVE CLIENT IS ALWAYS A TEAM DOT, whatever its CoT type says.
-            //
-            // CloudTAK reports its own users as `a-f-G-E-V-C`. That is not the `-G-U-` unit
-            // form, so the type test in milMarkerRes accepts it and drew a CloudTAK operator
-            // with a 2525 marker frame while every other TAK client got a dot (operator,
-            // 2026-08-16). The type cannot answer this question; `takv`/`endpoint` can, and
-            // the parser has always known.
+            // A LIVE CLIENT IS A TEAM DOT, whatever its CoT type says. The parser sets the flag
+            // and holds the rule and the measurements — see CotParser.isLiveClient. Do not test
+            // the type, takv, endpoint or archived here. Each of those alone gave a wrong icon
+            // (operator, 2026-08-16 and 2026-09-10).
             user.isLiveClient -> makeIcon(user.callsign ?: user.uid, user.team, user.isStale)
-            res != null -> makeMilIcon(res, user.callsign ?: user.uid)
+            res != null -> makeMilIcon(res, user.callsign ?: user.uid, user.isStale)
             else -> makeIcon(user.callsign ?: user.uid, user.team, user.isStale)
         }
         val d = BitmapDrawable(appContext?.resources, bmp)
@@ -684,11 +686,17 @@ object TakMapMarkers {
         return bmp
     }
 
-    fun makeMilIcon(resId: Int, callsign: String): Bitmap {
+    fun makeMilIcon(resId: Int, callsign: String, isStale: Boolean = false): Bitmap {
         val ctx = appContext
         val d = density
         val size = (MIL_ICON_DP * d).toInt()
         val icon = ctx?.let { drawableToBitmap(it, resId, size) }
+        // A stale marker draws grey, the same as a stale team dot in makeIcon. Before this the
+        // frame looked the same fresh or stale, and the stale sweep re-drew an identical bitmap.
+        val iconPaint = if (isStale) Paint().apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+            alpha = STALE_ALPHA
+        } else null
 
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE; textSize = LABEL_SP * d; typeface = Typeface.DEFAULT_BOLD
@@ -704,7 +712,7 @@ object TakMapMarkers {
 
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        if (icon != null) c.drawBitmap(icon, (w - size) / 2f, 0f, null)
+        if (icon != null) c.drawBitmap(icon, (w - size) / 2f, 0f, iconPaint)
 
         val labelLeft = (w - labelW) / 2f
         val labelTop = (size + gap).toFloat()

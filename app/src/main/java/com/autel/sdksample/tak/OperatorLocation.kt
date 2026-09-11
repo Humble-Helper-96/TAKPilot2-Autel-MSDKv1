@@ -37,8 +37,9 @@ import com.taklite.util.AppLog
  * more use than an exact one in two minutes.
  *
  * If the permission is not granted this stays silent and [latest] stays null. The caller then
- * publishes no operator position at all, which is correct: no marker is better than a marker at
- * `0, 0`.
+ * publishes the pilot marker in the "position not known" form, so that the controller stays in
+ * the contact list of the other clients and can still receive markers (operator, 2026-09-10).
+ * See `TakManager.sendPilotPLI`. Before that date the caller published nothing without a fix.
  */
 object OperatorLocation {
     private const val TAG = "OperatorLocation"

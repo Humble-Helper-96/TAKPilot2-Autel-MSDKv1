@@ -320,7 +320,7 @@ class ArOverlayView @JvmOverloads constructor(
 
             // Category decides BOTH whether this is drawn and how far out it stays relevant —
             // air traffic is worth seeing well past the range a ground marker is.
-            val category = ArSettings.categoryFor(u.uid, u.type)
+            val category = ArSettings.categoryFor(u.uid, u.type, u.isLiveClient)
             if (!ArSettings.isEnabled(context, category)) { skipped++; continue }
             // High-altitude traffic is clutter for a UAS below 400ft — see the ceiling's
             // doc. Shared with the map so both views show the same picture.
@@ -537,7 +537,9 @@ class ArOverlayView @JvmOverloads constructor(
             drawAircraft(canvas, x, y, u, dzMeters, dzIsTrusted, withLabel)
             return
         }
-        // A live client is a position, not a placed marker — the same rule the map follows.
+        // A live client is a position and not a placed marker. It takes a dot, never a frame.
+        // The parser decides what is a live client — see CotParser.isLiveClient. Same rule as
+        // the map.
         val milRes = if (u.isLiveClient) null else TakMapMarkers.milMarkerRes(u.type)
         if (milRes != null) {
             val size = (ICON_DP * d).toInt()
