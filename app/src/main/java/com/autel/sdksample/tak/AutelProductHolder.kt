@@ -76,6 +76,28 @@ object AutelProductHolder {
     @Volatile var isRecording: Boolean = false
         private set
 
+    /**
+     * The media mode the CAMERA reports, off its own ~2 Hz status push. Null until it answers.
+     *
+     * ⚠ **IT IS NOT OURS TO ASSUME, AND IT PERSISTS** (measured in flight 2026-09-13). A press
+     * of the controller's HARDWARE shutter puts the camera in SINGLE and LEAVES IT THERE — this
+     * application neither drives that button nor is told about it. The camera returns to VIDEO
+     * only when something asks, which in practice is REC or the LIVE path.
+     *
+     * The pilot sees it as the picture changing shape and field of view — SINGLE frames arrive
+     * 4:3 where VIDEO is 16:9 — with nothing on the screen saying why. Measured sequence:
+     * VIDEO at connect, SINGLE from the first shutter press at 09:39:11, back to VIDEO at
+     * 09:42:02 when REC was pressed, SINGLE again at 09:43:52, VIDEO at 09:44:04.
+     *
+     * ⚠ It is also why a lens check can come back INCONCLUSIVE: a 4:3 frame is neither lens
+     * shape. See [lensAgreesWithFrame].
+     *
+     * Read-only here. Nothing in this application should WRITE the media mode to make this
+     * value tidy — `onRecordToggleTapped` reads the real mode on every press for that reason.
+     */
+    @Volatile var mediaMode: MediaMode? = null
+        private set
+
     /** Set when the camera reports a photo saved **and names the file** — lets the flight
      *  screen confirm a shutter press did something. Cleared by the reader.
      *
@@ -343,6 +365,11 @@ object AutelProductHolder {
             val implied = if (h > 0f && v > 0f)
                 Math.tan(Math.toRadians(h / 2.0)) / Math.tan(Math.toRadians(v / 2.0)) else Double.NaN
 
+            // THE MEDIA MODE THE CAMERA IS ACTUALLY IN, off the same ~2 Hz push. Kept because
+            // the flight screen shows it and because it is not ours to assume — see
+            // [mediaMode].
+            mediaMode = info.mediaMode
+
             val line = "cam info: fov=%.1fx%.1f (implied aspect %.3f) zoomScaleRaw=%d focal=%.2f px=%.2f mode=%s"
                 .format(h, v, implied, info.zoomScale, info.focalLength, info.pixelSize, info.mediaMode)
             if (line != lastLoggedCamInfo) {
@@ -360,6 +387,7 @@ object AutelProductHolder {
             AppLog.i(TAG, "camera changed: $type (${cam?.javaClass?.simpleName ?: "null"})")
             camera = cam
             isRecording = false   // new camera session — state re-learned from its events
+            mediaMode = null      // and so is the mode — unknown until the new camera says
             zoomBaseRaw = null
             liveHFovDeg = null; liveVFovDeg = null; lastLoggedCamInfo = null
             storageTarget = null; sdCardState = null; mmcState = null
@@ -603,6 +631,8 @@ object AutelProductHolder {
                 armedForProduct = null
                 camera = null
                 isRecording = false
+                // Unknown rather than stale: the mode belongs to a camera that has gone.
+                mediaMode = null
                 TakBridgeHolder.onProductDisconnected()
                 AutelAvoidance.onProductDisconnected()
                 AutelControlRates.onProductDisconnected()

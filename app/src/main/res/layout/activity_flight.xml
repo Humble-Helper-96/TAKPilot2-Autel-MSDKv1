@@ -507,6 +507,31 @@
                     android:layout_weight="1" android:gravity="end" android:text="+2" />
             </LinearLayout>
 
+            <!-- CAMERA MEDIA MODE, under the exposure block (operator, 2026-09-13).
+
+                 ⚠ IT IS A READOUT AND NOT A CONTROL, AND THE DIFFERENCE IS THE WHOLE POINT.
+                 Outlined text with no backing, like every other readout — specification §4.3. A
+                 pill would say "touch me", and this application does not drive the media mode:
+                 the camera is put in SINGLE by the controller's HARDWARE shutter, which this
+                 application neither commands nor is told about, and it comes back to VIDEO when
+                 REC asks. Giving the pilot a control here would be new function and a new write
+                 to the camera; giving them the FACT costs nothing.
+
+                 WHY IT IS HERE. The mode changes the shape and the field of view of the picture
+                 — SINGLE arrives 4:3 where VIDEO is 16:9 — so it belongs with the other controls
+                 that change how the picture looks, EV above it and the thermal palette below,
+                 rather than in the actions capsule with the things a pilot presses.
+
+                 ⚠ UNKNOWN IS ITS OWN STATE. Amber "— MODE" until the camera answers, never
+                 collapsed into one of the two real modes. Same rule as the RTH altitude and the
+                 exterior lights. -->
+            <com.autel.sdksample.tak.OutlinedTextView
+                android:id="@+id/fpvMediaMode"
+                style="@style/flightReadoutOutlined"
+                android:layout_marginTop="6dp"
+                android:gravity="end"
+                android:text="— MODE" />
+
             <!-- Thermal palette, under the exposure block (operator's placement, 2026-07-31).
                  It belongs with the image-quality controls rather than in the toolbar: it changes
                  how the picture looks, like EV does, and the toolbar is for actions.

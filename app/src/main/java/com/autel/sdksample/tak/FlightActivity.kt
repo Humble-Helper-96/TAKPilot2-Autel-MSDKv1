@@ -50,6 +50,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvClock: TextView
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
+    /** Camera media mode readout. See [renderMediaMode]. */
+    private lateinit var fpvMediaMode: TextView
     private lateinit var fpvHomeDistance: TextView
     private lateinit var fpvAntennaArc: AntennaAimView
     private lateinit var fpvFaaCeiling: TextView
@@ -278,6 +280,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvClock = findViewById(R.id.fpvClock)
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
+        fpvMediaMode = findViewById(R.id.fpvMediaMode)
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
         fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
@@ -1050,6 +1053,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // press — so a record that failed to start, or stopped itself (card full/removed),
         // shows truthfully within a tick.
         recordToggle.setRecording(AutelProductHolder.isRecording)
+        renderMediaMode()
         // ⚠ THIS NOTICE IS THE ONLY CONFIRMATION A PHOTO GIVES THE PILOT (2026-09-12).
         //
         // The on-screen shutter pill was removed — this controller has a hardware shutter, and
@@ -1174,20 +1178,28 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // different quantity at a glance. Two lines cannot wrap that way, and stay safe at
             // five-digit altitudes where even a wider panel would break.
             append('\n')
+            // MSL RECEDES TO THE REFERENCE SIZE (operator, 2026-09-13). It is a figure a pilot
+            // reads when somebody asks for it, not one they fly by — the same standing the
+            // coordinates had — so it takes the same scale rather than competing with the AGL
+            // figure directly above it.
+            val mslStart = length
             val msl = aglReading.mslMeters
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
-            append('\n')
-            // The coordinates recede. They are the line a pilot reads only when somebody asks
-            // for them, and making them smaller is what lets the height stand out WITHOUT the
-            // block growing — see the note at the top of this builder.
-            val coordStart = length
-            if (hud != null && hud.hasFix) {
-                append("%.4f, %.4f".format(hud.lat, hud.lon))
-            } else {
-                append("—, —")
-            }
             setSpan(android.text.style.RelativeSizeSpan(REFERENCE_SCALE),
-                coordStart, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                mslStart, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            // ⚠ THE AIRCRAFT COORDINATES WERE A FOURTH LINE HERE AND ARE GONE (operator,
+            // 2026-09-13). They were the least-read line in the block and the column needed the
+            // room — see the media-mode readout above the palette, and the height budget on
+            // flight_map_size, where overflow CLIPS THE MAP SILENTLY.
+            //
+            // ⚠ THIS CHANGED A MUST CLAUSE — specification §4.4 said four lines in a fixed
+            // order. The specification is amended; the DJI trees owe it. A reading of §4.4 that
+            // still expects a position line is a stale copy.
+            //
+            // ⚠ WHAT IT COSTS, RECORDED SO IT IS A DECISION AND NOT A DRIFT: the TAK feed is a
+            // screen capture, thus these coordinates were the only way a viewer watching the
+            // VIDEO rather than a TAK client could read the aircraft's position. Every TAK
+            // client still has the aircraft marker and loses nothing.
             // HOME used to be a fourth line here. It moved to its own view in the BOTTOM block,
             // between RTH and the FAA ceiling (operator, 2026-08-04) — it reads as return-to-home
             // information, which is what the rest of that group is.
@@ -3113,6 +3125,48 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * disabled, and this button genuinely disables itself — with no colour change — while a
      * write is in flight. One appearance for two meanings. See bg_pill_unknown.
      */
+    /**
+     * Draws the camera's media mode from what the CAMERA reports, never from what was asked.
+     *
+     * ⚠ **THE HARDWARE SHUTTER LEAVES THE CAMERA IN SINGLE AND NOTHING SAID SO** (operator,
+     * 2026-09-13, confirmed in the log). A press of the controller's shutter puts the camera in
+     * SINGLE and it stays there until something asks for VIDEO — in practice REC. The pilot
+     * sees the picture change shape and field of view, 4:3 against 16:9, with no explanation.
+     * This readout is the explanation, and it costs nothing: the mode is already on the
+     * camera's ~2 Hz status push. See [AutelProductHolder.mediaMode].
+     *
+     * ⚠ It is also why a lens change can come back INCONCLUSIVE — a 4:3 frame is neither lens
+     * shape, and twice on 13 September that is exactly what happened. A pilot who can see
+     * PHOTO on the screen can see why.
+     *
+     * ⚠ **UNKNOWN IS ITS OWN STATE, IN AMBER.** Same rule as the RTH altitude and the exterior
+     * lights: "we have not been told" must never be drawn as one of the real answers.
+     *
+     * The other MediaMode values the SDK defines are shown by NAME rather than mapped onto one
+     * of the two this application knows. Autel Explorer can leave the camera in one of them,
+     * and inventing a label for a mode we do not handle is how a readout starts lying.
+     */
+    private fun renderMediaMode() {
+        if (!::fpvMediaMode.isInitialized) return
+        val mode = AutelProductHolder.mediaMode
+        fpvMediaMode.text = when (mode) {
+            null -> "— MODE"
+            MediaMode.VIDEO -> "VIDEO"
+            MediaMode.SINGLE -> "PHOTO"
+            else -> mode.name
+        }
+        fpvMediaMode.setTextColor(
+            if (mode == null) androidx.core.content.ContextCompat.getColor(
+                applicationContext, R.color.tp_state_unknown)
+            else Color.WHITE)
+        fpvMediaMode.contentDescription = when (mode) {
+            null -> "Camera mode not known"
+            MediaMode.VIDEO -> "Camera is in video mode"
+            MediaMode.SINGLE -> "Camera is in photo mode"
+            else -> "Camera mode ${mode.name}"
+        }
+    }
+
     private fun renderLightsButton() {
         if (!::lightsButton.isInitialized) return
         val dark = AutelLights.isDark

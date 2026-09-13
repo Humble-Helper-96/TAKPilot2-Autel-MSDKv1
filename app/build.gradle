@@ -634,8 +634,31 @@ android {
         //
         //        Also: the "two lost photos" reading of 2026-09-12 is WITHDRAWN — the card
         //        disagrees. See CLAUDE.md finding 2. No code changed; the citations did.
-        versionCode 71
-        versionName "2.0.2"
+        //
+        // v2.0.3 — THE CAMERA SAYS WHICH MODE IT IS IN.
+        //
+        //        ⚠ THE HARDWARE SHUTTER LEAVES THE CAMERA IN SINGLE AND IT STAYS THERE
+        //        (operator, confirmed in the 2026-09-13 log). The camera returns to VIDEO only
+        //        when something asks, which in practice is REC. The picture changes shape and
+        //        field of view with it — 4:3 against 16:9 — and nothing on screen said why. It
+        //        is also why a lens check can come back INCONCLUSIVE: a 4:3 frame is neither
+        //        lens shape.
+        //
+        //        The mode was already arriving on the camera's ~2 Hz status push and was only
+        //        being logged. It is now held on AutelProductHolder and drawn in the HUD as a
+        //        READOUT — PHOTO / VIDEO, amber "— MODE" until the camera answers. No new SDK
+        //        call, thus nothing new to audit under safety rule 1.
+        //        ⚠ A READOUT AND NOT A CONTROL. This application does not drive the media mode
+        //        and must not start: a pill would say "touch me".
+        //
+        //        ⚠ TWO MUST CLAUSES CHANGED IN THE SPECIFICATION (§4.3, §4.4). The aircraft
+        //        POSITION line is gone from the telemetry block and MSL takes the 0.85 reference
+        //        size. The specification is amended and the DJI trees owe it — ledger D22.
+        //        ⚠ The column is NOT shorter: the block loses about a line and the new readout
+        //        spends most of it back. Fine here (720dp, hundreds spare); MEASURE IT on the
+        //        DJI phone with `dumpsys activity top`, where the mini-map clips silently.
+        versionCode 72
+        versionName "2.0.3"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
