@@ -702,21 +702,24 @@
 
 
     <!-- ⚠ BOTH TOOLBAR CAPSULES MUST BE THIS TALL, AND IT IS A MINIMUM, NOT A HEIGHT.
-         The two clusters hold different things — the status side is icons and small text, the
-         actions side is 48dp touch targets — so measured live on the controller they came out
-         80px and 104px. Two capsules that begin on the same line and end on different ones read
-         as a mistake.
+         The two clusters hold different things, so they measure differently: the ACTIONS
+         capsule's tallest child is the 46dp drop pin and the STATUS capsule's is a 34dp icon.
+         Two capsules that begin on the same line and end on different ones read as a mistake.
 
-         A MINIMUM rather than a fixed height because either cluster may grow: a longer signal
-         readout, a taller button style, a density we have not seen. minHeight can only make a
-         capsule taller, thus it can never clip its own content. Two other ways were tried first
-         and both failed on this screen: a FrameLayout with each cluster anchored to its own
-         corner left the heights untouched, and layout_height="match_parent" inside a
-         wrap_content row collapsed BOTH capsules to 18px, because nothing was left to establish
-         the row's height (2026-09-12).
+         ⚠ IT IS DERIVED, NOT CHOSEN: the actions capsule's natural height, which is the drop
+         pin plus the capsule's own paddingVertical on each side.
 
-         hud_control_radius is the matching corner. -->
-    <dimen name="hud_capsule_height">44dp</dimen>
+             46dp drop pin + 2 x 3dp paddingVertical = 52dp
+
+         A value BELOW that does nothing at all === the actions capsule is already taller, and
+         the status capsule stays short. It was 40dp in the DJI trees from the 2026-09-13 port
+         until this was caught by comparing the three trees, and the capsules were not level.
+         If the drop pin or the padding changes, this changes with them.
+
+         A MINIMUM rather than a fixed height because either cluster may still grow: a longer
+         signal readout, a taller button style, a density not yet seen. minHeight can only make
+         a capsule taller, thus it can never clip its own content. -->
+    <dimen name="hud_capsule_height">52dp</dimen>
 
     <!-- THE SHAPE OF EVERY TOGGLE PILL IN THE ACTIONS CAPSULE — AR, zoom, IR, lights, LIVE and
          REC. Three of those are shape drawables and two are canvas views that draw their own
