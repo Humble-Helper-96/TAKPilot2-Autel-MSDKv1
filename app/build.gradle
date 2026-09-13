@@ -536,12 +536,11 @@ android {
         //        kbps on a link that was doing neither — a bandwidth fault where there was
         //        none, which is the opposite of what the line is for.
         //
-        // v1.7.8 — THE FLIGHT-SCREEN REFRESH CONTINUES. A DEVELOPMENT LINE, NOT A RELEASE.
+        // v1.7.8 — THE FLIGHT-SCREEN REFRESH, PART ONE. RELEASED (operator, 2026-09-12).
         //
-        //        ⚠ THE UI WORK ENDS AT v2.0.0 (operator, 2026-09-12), NOT HERE. 1.7.8 is the
-        //        number the work rides on until the screen is where the operator wants it;
-        //        then it becomes 2.0.0 in one bump. Do not release 1.7.8 to the fleet and do
-        //        not start a 1.7.9 — keep landing here.
+        //        ⚠ THE UI WORK STILL ENDS AT v2.0.0. This release does not finish it — the DJI
+        //        trees owe D14 to D18 and the screen may move again. 1.7.8 went to the fleet
+        //        because the operator asked for it, not because the refresh is complete.
         //
         //        versionName moves even though nothing is on the wire, for the reason recorded
         //        under v1.6.1: v1.7.7 IS TAGGED AND SHIPPED, and versionName is what a TAK

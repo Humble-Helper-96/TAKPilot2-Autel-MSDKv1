@@ -114,13 +114,14 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.7.8 IS OPEN on master** (versionCode 68, 2026-09-12) — the flight-screen refresh continues.
-**NOT RELEASED, and not to be.**
+**v1.7.8 IS RELEASED** — tag `v1.7.8`, versionCode 68, 2026-09-12. The flight-screen refresh,
+part one. ⚠ **NOT FLIGHT TESTED as a build** — checked on the controller by screenshot, and the
+three camera faults in it were found in flight on the release day.
 
-⚠ **THE UI WORK ENDS AT v2.0.0 (operator, 2026-09-12).** 1.7.8 is the number the work rides on
-while the screen is being taken to where the operator wants it. When that is done it becomes
-2.0.0 in ONE bump. Do not release 1.7.8 to the fleet, and do not open a 1.7.9 — keep landing
-here until the operator calls the UI finished.
+⚠ **THE UI WORK STILL ENDS AT v2.0.0 (operator).** This release does not finish it: the DJI
+trees owe D14 to D18, and the screen may move again before 2.0.0. An earlier note here said
+1.7.8 must never be released; the operator released it on 2026-09-12 and that instruction is
+spent. New work takes a new version.
 
 The versionName had to move off 1.7.7 even though nothing changed on the wire, for the reason
 recorded under v1.6.1: **v1.7.7 is tagged and shipped**, and versionName is what a TAK server's
