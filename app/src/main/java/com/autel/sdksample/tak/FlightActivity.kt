@@ -892,28 +892,48 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                             //   14:03:10  START_VIDEO
                             //   14:03:10  RECORD_START  <- 97 ms later
                             //
-                            // This is the SAME firmware behaviour onRecordToggleTapped already
-                            // works around with MODE_SWITCH_SETTLE_MS — the camera acknowledges
-                            // a mode change before it can act on it. The on-screen REC pill is
-                            // fine because it reads the mode, sets it, waits and then VERIFIES.
-                            // This button has nothing in front of it: the camera acts on it
+                            // This is the SAME firmware behaviour onRecordToggleTapped works
+                            // around with MODE_SWITCH_SETTLE_MS — the camera acknowledges a mode
+                            // change before it can act on it. The on-screen REC pill is fine
+                            // because it reads the mode, sets it, waits and then VERIFIES. This
+                            // button has nothing in front of it: the camera acts on the press
                             // natively and this application only hears about it.
                             //
-                            // ⚠ SO WE TELL THE PILOT AND WE DO NOT ACT. Starting the recording
-                            // from here would race the camera's own handling of the same press,
-                            // and a double start on the control that must not lie is not worth
-                            // saving one button press. The pilot believing they are recording
-                            // when they are not is the failure this exists to prevent.
-                            "START_VIDEO" ->
+                            // ⚠ SO THE SECOND PRESS IS MADE FOR THE PILOT. The camera has
+                            // already done the mode change by the time this event arrives, and
+                            // it does NOT also start — so there is no competing start to race,
+                            // only the settle the camera needs before it will act. After that
+                            // settle this issues the start through the SAME verified path the
+                            // REC pill uses, watchdog and all.
+                            //
+                            // ⚠ RE-CHECKED AFTER THE SETTLE, because the pilot may press again
+                            // out of habit in that window. The camera acts on THAT press itself,
+                            // so if a recording is already running this must not issue a second
+                            // start. A double start on the one control that must not lie is
+                            // worse than the button press it would have saved.
+                            "START_VIDEO" -> {
+                                val camNow = AutelProductHolder.camera
                                 if (AutelProductHolder.mediaMode == MediaMode.SINGLE &&
-                                    !AutelProductHolder.isRecording) {
-                                    AppLog.w(TAG, "hardware record button pressed in SINGLE — " +
-                                        "the camera will change mode and NOT record")
+                                    !AutelProductHolder.isRecording &&
+                                    !hardwareRecordPending && camNow != null) {
+                                    hardwareRecordPending = true
+                                    AppLog.i(TAG, "hardware record pressed in SINGLE — the " +
+                                        "camera takes this press as a mode change; starting " +
+                                        "the recording after ${MODE_SWITCH_SETTLE_MS}ms")
                                     runOnUiThread {
-                                        showNotice("Now in video. Press again to record",
-                                            refused = true)
+                                        handler.postDelayed({
+                                            hardwareRecordPending = false
+                                            if (AutelProductHolder.isRecording) {
+                                                AppLog.i(TAG, "hardware record: already " +
+                                                    "recording — the pilot's own second press " +
+                                                    "got there first, not starting again")
+                                            } else {
+                                                startRecordVerified(camNow)
+                                            }
+                                        }, MODE_SWITCH_SETTLE_MS)
                                     }
                                 }
+                            }
                         }
                     }
                     override fun onFailure(error: AutelError?) {
@@ -2312,6 +2332,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
+    /** True between the hardware record button's press and the start this makes on the pilot's
+     *  behalf. It stops a second event in that window queueing a second start — see the
+     *  START_VIDEO branch of the button listener. */
+    @Volatile private var hardwareRecordPending = false
+
+    /** The camera mode the pilot has already been told about, so a CHANGE can be announced and
+     *  a steady state cannot. Null until the camera first answers — see [renderMediaMode]. */
+    private var announcedMediaMode: MediaMode? = null
+
     /** The pending lens check, so a second toggle replaces the first rather than racing it. */
     private var lensVerify: Runnable? = null
 
@@ -3187,10 +3216,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * The other MediaMode values the SDK defines are shown by NAME rather than mapped onto one
      * of the two this application knows. Autel Explorer can leave the camera in one of them,
      * and inventing a label for a mode we do not handle is how a readout starts lying.
+     *
+     * ⚠ **AND IT ANNOUNCES THE CHANGE** (operator, 2026-09-13). The readout answers "what is it
+     * now"; a pilot busy flying needs "it just moved", because the mode moves without them
+     * asking. The notice fires on a CHANGE only, and never on the first answer — learning the
+     * mode at connect is not a change, and announcing it there would fire on every connect for
+     * something the pilot did not do.
      */
     private fun renderMediaMode() {
         if (!::fpvMediaMode.isInitialized) return
-        when (val mode = AutelProductHolder.mediaMode) {
+        val mode = AutelProductHolder.mediaMode
+        when (mode) {
             null -> fpvMediaMode.setMode(null)
             MediaMode.VIDEO -> fpvMediaMode.setMode(MediaModeView.Mode.VIDEO)
             MediaMode.SINGLE -> fpvMediaMode.setMode(MediaModeView.Mode.PHOTO)
@@ -3199,6 +3235,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // a glyph for a mode the code does not handle is how a readout starts lying.
             else -> fpvMediaMode.setMode(null, unhandledName = mode.name)
         }
+        // ⚠ ANNOUNCE THE CHANGE, NEVER THE STATE (operator, 2026-09-13). The mode moves without
+        // the pilot asking — the hardware shutter puts the camera in stills and leaves it
+        // there, and the picture changes shape and field of view with it. The readout above
+        // answers "what is it now"; this answers "it just moved", which is the part a pilot
+        // busy flying will otherwise miss.
+        //
+        // ⚠ NOT ON THE FIRST ANSWER. Learning the mode at connect is not a change, and a notice
+        // there would fire on every connect for something the pilot did not do. Null is its own
+        // state and the readout already carries it.
+        if (mode != null && announcedMediaMode != null && mode != announcedMediaMode) {
+            showNotice(when (mode) {
+                MediaMode.VIDEO -> "The camera is now in video"
+                MediaMode.SINGLE -> "The camera is now in photo"
+                else -> "The camera is now in ${mode.name}"
+            })
+        }
+        if (mode != null) announcedMediaMode = mode
     }
 
     private fun renderLightsButton() {

@@ -727,8 +727,30 @@ android {
         //        event would race the camera's own handling of the same press. A pilot who
         //        believes they are recording and is not is the failure being prevented, and a
         //        double start on that control would be a worse way to cause it.
-        versionCode 75
-        versionName "2.0.6"
+        //
+        // v2.0.7 — ONE PRESS OF THE HARDWARE RECORD BUTTON RECORDS, AND THE CAMERA SAYS WHEN
+        //        ITS MODE MOVES.
+        //
+        //        v2.0.6 only TOLD the pilot to press again. The operator asked why it could not
+        //        just do it, and the answer is that it can: the earlier "it would race the
+        //        camera" reasoning was wrong on the point that matters. The camera takes press
+        //        one as a MODE CHANGE ONLY and does not also start, so there is no competing
+        //        start — only the settle it needs before it will act, which is the same
+        //        MODE_SWITCH_SETTLE_MS the REC pill already waits.
+        //
+        //        So the second press is now made for the pilot, through the SAME verified path
+        //        the pill uses: watchdog armed first, one retry, and the pilot told if the
+        //        camera never confirms.
+        //        ⚠ RE-CHECKED AFTER THE SETTLE. A pilot pressing again out of habit in that
+        //        window has their press acted on by the CAMERA, so if a recording is already
+        //        running this must not issue a second start.
+        //
+        //        The camera also announces a mode move now — "The camera is now in photo" /
+        //        "in video" — on a CHANGE only, never on the first answer at connect. The
+        //        readout says what it is; this says it just moved, which is the half a pilot
+        //        busy flying will otherwise miss.
+        versionCode 76
+        versionName "2.0.7"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
