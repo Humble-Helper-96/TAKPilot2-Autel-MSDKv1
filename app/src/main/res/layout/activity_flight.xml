@@ -66,15 +66,33 @@
          (EvoDsp/SignalInfo: RSRP/SNR/gain) and not a 0-100% figure, and a fabricated number
          would be worse than none. That was resolved: SignalBarsView is below, with the
          percent text beside it. -->
+    <!-- ⚠ THE BAND IS TRANSPARENT AND KEEPS THE flightToolbar ID ON PURPOSE.
+         ArOverlayView and ObstacleEdgeView read this view's HEIGHT as their top chrome inset,
+         so an edge arrow or a proximity label cannot be parked where the chrome hides it — the
+         case that matters most is the aircraft directly overhead. Splitting the bar into two
+         capsules without keeping a view that reports the band's height would have broken both,
+         silently. The band draws nothing; the two capsules inside it do. -->
     <LinearLayout
         android:id="@+id/flightToolbar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:background="@drawable/bg_toolbar"
-        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="4dp">
+        android:paddingHorizontal="8dp"
+        android:paddingTop="8dp">
+
+        <!-- STATUS, left. Order fixed by specification §4.2: back, TAK, battery, signal, GPS,
+             RTH. The capsule is what separates these from the video now — see bg_hud_capsule. -->
+        <LinearLayout
+            android:id="@+id/flightToolbarStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/hud_capsule_height"
+            android:background="@drawable/bg_hud_capsule"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="3dp">
 
         <ImageButton
             android:id="@+id/flightBackButton"
@@ -169,10 +187,28 @@
             android:scaleType="fitCenter"
             android:src="@drawable/ic_rth" />
 
+        </LinearLayout>
+
+        <!-- The gap. It is what holds actions against the right edge and leaves the middle of
+             the band as picture — see the two capsules' minHeight for why they still sit level. -->
         <View
             android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_weight="1" />
+
+        <!-- ACTIONS, right. Drop-pin, AR, photo, zoom, IR, lights, LIVE, REC.
+             The weighted spacer that used to push this group to the right edge is gone: the two
+             groups are now separate children of a FrameLayout and anchor to their own corners. -->
+        <LinearLayout
+            android:id="@+id/flightToolbarActions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/hud_capsule_height"
+            android:background="@drawable/bg_hud_capsule"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="3dp">
 
         <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
              the most-used action on this screen and a pilot reaching for it is usually also
@@ -280,6 +316,8 @@
             android:layout_height="34dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Start/stop recording to the aircraft SD card" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

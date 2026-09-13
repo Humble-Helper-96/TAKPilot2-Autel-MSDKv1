@@ -1798,7 +1798,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val on = arOverlay.isRunning
         arButton.alpha = if (on) 1f else 0.45f
         arButton.setBackgroundResource(
-            if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
+            if (on) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill
         )
         arButton.setTextColor(
             if (on) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else Color.WHITE
@@ -2064,7 +2064,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     /** IR button highlighted when thermal is live; palette button shown only then. */
     private fun refreshIrButtons() {
         irButton.setBackgroundResource(
-            if (irOn) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill
+            if (irOn) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill
         )
         irButton.setTextColor(if (irOn) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else Color.WHITE)
         irPaletteButton.visibility = if (irOn) View.VISIBLE else View.GONE
@@ -2793,17 +2793,52 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     /**
      * Draws the exterior-lights button from the AIRCRAFT's reported lamp state.
      *
-     * Plain bulb = lit, slashed bulb = dark, matching the IR buttons' convention that the icon
-     * shows the state of the hardware rather than what the next tap would do. When the aircraft
-     * has not answered, the button is dimmed: a pilot must be able to tell "confirmed lit" from
-     * "we do not know", because only one of those is safe to act on at night.
+     * Plain bulb = lit, slashed bulb = dark, matching the IR button's convention that the icon
+     * shows the state of the hardware rather than what the next tap would do.
+     *
+     * ⚠ **THE PILL COLOUR IS THE STATE, AND THE GLYPH ONLY AGREES WITH IT** (operator,
+     * 2026-09-12). This button sits in the actions capsule beside AR and IR, and those two have
+     * said ON with a green pill since they were written. The lights said it with a glyph alone,
+     * so three toggles in one capsule carried two conventions and the odd one out was the only
+     * one that reports a state of the AIRCRAFT. Green now means the same thing across all
+     * three, at a glance, from across the screen.
+     *
+     * The third state is the one AR and IR do not have. The lamps are read BACK from the
+     * aircraft, thus "we have not been told" is real and is AMBER — never collapsed into off,
+     * which is the rule for every state readout in this application. A pilot must be able to
+     * tell "confirmed lit" from "we do not know", because only one of those is safe to act on
+     * at night.
+     *
+     * ⚠ **DO NOT BRING BACK THE 45 % ALPHA THAT CARRIED UNKNOWN BEFORE.** Dimming reads as
+     * disabled, and this button genuinely disables itself — with no colour change — while a
+     * write is in flight. One appearance for two meanings. See bg_pill_unknown.
      */
     private fun renderLightsButton() {
         if (!::lightsButton.isInitialized) return
         val dark = AutelLights.isDark
         lightsButton.setImageResource(
             if (dark == true) R.drawable.ic_led_off else R.drawable.ic_led_on)
-        lightsButton.alpha = if (dark == null) 0.45f else 1.0f
+        lightsButton.setBackgroundResource(when (dark) {
+            false -> R.drawable.bg_pill_active   // lit
+            true -> R.drawable.bg_zoom_pill      // dark
+            null -> R.drawable.bg_pill_unknown   // the aircraft has not answered
+        })
+        // The GLYPH takes the pill's colour, the same way the AR and IR pills tint their label
+        // (operator, 2026-09-12). A green frame around a white bulb reads as a frame that
+        // happens to be green; a green bulb reads as a lamp that is on.
+        //
+        // ⚠ TINT ONLY THE LIT BULB, NEVER THE SLASHED ONE. ic_led_off draws its slash TWICE,
+        // black under white, so that it reads as a gap cut through the glass rather than as a
+        // second line — see that file. A tint is applied to every path of a vector, thus it
+        // would flatten both passes to one colour and the slash would disappear into the bulb.
+        // This is safe as written because the slashed bulb is shown ONLY for "dark", which is
+        // the one state that takes the colourless idle pill. Keep those two facts together: if
+        // the dark state ever gains a colour, the icon has to gain a second drawable first.
+        lightsButton.imageTintList = when (dark) {
+            false -> androidx.core.content.ContextCompat.getColorStateList(this, R.color.tp_state_go)
+            null -> androidx.core.content.ContextCompat.getColorStateList(this, R.color.tp_state_unknown)
+            true -> null
+        }
         lightsButton.contentDescription = when (dark) {
             true -> "Exterior lights are off"
             false -> "Exterior lights are on"

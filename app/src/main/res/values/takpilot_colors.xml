@@ -117,6 +117,18 @@
          One token for all three so the HUD carries one weight and colour of edge. The width
          is hud_text_outline_width, which is per-device. -->
     <color name="tp_hud_outline">#FF000000</color>
+
+    <!-- Fill behind a floating CONTROL capsule on the flight screen (operator, 2026-09-12):
+         the two toolbar clusters and the mini-map's zoom button.
+
+         70% black. A control capsule may be this heavy where the readouts may not: it is a
+         SMALL patch of the picture, not a band across it, and the icons inside it have to hold
+         their own colour rather than take an outline. The readouts went the other way — see
+         tp_hud_outline — because they cover far more of the video.
+
+         ⚠ THE VALUE IS BORROWED FROM TAK AWARE'S overlay-fill (black at 0.7), which the
+         operator's team uses alongside this application. Matching it is the point. -->
+    <color name="tp_hud_capsule">#B3000000</color>
     <!-- Wash behind the flight-screen HUD text panels. 20% black: enough to lift the
          readouts off snow or wet asphalt, light enough to see movement through it.
          Flight-tuned (operator, 2026-08-04) — do not re-tune without the aircraft.
@@ -158,5 +170,23 @@
          with, so the marker and the gateway's tracks read as the same thing. This token said
          #E91E63 until 2026-08-14 and no code used it; every tree drew #FF00FF. -->
     <color name="tp_ar_aircraft">#FF00FF</color>
+
+    <!-- TOGGLE-PILL FILLS AND STROKES — the AR, IR and exterior-lights buttons in the flight
+         screen's actions capsule, and the Field Guide's picture of them.
+
+         A pill says ON with COLOUR, not with a glyph: the state has to be answerable from
+         across the screen, over a busy picture, without reading a 12sp label's tint.
+
+         The fills are the stroke colour at 30 %. They carry alpha, thus they cannot be written
+         as a reference to the opaque token beside them and are their own tokens. The idle pair
+         is white and belongs to no status.
+
+         ⚠ VALUES UNCHANGED from the literals they replaced on 2026-09-12 (bg_zoom_pill,
+         bg_ar_pill_active). tp_pill_unknown_fill is the only new colour, and it is
+         tp_state_unknown at the same 30 % the others use. -->
+    <color name="tp_pill_idle_fill">#33FFFFFF</color>
+    <color name="tp_pill_idle_stroke">#99FFFFFF</color>
+    <color name="tp_pill_active_fill">#4D4CAF50</color>
+    <color name="tp_pill_unknown_fill">#4DFFB74D</color>
 
 </resources>

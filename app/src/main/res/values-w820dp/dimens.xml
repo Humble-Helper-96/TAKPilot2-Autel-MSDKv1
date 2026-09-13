@@ -51,4 +51,8 @@
 	     text size — the stroke is centred, so half of that is covered by the fill. See
 	     OutlinedTextView; going much above this fills the letters in. -->
 	<dimen name="hud_text_outline_width">2dp</dimen>
+
+    <!-- The controller draws 48dp buttons in the actions capsule; 52dp is that plus the
+         capsule's own vertical padding. See the base bucket for why this is a MINIMUM. -->
+    <dimen name="hud_capsule_height">52dp</dimen>
 </resources>

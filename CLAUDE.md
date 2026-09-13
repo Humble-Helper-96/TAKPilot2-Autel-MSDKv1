@@ -114,8 +114,59 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.7.7 is OPEN on master** (versionCode 67, from 2026-09-12). Video encoding AND the first
-step of a flight-screen refresh. Checked on the controller by screenshot; NOT flight tested.
+**v1.7.8 IS OPEN on master** (versionCode 68, 2026-09-12) — the flight-screen refresh continues.
+**NOT RELEASED, and not to be.**
+
+⚠ **THE UI WORK ENDS AT v2.0.0 (operator, 2026-09-12).** 1.7.8 is the number the work rides on
+while the screen is being taken to where the operator wants it. When that is done it becomes
+2.0.0 in ONE bump. Do not release 1.7.8 to the fleet, and do not open a 1.7.9 — keep landing
+here until the operator calls the UI finished.
+
+The versionName had to move off 1.7.7 even though nothing changed on the wire, for the reason
+recorded under v1.6.1: **v1.7.7 is tagged and shipped**, and versionName is what a TAK server's
+Connected Users panel shows for this client. A development build still calling itself 1.7.7 is
+indistinguishable from the released one in the one place the fleet looks.
+
+In v1.7.8 so far:
+
+- **The toolbar is TWO FLOATING CAPSULES over the video** — status on the left, actions on the
+  right — and the solid blue bar is gone (`bg_toolbar` deleted). `bg_hud_capsule` is the fill,
+  70 % black, borrowed from TAK Aware's `overlay-fill`.
+  ⚠ **The band keeps the `flightToolbar` id and MUST.** `ArOverlayView` and `ObstacleEdgeView`
+  read that view's HEIGHT as their top chrome inset, so an edge arrow or a proximity label
+  cannot hide behind the chrome — the case that matters is the aircraft directly overhead.
+  ⚠ **Both capsules carry `minHeight="@dimen/hud_capsule_height"`, and it is a MINIMUM.** They
+  hold different things (icons and small text against 48dp touch targets) and measured 80 px
+  against 104 px, so two capsules that start on one line ended on another. A fixed height would
+  clip on a device not yet seen. `layout_height="match_parent"` in a wrap_content row was tried
+  and collapsed BOTH to 18 px.
+- **`ic_led_off`'s slash under-stroke follows its background.** It was the bar's `#0D47A1`; the
+  bar is gone, so it is now the opaque `tp_hud_outline`. That icon's own comment predicted this.
+- **The exterior-lights button says its state with COLOUR**, like AR and IR beside it: green
+  lit, plain dark, **AMBER when the aircraft has not answered**. Three toggles in one capsule
+  had carried two conventions, and the odd one out was the only one reporting an AIRCRAFT state.
+  ⚠ The amber replaced a **45 % alpha**. Dimming reads as DISABLED, and this button genuinely
+  disables itself with no colour change while a write is in flight — one appearance, two
+  meanings. Do not bring the alpha back.
+  ⚠ **Only the LIT bulb may be tinted.** `ic_led_off` draws its slash twice, dark under white,
+  so it reads as a gap cut through the glass; a tint hits every path of a vector and would
+  flatten both passes. This is safe only because the slashed bulb appears solely in the dark
+  state, which takes the colourless pill. If the dark state ever gains a colour, the icon needs
+  a second drawable FIRST.
+- **`bg_ar_pill_active` is now `bg_pill_active`** — it had three consumers (AR, IR, the Field
+  Guide) before the lights made a fourth, so the AR name was already wrong. The three pill
+  drawables moved off raw hex onto tokens (`tp_pill_*`); the values are byte-identical and only
+  the amber fill is new.
+- **The Field Guide mirrors all three lights states** via `lightsPill(dark)`, the way it already
+  mirrored the TAK badge and the AR pill. It drew two bare white bulbs before, which disagreed
+  with the screen the pilot holds.
+
+**v1.7.7 IS RELEASED** — tag `v1.7.7`, versionCode 67, 2026-09-12. Video encoding AND the first
+step of the flight-screen refresh. ⚠ **NOT FLIGHT TESTED** — checked by screenshot and from the
+receiving end only.
+
+**What v1.7.7 carried, in detail.** Video encoding AND the first step of the flight-screen
+refresh. Checked on the controller by screenshot; NOT flight tested.
 
 ⚠ **AUTEL LEADS THE FLIGHT-SCREEN WORK, AND THE DJI TREES FOLLOW LATER (operator,
 2026-09-12).** This is a DELIBERATE, TEMPORARY departure from "a UI change lands in all three
@@ -377,6 +428,11 @@ corrected two places where the guide disagreed with the app: a Pre-Flight "If th
 lost" control that was removed on 2026-08-13, and four settings the screen has but the guide
 never listed.
 
-The markdown and ODT handouts beside this file are GENERATED from `FieldGuideActivity.kt` by
-`tools/generate_field_guide_md.py`. The Kotlin is the source of truth; regenerate after every
-guide edit rather than editing the handouts and hoping they agree.
+**THE FIELD GUIDE HANDOUTS ARE GONE (operator, 2026-09-12)** — the `TAKPilot2-FieldGuide.md`
+handout beside this file and the `tools/generate_field_guide_md.py` that made it from
+`FieldGuideActivity.kt`. They were a paper copy of a screen the pilot already carries, and they
+were a second thing to keep in step with it.
+
+**`FieldGuideActivity.kt` IS THE FIELD GUIDE.** It is the screen in the application and it stays.
+Only the exported copies went. An edit to the guide is now finished when the Kotlin is correct;
+there is nothing left to regenerate.

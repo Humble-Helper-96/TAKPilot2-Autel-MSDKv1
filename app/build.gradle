@@ -535,8 +535,34 @@ android {
         //        ten-second mean, and video is bursty, so it read anywhere from 26 to 2497
         //        kbps on a link that was doing neither — a bandwidth fault where there was
         //        none, which is the opposite of what the line is for.
-        versionCode 67
-        versionName "1.7.7"
+        //
+        // v1.7.8 — THE FLIGHT-SCREEN REFRESH CONTINUES. A DEVELOPMENT LINE, NOT A RELEASE.
+        //
+        //        ⚠ THE UI WORK ENDS AT v2.0.0 (operator, 2026-09-12), NOT HERE. 1.7.8 is the
+        //        number the work rides on until the screen is where the operator wants it;
+        //        then it becomes 2.0.0 in one bump. Do not release 1.7.8 to the fleet and do
+        //        not start a 1.7.9 — keep landing here.
+        //
+        //        versionName moves even though nothing is on the wire, for the reason recorded
+        //        under v1.6.1: v1.7.7 IS TAGGED AND SHIPPED, and versionName is what a TAK
+        //        server's Connected Users panel shows for this client. A development build
+        //        still calling itself 1.7.7 is indistinguishable from the released one in the
+        //        one place the fleet looks.
+        //
+        //        The toolbar dissolves into TWO FLOATING CAPSULES over the video — status left,
+        //        actions right — and the solid blue bar is gone (bg_toolbar is deleted). The
+        //        band keeps the flightToolbar id because ArOverlayView and ObstacleEdgeView
+        //        read its height as their top chrome inset.
+        //
+        //        The exterior-lights button says its state with COLOUR like AR and IR beside
+        //        it: green lit, amber when the aircraft has not answered, plain when dark. That
+        //        amber replaced a 45 % alpha, which read as disabled — and the button really
+        //        does disable itself while a write is in flight.
+        //
+        //        The Field Guide HANDOUTS are deleted, generator included. FieldGuideActivity
+        //        is the guide; there is nothing left to regenerate.
+        versionCode 68
+        versionName "1.7.8"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

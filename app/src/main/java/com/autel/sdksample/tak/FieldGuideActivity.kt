@@ -381,12 +381,15 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             listOf(
-                image(R.drawable.ic_led_on) to "Lights on",
-                image(R.drawable.ic_led_off) to "Lights off",
+                lightsPill(false) to "Lights on",
+                lightsPill(true) to "Lights off",
+                lightsPill(null) to "Not known",
             ),
             "Exterior lights",
             "This turns the navigation lights of the aircraft on and off. Turn them off to " +
-                "make the aircraft difficult to see at night.",
+                "make the aircraft difficult to see at night. The button shows what the " +
+                "AIRCRAFT reports, not what you last asked for. Amber means the aircraft has " +
+                "not answered yet: do not read it as off.",
         )
 
         entry(
@@ -837,11 +840,47 @@ class FieldGuideActivity : AppCompatActivity() {
     private fun arPill(on: Boolean): View = TextView(this).apply {
         text = "AR"
         gravity = Gravity.CENTER
-        setBackgroundResource(if (on) R.drawable.bg_ar_pill_active else R.drawable.bg_zoom_pill)
+        setBackgroundResource(if (on) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill)
         setTextColor(if (on) CONNECTED_GREEN else Color.WHITE)
         alpha = if (on) 1f else 0.45f
         textSize = 12f
         setTypeface(null, android.graphics.Typeface.BOLD)
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
+    }
+
+    /**
+     * The exterior-lights pill in all THREE of its states, built from the same drawables and
+     * the same colours the toolbar uses.
+     *
+     * It replaced two bare white bulbs labelled "Lights on" / "Lights off" (2026-09-12). Those
+     * were a legend of the two GLYPHS at a time when the glyph was the whole story. The button
+     * now says its state with colour, like AR and IR beside it, so a guide that still drew a
+     * white bulb for "on" disagreed with the screen the pilot was holding.
+     *
+     * The amber state is the reason this is worth a helper rather than a tint on an icon: it is
+     * the only pill on the flight screen that can say "the aircraft has not answered", and a
+     * pilot who has never been shown it has no way to read it at night.
+     *
+     * ⚠ The lit and unknown states share the PLAIN bulb and take a tint; the dark state keeps
+     * the slashed bulb UNTINTED. See FlightActivity.renderLightsButton for why those two facts
+     * must stay together.
+     */
+    private fun lightsPill(dark: Boolean?): View = ImageView(this).apply {
+        setImageResource(if (dark == true) R.drawable.ic_led_off else R.drawable.ic_led_on)
+        setBackgroundResource(when (dark) {
+            false -> R.drawable.bg_pill_active
+            true -> R.drawable.bg_zoom_pill
+            null -> R.drawable.bg_pill_unknown
+        })
+        imageTintList = when (dark) {
+            false -> androidx.core.content.ContextCompat.getColorStateList(
+                this@FieldGuideActivity, R.color.tp_state_go)
+            null -> androidx.core.content.ContextCompat.getColorStateList(
+                this@FieldGuideActivity, R.color.tp_state_unknown)
+            true -> null
+        }
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        setPadding(dp(4), dp(4), dp(4), dp(4))
         layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
     }
 

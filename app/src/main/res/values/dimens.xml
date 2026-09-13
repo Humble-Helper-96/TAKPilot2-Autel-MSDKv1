@@ -680,6 +680,16 @@
 	     rendered as black blobs (2026-09-12). 1.5dp is 3px against this bucket's 24px text. -->
 	<dimen name="hud_text_outline_width">1.5dp</dimen>
 
+	<!-- Corner radius of a floating CONTROL on the flight screen: the toolbar capsules and the
+	     mini-map's zoom button.
+
+	     ⚠ TWO RADII, AND THE DIFFERENCE CARRIES MEANING (operator, 2026-09-12, from TAK Aware's
+	     system). A control the pilot TOUCHES is heavily rounded; a thing the pilot READS is
+	     square or barely rounded — the mini-map frame has square corners, the readouts have no
+	     backing at all. Do not split the difference: a 10 or 12dp radius reads as a consumer
+	     card and tells the pilot nothing. -->
+	<dimen name="hud_control_radius">20dp</dimen>
+
 	<!-- Warning banner — PER-DEVICE, specification §4.8 (2026-09-10). The text size, and the
 	     width the banner may take before the text wraps. Do not copy the DJI values: that
 	     screen is 768dp wide and this one is 1024dp. 15sp is what this tree always used. 480dp
@@ -690,4 +700,21 @@
 	<dimen name="flight_warning_max_width">480dp</dimen>
 	<dimen name="flight_warning_close_size">34dp</dimen>
 
+
+    <!-- ⚠ BOTH TOOLBAR CAPSULES MUST BE THIS TALL, AND IT IS A MINIMUM, NOT A HEIGHT.
+         The two clusters hold different things — the status side is icons and small text, the
+         actions side is 48dp touch targets — so measured live on the controller they came out
+         80px and 104px. Two capsules that begin on the same line and end on different ones read
+         as a mistake.
+
+         A MINIMUM rather than a fixed height because either cluster may grow: a longer signal
+         readout, a taller button style, a density we have not seen. minHeight can only make a
+         capsule taller, thus it can never clip its own content. Two other ways were tried first
+         and both failed on this screen: a FrameLayout with each cluster anchored to its own
+         corner left the heights untouched, and layout_height="match_parent" inside a
+         wrap_content row collapsed BOTH capsules to 18px, because nothing was left to establish
+         the row's height (2026-09-12).
+
+         hud_control_radius is the matching corner. -->
+    <dimen name="hud_capsule_height">44dp</dimen>
 </resources>
