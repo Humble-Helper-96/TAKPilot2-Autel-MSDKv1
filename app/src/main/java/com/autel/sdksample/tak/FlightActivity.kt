@@ -919,7 +919,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                                     hardwareRecordPending = true
                                     AppLog.i(TAG, "hardware record pressed in SINGLE — the " +
                                         "camera takes this press as a mode change; starting " +
-                                        "the recording after ${MODE_SWITCH_SETTLE_MS}ms")
+                                        "the recording after ${HW_RECORD_SETTLE_MS}ms")
                                     runOnUiThread {
                                         handler.postDelayed({
                                             hardwareRecordPending = false
@@ -930,7 +930,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                                             } else {
                                                 startRecordVerified(camNow)
                                             }
-                                        }, MODE_SWITCH_SETTLE_MS)
+                                        }, HW_RECORD_SETTLE_MS)
                                     }
                                 }
                             }
@@ -3876,6 +3876,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          *  to the edge, since the cost of waiting is imperceptible and the cost of being early is
          *  a recording that silently never happens. */
         private const val MODE_SWITCH_SETTLE_MS = 800L
+
+        /**
+         * The settle for the HARDWARE record button's path, and it is NOT
+         * [MODE_SWITCH_SETTLE_MS] — measured in flight 2026-09-13.
+         *
+         * The pill's 800ms is counted from the camera's own ack of `setMediaMode`. This path has
+         * no such ack to count from: the CAMERA does the mode change itself on the button press,
+         * and it is slower to become ready than it is to say it has changed.
+         *
+         * ⚠ **THE MODE FLAG IS NOT THE READINESS SIGNAL, SO WAITING FOR IT WOULD NOT HELP.**
+         * Both presses that flight read `mode=VIDEO` within 180ms — and a start issued at 800ms,
+         * more than six hundred milliseconds AFTER that, was still acked with OK and silently
+         * ignored. Both times. The retry at about 2000ms was accepted, both times.
+         *
+         * So this is 2000: the value observed working, not a value between two guesses. The
+         * watchdog in [startRecordVerified] stays behind it — this makes the first attempt the
+         * one that works rather than replacing the net that proves it did.
+         */
+        private const val HW_RECORD_SETTLE_MS = 2000L
 
         /** How long to wait for the camera's RECORD_START before assuming the start was ignored.
          *  When the camera is ready this arrives in ~1ms, so this is ~1000x margin. */

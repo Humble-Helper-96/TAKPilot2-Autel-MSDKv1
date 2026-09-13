@@ -782,8 +782,31 @@ android {
         //        The pair is fixed — the band says how bad, the label says what it is.
         //
         //        Specification §4.13 is new; §4.1 and §6.1 renamed off "arc". Ledger D24.
-        versionCode 77
-        versionName "2.0.8"
+        //
+        // v2.0.9 — A CRASH THAT NOBODY SAW, AND THE RECORD BUTTON STOPS NEEDING ITS RETRY.
+        //
+        //        ⚠ **DATA SYNC COULD NOT OPEN AT ALL, AND HAD NOT SINCE 09bd7b8.** Two colour
+        //        tokens were read into Activity FIELDS, and a property initialiser runs in the
+        //        CONSTRUCTOR — before attachBaseContext, while ContextWrapper.mBase is still
+        //        null. applicationContext threw NPE inside newInstance, Android reported
+        //        "Unable to instantiate activity", and the process died every single time the
+        //        screen was opened.
+        //        ⚠ NOTHING CAUGHT IT AND NOTHING WAS GOING TO. It is not a compile error, the
+        //        app restarts straight back to the home screen, and a pilot reads that as
+        //        having left the screen. The operator flew a whole sortie over it and reported
+        //        "everything appeared to function". It was found by reading the flight log for
+        //        something else. `by lazy` fixes it; the trap is written on the fields.
+        //        A sweep found no other Activity field touching a Context.
+        //
+        //        The hardware record button gets its own settle, HW_RECORD_SETTLE_MS = 2000ms.
+        //        One press worked both times in flight, but only via the watchdog's retry, both
+        //        times: the start issued at 800ms was acked OK and silently ignored, and the
+        //        retry at about 2000ms was accepted.
+        //        ⚠ WAITING FOR mediaMode WOULD NOT HELP — it read VIDEO within 180ms of the
+        //        press, six hundred milliseconds before a start that was still ignored. The
+        //        mode flag is not the readiness signal. 2000 is the value observed working.
+        versionCode 78
+        versionName "2.0.9"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

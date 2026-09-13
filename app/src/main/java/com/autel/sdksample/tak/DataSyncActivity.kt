@@ -194,10 +194,33 @@ class DataSyncActivity : AppCompatActivity() {
     // dark card containing near-black text — readable in the layout inspector, invisible in the
     // field. Both helpers below exist to close that gap; neither is cosmetic.
 
-    /** Text colours for dialog content. Hint is deliberately lighter than the theme's #777777,
-     *  which measured too dim against the dialog background on the RT3's screen. */
-    private val dialogTextColor = androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_primary)
-    private val dialogHintColor = androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_hint_dialog)
+    /**
+     * Text colours for dialog content. Hint is deliberately lighter than the theme's #777777,
+     * which measured too dim against the dialog background on the RT3's screen.
+     *
+     * ⚠ **`by lazy`, AND IT IS NOT A STYLE CHOICE — WITHOUT IT THIS SCREEN CANNOT OPEN AT ALL.**
+     * A property initialiser on an Activity runs in the CONSTRUCTOR, before the framework has
+     * called `attachBaseContext`. At that moment `ContextWrapper.mBase` is still null, so
+     * `applicationContext` throws NullPointerException inside `newInstance` and Android reports
+     * it as "Unable to instantiate activity" — the screen never reaches onCreate and the whole
+     * process dies.
+     *
+     * It crashed on EVERY open from 09bd7b8, the pass that replaced this file's last colour
+     * literals with token lookups. The literals needed no context; the lookups do, and moving
+     * them to a field was the step that broke it. Nothing caught it: it is not a compile error,
+     * the app restarts straight back to the home screen, and a pilot reads that as having
+     * simply left the screen. Found 2026-09-13 by reading a flight log for something else.
+     *
+     * ⚠ DO NOT "SIMPLIFY" THIS BACK TO A DIRECT INITIALISER, and do not swap `applicationContext`
+     * for `this` — `Context.getColor` resolves through the same null `mBase`. Anything on an
+     * Activity that needs a Context must wait for onCreate, which is what `by lazy` does here.
+     */
+    private val dialogTextColor by lazy {
+        androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_primary)
+    }
+    private val dialogHintColor by lazy {
+        androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_hint_dialog)
+    }
 
     /** EditText with explicit dark-dialog colours. */
     private fun dialogEditText(): EditText = EditText(this).apply {
