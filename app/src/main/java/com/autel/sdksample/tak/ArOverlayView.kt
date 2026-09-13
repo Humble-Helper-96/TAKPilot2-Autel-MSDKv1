@@ -132,6 +132,12 @@ class ArOverlayView @JvmOverloads constructor(
         chromeInsetTop = top
         chromeMapLeft = mapLeft
         chromeMapTop = mapTop
+        // ⚠ SAID OUT LOUD, because these decide where an edge arrow may be drawn and a wrong
+        // value hides the arrow completely rather than misplacing it visibly. On 2026-09-13 the
+        // arrows vanished after this method changed shape and there was nothing in the log to
+        // say what it had been handed. Gated by the change guard above, so it writes once per
+        // real layout change and not per frame.
+        AppLog.i(TAG, "chrome insets: top=%.0f map=%.0f,%.0f".format(top, mapLeft, mapTop))
         invalidate()
     }
 
@@ -487,7 +493,14 @@ class ArOverlayView @JvmOverloads constructor(
         // A count for the rest: a busy TAK picture is a dozen-plus contacts, and tracing every
         // one at 1Hz would bury the per-pin detail that actually needs reading.
         if (logThisPass && users.isNotEmpty()) {
-            AppLog.d(TAG, "contacts: ${users.size} known, $drawn drawn, $offFrame off-frame, $skipped skipped")
+            AppLog.d(TAG, "contacts: ${users.size} known, $drawn drawn, $offFrame off-frame, " +
+                "$skipped skipped" +
+                // ⚠ WHERE THE ARROW ACTUALLY LANDED. An edge arrow that is clamped off the
+                // visible area is INVISIBLE rather than misplaced, which looks exactly like an
+                // arrow that was never drawn — the 2026-09-13 fault. The count alone could not
+                // tell those apart; this can.
+                if (offFrame > 0) " | last arrow %.0f,%.0f in %.0fx%.0f"
+                    .format(lastArrowX, lastArrowY, width.toFloat(), height.toFloat()) else "")
         }
     }
 
@@ -674,6 +687,10 @@ class ArOverlayView @JvmOverloads constructor(
         return (tan(Math.toRadians(angleDeg)) / half).coerceIn(-1.0, 1.0)
     }
 
+    /** Where the last edge arrow was drawn, for the diagnostic line — see the contacts summary. */
+    private var lastArrowX = Float.NaN
+    private var lastArrowY = Float.NaN
+
     private fun drawEdgeArrow(canvas: Canvas, dBearingDeg: Double, dElevDeg: Double, color: Int) {
         // Normalised direction; clamped because a target directly behind produces a huge value
         // that would otherwise dominate the angle.
@@ -689,23 +706,45 @@ class ArOverlayView @JvmOverloads constructor(
         val margin = 16f * d
         val cx = videoRect.centerX()
         val cy = videoRect.centerY()
-        // Clamp into the VISIBLE part of the video, not the whole video rect. Reported from the
+        // ⚠ **CLAMP TO THE VIEW, NOT TO videoRect** (2026-09-13). This is the whole point of an
+        // edge arrow and it was wrong for a long time.
+        //
+        // videoRect is the WHOLE video frame including the part cropped away by the fill — it
+        // DELIBERATELY overflows the view, which is what lets a cropped-away target project
+        // outside and be called off-frame (see FlightActivity's setVideoRect). Measured on the
+        // controller: `AR video rect: 2730x1535 in view 2048x1536`, so its edges sit 341px off
+        // EITHER side of the screen. An arrow clamped to that rect is clamped to somewhere the
+        // pilot cannot see, and an invisible arrow looks exactly like an arrow that was never
+        // drawn.
+        //
+        // It was masked on the right by the old HUD-column inset, which happened to be wider
+        // than the overflow, and it was never masked on the left at all. It only LOOKED correct
+        // in photo mode, where the frame aspect matches the view, scale is 1.0 and videoRect is
+        // the view — which is exactly the state the first screenshot was taken in.
+        //
+        // So: intersect with the view first, then apply the chrome rules. Reported from the
         // field 2026-07-27: air traffic directly overhead produced an above-frame arrow the
         // pilot could never see, which is the one case the indicator matters most.
-        //
+        val visLeft = maxOf(videoRect.left, 0f) + margin
+        val visRight = minOf(videoRect.right, width.toFloat()) - margin
+        val visTop = maxOf(videoRect.top, 0f) + chromeInsetTop + margin
+        val visBottom = minOf(videoRect.bottom, height.toFloat()) - margin
+        // A view too small to hold the margins would make coerceIn throw (min > max). Nothing
+        // useful can be drawn there anyway.
+        if (visRight <= visLeft || visBottom <= visTop) return
         // ⚠ THE ARROW NOW GOES ALL THE WAY TO THE RIGHT EDGE, UNDER THE HUD COLUMN (operator,
         // 2026-09-13). That column is outlined text with no panels behind it, so an arrow
         // behind it is visible; the old full-width inset cost a fifth of the screen on the edge
         // a pilot scans most. See setChromeInsets for what is still excluded and why.
-        var x = (cx + nx.toFloat() * (videoRect.width() / 2f - margin))
-            .coerceIn(videoRect.left + margin, videoRect.right - margin)
-        var y = (cy + ny.toFloat() * (videoRect.height() / 2f - margin))
-            .coerceIn(videoRect.top + chromeInsetTop + margin, videoRect.bottom - margin)
+        var x = (cx + nx.toFloat() * (videoRect.width() / 2f - margin)).coerceIn(visLeft, visRight)
+        var y = (cy + ny.toFloat() * (videoRect.height() / 2f - margin)).coerceIn(visTop, visBottom)
         // THE MINI-MAP IS THE ONE OPAQUE THING LEFT ON THIS EDGE. Lift the arrow to just above
         // it rather than pushing it inboard: it keeps its place on the right edge, where its
         // direction still reads, instead of moving a fifth of the screen away from the edge it
         // is pointing at.
         if (x > chromeMapLeft && y > chromeMapTop) y = chromeMapTop - margin
+        lastArrowX = x
+        lastArrowY = y
 
         val angle = atan2((y - cy).toDouble(), (x - cx).toDouble())
         val r = 7f * d

@@ -683,8 +683,35 @@ android {
         //        weighted spacer held 230px / 115dp of slack and the mini-map ended exactly on
         //        the column's bottom padding. Nothing is clipped here. The DJI phone still owes
         //        its own measurement — see ledger D20.
-        versionCode 73
-        versionName "2.0.4"
+        //
+        // v2.0.5 — AN EDGE ARROW IS CLAMPED TO THE VIEW, NOT TO THE VIDEO RECT.
+        //
+        //        ⚠ A REAL DEFECT, OLDER THAN v2.0.4, AND IT HID BEHIND TWO THINGS. videoRect is
+        //        the WHOLE video frame including the part the fill crops away; it deliberately
+        //        overflows the view so a cropped-away target projects outside it and is called
+        //        off-frame. drawEdgeArrow was clamping INTO that rect. Measured on the
+        //        controller: "AR video rect: 2730x1535 in view 2048x1536" — its edges are 341px
+        //        off EITHER side of the screen, so a clamped arrow is invisible. An invisible
+        //        arrow looks exactly like an arrow that was never drawn.
+        //
+        //        What hid it: on the RIGHT, the old HUD-column inset (416px) was wider than the
+        //        overflow and pulled the arrow back on screen by accident — removing that inset
+        //        in v2.0.4 exposed it. On the LEFT nothing ever masked it. And in PHOTO mode the
+        //        frame aspect matches the view, scale is 1.0 and videoRect IS the view, so
+        //        everything looks correct — which is the state the v2.0.3 screenshot was taken
+        //        in, and why the two screenshots disagreed.
+        //
+        //        The clamp now intersects videoRect with the VIEW first, then applies the chrome
+        //        rules. Verified on the controller: "last arrow 2016,724 in 2048x1536".
+        //
+        //        Two diagnostics added, because neither the count nor the screen could tell an
+        //        arrow that was clamped off-view from one that was never drawn: setChromeInsets
+        //        logs what it was handed, and the contacts summary logs where the last arrow
+        //        actually landed and in what view.
+        //
+        //        Specification §4.1 gains the clamp-to-view MUST; ledger D23 widened.
+        versionCode 74
+        versionName "2.0.5"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
