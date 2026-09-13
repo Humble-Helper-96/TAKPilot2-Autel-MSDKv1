@@ -710,8 +710,25 @@ android {
         //        actually landed and in what view.
         //
         //        Specification §4.1 gains the clamp-to-view MUST; ledger D23 widened.
-        versionCode 74
-        versionName "2.0.5"
+        //
+        // v2.0.6 — THE FIRST PRESS OF THE HARDWARE RECORD BUTTON IN STILLS MODE SAYS SO.
+        //
+        //        ⚠ IT CHANGES THE MODE AND DOES NOT RECORD. Confirmed in the log 2026-09-13:
+        //        START_VIDEO at 14:03:06 with no RECORD_START at all, START_VIDEO again at
+        //        14:03:10 and RECORD_START 97 ms later. Same firmware behaviour
+        //        onRecordToggleTapped already works around with MODE_SWITCH_SETTLE_MS — the
+        //        camera acknowledges a mode change before it can act on it.
+        //
+        //        The on-screen REC pill is unaffected: it reads the mode, sets it, waits and
+        //        VERIFIES. The hardware button has nothing in front of it, because the camera
+        //        acts on that press natively and this application only hears about it.
+        //
+        //        ⚠ SO IT TELLS THE PILOT AND DOES NOT ACT. Starting the recording from the
+        //        event would race the camera's own handling of the same press. A pilot who
+        //        believes they are recording and is not is the failure being prevented, and a
+        //        double start on that control would be a worse way to cause it.
+        versionCode 75
+        versionName "2.0.6"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

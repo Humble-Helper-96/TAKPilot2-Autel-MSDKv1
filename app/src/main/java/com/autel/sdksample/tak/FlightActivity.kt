@@ -884,6 +884,36 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                             // is the values between the steps. See onZoomRocker.
                             "ZOOM_IN" -> if (keyValue > 0) runOnUiThread { onZoomRocker(+1) }
                             "ZOOM_OUT" -> if (keyValue > 0) runOnUiThread { onZoomRocker(-1) }
+                            // ⚠ **THE FIRST PRESS OF THE HARDWARE RECORD BUTTON IN STILLS MODE
+                            // ONLY CHANGES THE MODE. IT DOES NOT RECORD** (operator, confirmed
+                            // in the log 2026-09-13):
+                            //
+                            //   14:03:06  START_VIDEO   <- no RECORD_START follows
+                            //   14:03:10  START_VIDEO
+                            //   14:03:10  RECORD_START  <- 97 ms later
+                            //
+                            // This is the SAME firmware behaviour onRecordToggleTapped already
+                            // works around with MODE_SWITCH_SETTLE_MS — the camera acknowledges
+                            // a mode change before it can act on it. The on-screen REC pill is
+                            // fine because it reads the mode, sets it, waits and then VERIFIES.
+                            // This button has nothing in front of it: the camera acts on it
+                            // natively and this application only hears about it.
+                            //
+                            // ⚠ SO WE TELL THE PILOT AND WE DO NOT ACT. Starting the recording
+                            // from here would race the camera's own handling of the same press,
+                            // and a double start on the control that must not lie is not worth
+                            // saving one button press. The pilot believing they are recording
+                            // when they are not is the failure this exists to prevent.
+                            "START_VIDEO" ->
+                                if (AutelProductHolder.mediaMode == MediaMode.SINGLE &&
+                                    !AutelProductHolder.isRecording) {
+                                    AppLog.w(TAG, "hardware record button pressed in SINGLE — " +
+                                        "the camera will change mode and NOT record")
+                                    runOnUiThread {
+                                        showNotice("Now in video. Press again to record",
+                                            refused = true)
+                                    }
+                                }
                         }
                     }
                     override fun onFailure(error: AutelError?) {
