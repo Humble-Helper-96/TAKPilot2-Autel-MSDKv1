@@ -90,6 +90,10 @@ class RecordToggleView @JvmOverloads constructor(
     }
     private val glyphPath = android.graphics.Path()
     private val glyphBox = RectF()
+
+    /** The shutter symbol's size as a fraction of the pill's height. Sized to sit in the pill
+     *  the way LIVE's content does — see the note in onDraw about what it replaced. */
+    private val GLYPH_FRACTION = 0.62f
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         isFakeBoldText = true
         textAlign = Paint.Align.LEFT
@@ -128,32 +132,41 @@ class RecordToggleView @JvmOverloads constructor(
         canvas.drawRoundRect(trackRect, cornerRadius, cornerRadius, fillPaint)
         canvas.drawRoundRect(trackRect, cornerRadius, cornerRadius, strokePaint)
 
+        val cy = h / 2f
+        if (photoMode) {
+            // ⚠ **THE SYMBOL ALONE, AND NO WORD** (operator, 2026-09-13: "its crowded").
+            // Glyph plus "PHOTO" filled the pill edge to edge where LIVE and REC have margins,
+            // and this pill cannot widen — §4.2 fixes six pills at two widths.
+            //
+            // The word is what goes, not the symbol, for three reasons. A shutter is a glyph in
+            // every camera a pilot has ever used. The HUD readout a few lines away already says
+            // PHOTO in words, so the pill was saying it twice. And a lone symbol is a stronger
+            // SILHOUETTE against REC's dot-and-word than a second word would ever be, which is
+            // the mode cue this pill was changed to carry.
+            val glyphSize = h * GLYPH_FRACTION
+            CameraGlyphs.still(glyphPath, glyphBox, (w - glyphSize) / 2f,
+                cy - glyphSize / 2f, glyphSize)
+            glyphPaint.color = content
+            canvas.drawPath(glyphPath, glyphPaint)
+            return
+        }
+
         // The dot and the label are CENTRED AS ONE GROUP, not pinned to the ends. The knob used
         // to hold the left end and the text was centred in what was left, so the two moved
         // independently when the view's width changed. Measuring the pair keeps the pill
         // readable at any width the layout gives it.
-        // In stills mode the dot becomes the still-camera symbol from [CameraGlyphs] — the SAME
-        // one the HUD's media-mode readout draws, so the pilot learns one symbol and meets it
-        // in both places.
-        val glyphSize = if (photoMode) h * 0.34f else h * 0.20f
+        val dotRadius = h * 0.10f
         val gap = h * 0.16f
-        val label = if (photoMode) "PHOTO" else "REC"
+        val label = "REC"
         val textWidth = textPaint.measureText(label)
-        val groupWidth = glyphSize + gap + textWidth
+        val groupWidth = dotRadius * 2f + gap + textWidth
         val startX = (w - groupWidth) / 2f
-        val cy = h / 2f
 
-        if (photoMode) {
-            CameraGlyphs.still(glyphPath, glyphBox, startX, cy - glyphSize / 2f, glyphSize)
-            glyphPaint.color = content
-            canvas.drawPath(glyphPath, glyphPaint)
-        } else {
-            dotPaint.color = content
-            canvas.drawCircle(startX + glyphSize / 2f, cy, glyphSize / 2f, dotPaint)
-        }
+        dotPaint.color = content
+        canvas.drawCircle(startX + dotRadius, cy, dotRadius, dotPaint)
 
         textPaint.color = content
         val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
-        canvas.drawText(label, startX + glyphSize + gap, textY, textPaint)
+        canvas.drawText(label, startX + dotRadius * 2f + gap, textY, textPaint)
     }
 }

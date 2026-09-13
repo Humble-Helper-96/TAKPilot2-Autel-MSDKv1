@@ -833,8 +833,20 @@ android {
         //
         //        The camera symbols moved to CameraGlyphs so the pill and the HUD readout draw
         //        the SAME shape: a pilot learns one symbol per mode and meets it in both places.
-        versionCode 79
-        versionName "2.0.10"
+        //
+        // v2.0.11 — THE SHUTTER PILL IS THE SYMBOL ALONE.
+        //
+        //        "That looks pretty good but its crowded" (operator, 2026-09-13), and it was:
+        //        the glyph plus "PHOTO" filled the pill edge to edge where LIVE and REC have
+        //        margins. The pill cannot widen — §4.2 fixes six pills at two widths.
+        //
+        //        The WORD goes, not the symbol. A shutter is a glyph in every camera a pilot
+        //        has used; the §4.3 readout already says the mode in words a few lines away, so
+        //        the pill was saying it twice; and a lone symbol is a stronger SILHOUETTE
+        //        against REC's dot-and-word than a second word could be — which is the mode cue
+        //        this pill was changed to carry in the first place.
+        versionCode 80
+        versionName "2.0.11"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
