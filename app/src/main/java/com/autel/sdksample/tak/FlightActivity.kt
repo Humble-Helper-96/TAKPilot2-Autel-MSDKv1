@@ -122,10 +122,19 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         seedZoomFromCamera()
     }
 
-    /** Re-renders the exterior-lamp button once the aircraft has answered. The READ is done by
-     *  [AutelProductHolder] at connect; this only puts the answer on the screen. */
+    /** Re-renders the exterior-lamp button once the aircraft has answered, and ARMS THE
+     *  HARDWARE BUTTONS. The lamp READ is done by [AutelProductHolder] at connect; this only
+     *  puts the answer on the screen. */
     private val connectionObserver: (Boolean) -> Unit = { connected ->
         if (connected) {
+            // ⚠ THE HARDWARE BUTTONS ARM HERE, AND onResume IS NOT ENOUGH ON ITS OWN
+            // (measured in flight 2026-09-13). See installHardwareButtonListener: it needs a
+            // remote controller and there is none until the aircraft connects, which on a cold
+            // start is LONG after this screen opens — 21 seconds in the measured case. The
+            // onResume call then returned silently and nothing asked again, so the zoom rocker,
+            // C1 and C2 were all dead for 2 min 55 s. Arming is idempotent; a second arm
+            // replaces our own listener with our own.
+            installHardwareButtonListener()
             // DELAYED, for the same not-ready window the other at-connect calls hit: the
             // aircraft answers productConnected before the fly controller will serve a read.
             // The read is done HERE rather than in the holder because the answer has to reach
@@ -765,9 +774,33 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *
      * Registered per-screen rather than globally: it is dropped in onPause so the button cannot
      * place markers from the home screen or with the app in the background.
+     *
+     * ⚠ **CALLED FROM onResume AND FROM [connectionObserver], AND IT NEEDS BOTH** (measured in
+     * flight 2026-09-13). There is no remote controller until the aircraft connects. On a cold
+     * start the flight screen is open long before that — 21 seconds in the measured case — so
+     * the onResume call found nothing, and for as long as nothing asked again EVERY hardware
+     * button was dead: the zoom rocker, C1, C2, and the shutter's own event. It lasted 2 min
+     * 55 s and ended only because the pilot started the video stream: the screen-capture consent
+     * dialog paused the activity, and coming back re-ran onResume with the aircraft now present.
+     *
+     * ⚠ **AND IT SAYS SO WHEN IT CANNOT ARM.** The old `?: return` was silent, which is why a
+     * dead rocker looked like a broken rocker rather than a listener that was never installed.
+     * A registration that does not happen must leave a line behind — safety rule 4's habit,
+     * applied to our own wiring rather than to the SDK's.
+     *
+     * This is the v1.7.2 camera fault in a second subsystem. That fix gave the CAMERA a
+     * connect-time observer and nobody swept the screen for the other registrations that had
+     * the same shape. The sweep is done now: syncIrStateFromCamera and seedZoomFromCamera are
+     * both covered by the camera-ready observer, ControllerCompass and the battery bands need
+     * no aircraft, and this was the only gap left.
      */
     private fun installHardwareButtonListener() {
-        val rc = AutelProductHolder.evo2?.remoteController ?: return
+        val rc = AutelProductHolder.evo2?.remoteController
+        if (rc == null) {
+            AppLog.i(TAG, "hardware buttons NOT armed — no remote controller yet. " +
+                "They arm when the aircraft connects.")
+            return
+        }
         runCatching {
             rc.setRemoteButtonControllerListener(
                 object : com.autel.common.CallbackWithOneParam<

@@ -180,16 +180,34 @@ a fact. Pull both when a camera question comes up.
    timing out 350 ms after RECORD_START, so the channel that would answer is itself unhealthy.
    **Autel Explorer behaves the same way** (operator checked), thus this matches the vendor.
 
-2. **A `PHOTO_TAKEN_DONE` IS NOT PROOF A PHOTO WAS SAVED.** When the visible capture fails the
-   camera still reports DONE — with NO detail. A real capture's DONE carries a thumbnail url
-   naming the file, and is followed by a SECOND, url-less DONE. Cross-referenced with the card:
-   stills 0022/0023/0025 had a url and both halves are on the card; stills 0021 and 0024 had no
-   url and **MAX_0021.JPG and MAX_0024.JPG do not exist**.
-   ⚠ `lastPhotoDoneMs` was moved by ANY done, so a failed shutter's own failure landed ~1 ms
-   later, inside `SPURIOUS_PHOTO_FAIL_WINDOW_MS`, and a REAL loss was logged as the firmware's
-   harmless duplicate. Only a done that names a file counts now — see `photoDoneNamesAFile`,
-   pinned by four tests against these exact cases. The pilot was also told "Photo Saved" for
-   both lost photos; a real failure now shows "The photo did not save".
+2. **A `PHOTO_TAKEN_DONE` IS NOT PROOF A PHOTO WAS SAVED.** A real capture's DONE carries a
+   thumbnail url naming the file, and is followed by a SECOND, url-less DONE. A done with no
+   detail proves nothing on its own, thus only a done that names a file counts as a confirmed
+   capture — see `photoDoneNamesAFile`.
+
+   ⚠ **THE "TWO LOST PHOTOS" PART OF THIS FINDING IS WITHDRAWN (2026-09-13).** It said stills
+   0021 and 0024 lost their visible frame and that `MAX_0021.JPG` and `MAX_0024.JPG` do not
+   exist. Re-checked against the card:
+   - **`MAX_0024.JPG` IS on the card**, 2.5 MB, with its `MIX_0024` and `IRX_0024` partners.
+     Numbers 0022 to 0031 are all complete sets.
+   - **`MAX_0021` WAS NEVER A PHOTO NUMBER.** That block runs in TRIPLETS, one press consuming
+     three consecutive numbers — `MAX_0019` / `MIX_0020` / `IRX_0021`, and the same before it.
+     0021 is the thermal third of a press, not a gap. Finding 3 below describes that very
+     numbering, which was available when this was written.
+   - Every 12 September file on the card has a `MIX_` partner, and **this application cannot
+     produce a `MIX_` file**. They are Explorer's. Our own 12 September flight left nothing on
+     this card, so the log's still numbers were matched against Explorer's files by coincidence
+     of numbering.
+
+   The 12 September logs have since ROTATED OFF the controller and no export was kept, thus
+   this cannot be settled further. Treat it as unproven in both directions.
+
+   ⚠ **WHAT SURVIVES, AND IT IS ENOUGH.** The BEHAVIOUR is real and was re-measured on
+   2026-09-13: url-less dones exist (12 of them in one flight, each trailing a named one), and
+   the camera does fire "The take photo is failed" after a capture that succeeded. The fix
+   stands on that: 15 shutter presses gave 15 named dones and 15 files on the card, no loss.
+   ⚠ **NOTHING HAS EVER BEEN SEEN TO FAIL.** "The photo did not save" has never fired in the
+   field and its trigger is unproven. Do not cite a lost photo as the reason for this code.
 
 3. **WHAT THE AIRCRAFT SAVES FOLLOWS `DisplayMode`, AND EXPLORER PROVES IT SAVES MORE THAN WE
    ASK FOR.** `DisplayMode` has four values — VISIBLE, IR, PICTURE_IN_PICTURE, OVERLAP — and

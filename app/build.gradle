@@ -610,8 +610,32 @@ android {
         //        the failure carried no description.
         //
         //        ⚠ NOT FLIGHT TESTED AT THE TIME OF THIS COMMIT. Built to be flown.
-        versionCode 70
-        versionName "2.0.1"
+        //
+        // v2.0.2 — THE HARDWARE BUTTONS ARM WHEN THE AIRCRAFT ARRIVES. One defect, found by
+        //        flying the v2.0.1 action list on 2026-09-13.
+        //
+        //        ⚠ EVERY HARDWARE BUTTON WAS DEAD FOR THE FIRST 2 min 55 s OF THE FLIGHT —
+        //        the zoom rocker, C1, C2 and the shutter's own event.
+        //        installHardwareButtonListener needs a remote controller and there is none
+        //        until the aircraft connects; on a cold start the flight screen opened 21 s
+        //        before productConnected, the onResume call returned SILENTLY, and nothing
+        //        asked again. It ended only because the pilot started the video stream: the
+        //        screen-capture consent dialog paused the activity and coming back re-ran
+        //        onResume with the aircraft now present.
+        //
+        //        It is armed from connectionObserver as well as onResume now, and it says so
+        //        in the log when it cannot arm. This is the v1.7.2 camera fault in a second
+        //        subsystem; the sweep for the rest is recorded on the method.
+        //
+        //        ⚠ NOT A DEFECT, AND DO NOT RE-OPEN IT: the AutelControlRates and gimbal-unlock
+        //        failures in that same log belong to a TRANSIENT productConnected while the
+        //        aircraft was powering up. The real connect 34 s later re-armed everything and
+        //        every one succeeded. A failure is only a failure when no later attempt wins.
+        //
+        //        Also: the "two lost photos" reading of 2026-09-12 is WITHDRAWN — the card
+        //        disagrees. See CLAUDE.md finding 2. No code changed; the citations did.
+        versionCode 71
+        versionName "2.0.2"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

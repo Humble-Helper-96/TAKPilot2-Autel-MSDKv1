@@ -63,20 +63,12 @@ The aircraft is connected. It is on the ground and the motors are off.
 - [ ] **B15.** Push the zoom rocker IN four times, one second apart. Wait **3 seconds**.
 - [ ] **B16.** Hold the zoom rocker OUT until the zoom stops at 1X. Wait **3 seconds**.
 
-**The home point**
+**The home point — THIS MOVED TO PART C**
 
-⚠ **This changes where Return to Home sends the aircraft. Do it on the ground.**
-
-- [ ] **B17.** Walk **at least 30 m** from the aircraft. This distance matters: the check
-      cannot tell a home point that moved from one that did not when you stand beside the old
-      one.
-- [ ] **B18.** Touch and hold the RTH button. Confirm **Set Home Here**.
-- [ ] **B19.** Write down what the screen said, and how many seconds after you confirmed.
-      "Home Point Updated" must NOT appear at once. It comes from the aircraft.
-- [ ] **B20.** Walk back to the aircraft. Look at the mini-map: the home marker must be where
-      you were standing, not at the aircraft.
-- [ ] **B21.** ⚠ **Set the home point again, at the aircraft**, before you take off. Confirm on
-      the map that the home marker is at the aircraft.
+⚠ **THE AIRCRAFT REFUSES A HOME POINT ON THE GROUND.** Measured 2026-09-13: three attempts
+with the aircraft disarmed all came back *"Cannot set the location since the home point in
+disarm|landing mode"*. The fourth attempt, in the air, worked. The first version of this list
+put the test here and it could not be done. See C10.
 
 **The video**
 
@@ -107,7 +99,25 @@ Fly the aircraft normally. Add these actions.
 - [ ] **C6.** Press the hardware shutter one time. Write down what the screen said.
 - [ ] **C7.** Use the zoom rocker to go to 4X. Point at a fixed object. Wait **5 seconds**.
 - [ ] **C8.** Drop a marker with C2. Confirm your team receives it.
-- [ ] **C9.** Return to 1X. Land.
+
+**The home point — IN THE AIR, and this is the one test still not done**
+
+⚠ **This changes where Return to Home sends the aircraft. Read C10 fully before you start.**
+
+- [ ] **C10.** Fly the aircraft **at least 50 m horizontally away from where you stand**, and
+      hold it there. The distance is the whole point: the check cannot tell a home point that
+      moved from one that did not when the two are within 3 m, and on 13 September the aircraft
+      was 0.4 m from the requested position — which proved the check RUNS but not that it can
+      CATCH a home point that stayed still.
+- [ ] **C11.** Touch and hold the RTH button. Confirm **Set Home Here**. This sets the home to
+      YOUR position, not the aircraft's.
+- [ ] **C12.** Write down what the screen said and how long after you confirmed. "Home Point
+      Updated" comes from the aircraft, not from the command.
+- [ ] **C13.** Look at the mini-map. The home marker must be at YOUR position.
+- [ ] **C14.** ⚠ **Decide where the home point must be before you land.** Set it again at the
+      position you want Return to Home to use.
+
+- [ ] **C15.** Return to 1X. Land.
 
 ---
 
@@ -139,8 +149,8 @@ answer, and so that you can stop the flight early if you see something bad.
 | B10, B11 | `IR refused — the camera is recording` | The refusal did not work. |
 | B14–B16 | `zoom now 4X (raw=400)`, then `zoom check: the camera is at 4X as asked` | **NEW.** |
 | — | `ZOOM WRITE IGNORED.` | **NEW.** A zoom the camera did not take. |
-| B18 | `setLocationAsHomePoint: accepted — waiting for the aircraft` | The old code said "OK" here. |
-| B19 | `home point check: the aircraft reports the new home (NN.N m ...)` | **NEW.** The aircraft confirmed. |
+| C11 | `setLocationAsHomePoint: accepted — waiting for the aircraft` | The old code said "OK" here. |
+| C12 | `home point check: the aircraft reports the new home (NN.N m ...)` | **NEW.** The aircraft confirmed. The distance must be LARGE — a small one means C10 was not done. |
 | — | `HOME POINT DID NOT MOVE.` | **NEW.** The write was lost. Serious. |
 | B24, C2 | `camera media status: PHOTO_TAKEN_DONE (http://...MAX_nnnn.JPG)` | A capture that named a file. Count these against the card. |
 | B24, C2 | `camera media status: PHOTO_TAKEN_DONE` with nothing after it | A capture that named NO file. The screen must NOT have said "Photo Saved". |
