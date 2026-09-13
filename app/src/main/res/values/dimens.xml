@@ -664,4 +664,14 @@
 	<dimen name="crosshair_ring_width">3px</dimen>
 	<dimen name="crosshair_ring_outline_width">6px</dimen>
 
+	<!-- Warning banner — PER-DEVICE, specification §4.8 (2026-09-10). The text size, and the
+	     width the banner may take before the text wraps. Do not copy the DJI values: that
+	     screen is 768dp wide and this one is 1024dp. 15sp is what this tree always used. 480dp
+	     keeps an open banner of five lines inside the left third of the picture; a narrower
+	     banner does not get smaller, it gets TALLER, and height is what covers the picture.
+	     The close button is the touch-target minimum of §7, not the size of the glyph. -->
+	<dimen name="flight_warning_text_size">15sp</dimen>
+	<dimen name="flight_warning_max_width">480dp</dimen>
+	<dimen name="flight_warning_close_size">34dp</dimen>
+
 </resources>

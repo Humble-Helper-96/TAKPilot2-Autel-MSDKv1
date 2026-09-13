@@ -432,6 +432,18 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             emptyList(),
+            "Warnings (top left)",
+            "A box below the toolbar shows a warning. RED means act now. AMBER means know " +
+                "it. IF THE MOTORS DO NOT START, READ THIS BOX FIRST.\n\n" +
+                "The warnings are for the compass, the GPS, the battery, the flight limits, " +
+                "the wind, a missing home point, and an automatic return home. The box shows " +
+                "the most important one, with a count if there are more.\n\n" +
+                "Touch the box to read all of them. Touch it again to close the list.\n\n" +
+                "Touch the ✕ to remove the box. The box comes back when the warnings change.",
+        )
+
+        entry(
+            emptyList(),
             "Quick marker: touch the crosshair",
             "Touch the crosshair to put a marker immediately, with no questions. The name is " +
                 "always ${TakDropMarkers.QUICK_NAME}.\n\n" +

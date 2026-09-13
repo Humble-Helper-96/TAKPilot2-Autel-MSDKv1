@@ -470,6 +470,15 @@ class AutelVideoStreamer(
     }
 
     private fun handleFailed(reason: String) {
+        // The pilot stopped the push, and the server then closed its side. That is the normal
+        // end of a stream and not a fault. Before 2026-09-10 this logged "connection failed"
+        // and put "Stream failed: Shutdown received from server" on the status line after
+        // EVERY stop, which read as a fault that was not there.
+        if (stopped) {
+            AppLog.i(TAG, "push closed after stop: $reason")
+            streaming = false
+            return
+        }
         AppLog.w(TAG, "connection failed: $reason")
         // ⚠ A REFUSAL IS NOT A DROPPED LINK, so retrying it only hammers the server. On
         // 2026-08-29 a missing SRT passphrase produced SRT_REJ_PEER twelve times over 24

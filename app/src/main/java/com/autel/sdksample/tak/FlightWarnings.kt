@@ -70,8 +70,15 @@ object FlightWarnings {
         NEAR_AIRPORT(false, "NEAR AIRPORT"),
     }
 
-    /** What the banner should show right now, or null for hidden. */
-    data class Display(val text: String, val red: Boolean)
+    /**
+     * What the banner should show right now, or null for hidden.
+     *
+     * [text] is the collapsed line: the worst warning, plus a "+N" for the rest. [all] is every
+     * active warning on its own line, worst first. The flight screen shows [all] while the
+     * pilot holds the banner open with a tap (specification §4.8), thus the count is never the
+     * only way to reach the other warnings. Same shape as the DJI siblings (2026-09-10).
+     */
+    data class Display(val text: String, val red: Boolean, val all: List<String> = emptyList())
 
     /** Minimum time a warning owns the banner once shown — long enough to read, short enough
      *  that a stack of warnings still cycles usefully. A WORSE warning preempts regardless. */
@@ -187,7 +194,12 @@ object FlightWarnings {
             // one may itself already have cleared and just be riding out its hold).
             val others = active.count { it != show && it.banner }
             val text = if (others > 0) "${show.label}  +$others" else show.label
-            return Display(text, show.red)
+            // Every banner warning, worst first, from the LIVE set — the same source as the
+            // count. When the shown warning only rides out its hold, the live set is empty:
+            // then the list holds that one line, so an open banner never goes blank.
+            val live = active.filter { it.banner }.sorted()
+            val all = if (live.isEmpty()) listOf(show.label) else live.map { it.label }
+            return Display(text, show.red, all)
         }
     }
 

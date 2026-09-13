@@ -325,25 +325,55 @@
          2026-08-13: top-center sat on the part of the picture the pilot works with; the
          banner colour still interrupts from the corner). Red or amber per severity
          (FlightActivity tints the background); shows the single worst active warning plus
-         a +N count. -->
-    <TextView
-        android:id="@+id/fpvWarningBanner"
+         a +N count.
+
+         Tap to open, ✕ to close (2026-09-10, specification §4.8, ported from MSDKv5). This
+         row is a child AFTER flightCrosshair in this FrameLayout, thus it is drawn above the
+         crosshair and takes the touch: a tap on a warning cannot fall through and drop a
+         marker.
+         ⚠ A close hides ONE SET of warnings, never the banner itself. FlightActivity
+         remembers what was closed, and a change to the live set brings the banner back —
+         see warningDismissedSignature. -->
+    <LinearLayout
+        android:id="@+id/fpvWarningBannerRow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginTop="64dp"
         android:layout_marginStart="16dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="7dp"
-        android:paddingBottom="7dp"
         android:background="@drawable/bg_warning_banner"
-        android:text=""
-        android:textColor="@color/tp_text_primary"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.03"
-        android:visibility="gone" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/fpvWarningBanner"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxWidth="@dimen/flight_warning_max_width"
+            android:paddingStart="16dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:text=""
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/flight_warning_text_size"
+            android:textStyle="bold"
+            android:letterSpacing="0.03" />
+
+        <!-- Sized to the touch-target minimum of specification §7 (34dp), not to the glyph:
+             a 15sp ✕ is about 10dp across and not hittable with a thumb over live video. -->
+        <TextView
+            android:id="@+id/fpvWarningBannerClose"
+            android:layout_width="@dimen/flight_warning_close_size"
+            android:layout_height="@dimen/flight_warning_close_size"
+            android:contentDescription="Close this warning"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="@color/tp_text_primary"
+            android:textSize="@dimen/flight_warning_text_size"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <!-- Transient notice ("Home Point Set", etc.) — top-CENTER over the video, below the
          toolbar (moved from top-left when the warning banner took that corner). Hidden by

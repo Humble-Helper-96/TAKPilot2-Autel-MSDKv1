@@ -114,6 +114,23 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
+**v1.7.6 is OPEN on master** (versionCode 66, 2026-09-10). Three items, all bench-pending:
+
+- **The warning banner opens on a tap and closes on a ✕** — both §4.8 slots, ported from
+  MSDKv5. `FlightWarnings.Display.all` is the open list. `FlightActivity.renderWarning` owns
+  the repaint; `warningDismissedSignature` holds the closed set. ⚠ A close hides ONE SET of
+  warnings and never the banner: the signature is compared on every repaint. The banner row
+  is a later `FrameLayout` child than `flightCrosshair`, thus it takes the touch and a tap on
+  a warning cannot drop a marker. Per-device sizing is in `dimens.xml` (`flight_warning_*`).
+  The Field Guide has the new "Warnings (top left)" entry; the handout was regenerated.
+- **`AppLog` buffers lines and keeps the public stream open.** One MediaStore open per
+  archive file, not per line. Flush at 8 KB or 1 s, at once on E and FATAL, and on Clear,
+  Delete and logging-off. A process the system KILLS can lose the last second of lines.
+  This is also the new `taklite-core` master; Autel conforms fully now (the AppLog drift is
+  gone). DJIv5 drifts on five files until its sync.
+- **A stopped stream no longer logs "connection failed"** or puts "Stream failed" on the
+  status line — `AutelVideoStreamer.handleFailed` returns early on the `stopped` flag.
+
 **v1.7.5 IS RELEASED** — tag `v1.7.5`, versionCode 65, 2026-09-10. Flown twice that day. Two
 faults from a real mission, both corrected in the shared core (`taklite-core` master first,
 then synced here — DJI v4/v5 NOT yet synced, `check-taklite.sh` shows the drift):

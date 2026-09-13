@@ -57,6 +57,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var lightsButton: ImageButton
     private lateinit var fpvNotice: TextView
     private lateinit var fpvWarningBanner: TextView
+    private lateinit var fpvWarningBannerRow: View
+    private lateinit var fpvWarningBannerClose: TextView
+
+    /** True while the pilot holds the warning banner open (specification §4.8). View state,
+     *  thus it lives here and not in FlightWarnings. It clears whenever the banner hides, so
+     *  a new set of warnings always arrives collapsed — see [renderWarning]. */
+    private var warningExpanded = false
+
+    /**
+     * The set of warnings the pilot CLOSED, as the joined text of every line the banner showed
+     * at the moment of the close. Null when nothing is closed.
+     *
+     * ⚠ A CLOSE HIDES ONE SET OF WARNINGS, NEVER THE BANNER ITSELF (specification §4.8). The
+     * signature is compared on every repaint, thus the banner returns the moment the live set
+     * differs by one line: a new warning, a worse one, or one that cleared and came back. The
+     * pilot cannot close the banner and then miss the next thing the aircraft says. Ported from
+     * the DJI MSDKv5 tree, 2026-09-10.
+     */
+    private var warningDismissedSignature: String? = null
     private lateinit var resourceMonitorRow: View
     private lateinit var resourceMonitorCells: List<TextView>
     private lateinit var crosshairView: CrosshairView
@@ -251,6 +270,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvRthAltitude = findViewById(R.id.fpvRthAltitude)
         fpvNotice = findViewById(R.id.fpvNotice)
         fpvWarningBanner = findViewById(R.id.fpvWarningBanner)
+        fpvWarningBannerRow = findViewById(R.id.fpvWarningBannerRow)
+        fpvWarningBannerClose = findViewById(R.id.fpvWarningBannerClose)
+        // Tap the banner to open it and read every warning; tap again to close the list. The
+        // banner is drawn above the crosshair (see activity_flight.xml), thus it takes the
+        // touch and a tap on a warning can never fall through and drop a marker.
+        fpvWarningBanner.setOnClickListener {
+            warningExpanded = !warningExpanded
+            renderWarning()
+        }
+        // The ✕ closes the set of warnings now on the banner. A separate view, not a second
+        // gesture on the text: the text's tap already means "open".
+        fpvWarningBannerClose.setOnClickListener {
+            warningDismissedSignature = FlightWarnings.display()?.all?.joinToString("\n")
+            warningExpanded = false
+            AppLog.i(TAG, "warning banner closed by pilot: $warningDismissedSignature")
+            renderWarning()
+        }
         // Fresh flight screen: drop any banner hold left from the last session. The active
         // set rebuilds from live telemetry within one frame.
         FlightWarnings.reset()
@@ -814,6 +850,46 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     // ---- HUD ----
 
+    /**
+     * Repaints the warning banner from [FlightWarnings.display]. Polled from the HUD tick, and
+     * called at once by the two taps on the banner.
+     *
+     * Collapsed: the worst warning and a "+N" count. Open: every warning on its own line, worst
+     * first. Closed by the ✕: hidden while the live set is the SAME set that was closed, and
+     * back the moment it differs — see [warningDismissedSignature]. Same shape as the DJI
+     * MSDKv5 tree (specification §4.8, ported 2026-09-10).
+     */
+    private fun renderWarning() {
+        val d = FlightWarnings.display()
+        if (d == null) {
+            fpvWarningBannerRow.visibility = View.GONE
+            // Nothing stands, thus nothing stays open and nothing stays closed. The next set
+            // of warnings gets a fresh, collapsed banner — even one whose text repeats the
+            // last, because the pilot closed THAT occurrence, not the words.
+            warningExpanded = false
+            warningDismissedSignature = null
+            return
+        }
+        val signature = d.all.joinToString("\n")
+        if (signature == warningDismissedSignature) {
+            fpvWarningBannerRow.visibility = View.GONE
+            return
+        }
+        warningDismissedSignature = null
+        // The arrow is the only sign that the banner opens, so it shows only when there is
+        // something behind the count.
+        val more = d.all.size > 1
+        fpvWarningBanner.text = when {
+            warningExpanded -> d.all.joinToString("\n") + "\n▴"
+            more -> "${d.text}  ▾"
+            else -> d.text
+        }
+        // Severity goes on the BACKGROUND and the text stays white — specification §4.8.
+        fpvWarningBannerRow.background?.setTint(androidx.core.content.ContextCompat.getColor(
+            this, if (d.red) R.color.tp_warn_banner_red else R.color.tp_warn_banner_amber))
+        fpvWarningBannerRow.visibility = View.VISIBLE
+    }
+
     private fun updateHud() {
         // Local wall clock, 24-hour with seconds. Driven from the HUD tick (500ms), which is
         // twice the rate needed for a seconds display — so it never visibly skips a second.
@@ -831,15 +907,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Aircraft warning banner (v1.5.9). Polled on the same tick for the same reason as
         // the arcs: the source repeats at 2Hz, and FlightWarnings owns the edge/hold logic,
         // so this is just "draw what it says".
-        val warning = FlightWarnings.display()
-        if (warning == null) {
-            fpvWarningBanner.visibility = View.GONE
-        } else {
-            fpvWarningBanner.text = warning.text
-            fpvWarningBanner.background?.setTint(androidx.core.content.ContextCompat.getColor(
-                this, if (warning.red) R.color.tp_warn_banner_red else R.color.tp_warn_banner_amber))
-            fpvWarningBanner.visibility = View.VISIBLE
-        }
+        renderWarning()
 
         val hud = TakBridgeHolder.hud()
         val takOk = TakManager.getInstance().isConnected

@@ -222,4 +222,34 @@ class FlightWarningsTest {
             status(flyMode = FlyMode.LOW_BATTERY_GO_HOME), batteryPct = 80, airborne = true)
         assertEquals("RETURNING HOME — LOW BATTERY  +1", FlightWarnings.displayAt(t0)!!.text)
     }
+
+    // ---- The open banner (specification §4.8, 2026-09-10) ----
+
+    @Test
+    fun openBannerListsEveryWarningWorstFirst() {
+        FlightWarnings.avoidanceNotApplied = true
+        FlightWarnings.onStatus(status(compassValid = false, windHigh = true), batteryPct = 80, airborne = true)
+        val d = FlightWarnings.displayAt(t0)!!
+        assertEquals("COMPASS INTERFERENCE  +2", d.text)
+        assertEquals(
+            listOf("COMPASS INTERFERENCE", "AVOIDANCE SETTING NOT APPLIED", "WIND TOO HIGH"),
+            d.all,
+        )
+    }
+
+    @Test
+    fun openBannerNeverGoesBlankWhileAWarningRidesOutItsHold() {
+        FlightWarnings.onStatus(status(windHigh = true), batteryPct = 80, airborne = true)
+        assertEquals("WIND TOO HIGH", FlightWarnings.displayAt(t0)!!.text)
+        FlightWarnings.onStatus(status(), batteryPct = 80, airborne = true)
+        // Inside the 4 s hold: the live set is empty, and the list holds the one shown line.
+        assertEquals(listOf("WIND TOO HIGH"), FlightWarnings.displayAt(t0 + 1_000)!!.all)
+    }
+
+    @Test
+    fun logOnlyWarningsStayOutOfTheOpenBanner() {
+        FlightWarnings.gimbalErratic = true
+        FlightWarnings.onStatus(status(compassValid = false), batteryPct = 80, airborne = true)
+        assertEquals(listOf("COMPASS INTERFERENCE"), FlightWarnings.displayAt(t0)!!.all)
+    }
 }

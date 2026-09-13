@@ -17,7 +17,7 @@ KDoc on FieldGuideActivity for the rule set to hold edits to.
 The quick-marker name shows as E419 here. The app draws one callsign per install
 from a pool of 24, so each controller shows its own.
 
-App version: 1.7.0
+App version: 1.7.6
 -->
 
 # TAKPilot2 Field Guide
@@ -213,6 +213,16 @@ YELLOW: 10° to 25° down. The error is about 50 ft.
 WITHOUT terrain data:  
 GREEN: 30° down or more. The error is about 50 ft.  
 YELLOW: 15° to 30° down. The error is about 100 ft.
+
+#### Warnings (top left)
+
+A box below the toolbar shows a warning. RED means act now. AMBER means know it. IF THE MOTORS DO NOT START, READ THIS BOX FIRST.
+
+The warnings are for the compass, the GPS, the battery, the flight limits, the wind, a missing home point, and an automatic return home. The box shows the most important one, with a count if there are more.
+
+Touch the box to read all of them. Touch it again to close the list.
+
+Touch the ✕ to remove the box. The box comes back when the warnings change.
 
 #### Quick marker: touch the crosshair
 
