@@ -205,8 +205,11 @@
              numbers. The 54 comes from the zoom pill's fractional labels and the 66 from the
              widest word, "SYNC"; both are the measured minimum for their content, so neither
              can simply be shrunk to match the other.
-             The weighted spacer that used to push this group to the right edge is gone: the two
-             groups are now separate children of a FrameLayout and anchor to their own corners. -->
+
+             ⚠ THE WEIGHTED SPACER ABOVE IS WHAT HOLDS THIS GROUP AGAINST THE RIGHT EDGE. Both
+             capsules are children of the one horizontal band, thus the gap between them is a
+             view and not a gravity. Making them separate children of the outer FrameLayout,
+             anchored to their own corners, would also work and is NOT what is built here. -->
         <LinearLayout
             android:id="@+id/flightToolbarActions"
             android:layout_width="wrap_content"

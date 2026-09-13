@@ -76,8 +76,11 @@ object AutelProductHolder {
     @Volatile var isRecording: Boolean = false
         private set
 
-    /** Set when the camera reports a photo actually saved — lets the flight screen confirm
-     *  a shutter press did something. Cleared by the reader. */
+    /** Set when the camera reports a photo saved **and names the file** — lets the flight
+     *  screen confirm a shutter press did something. Cleared by the reader.
+     *
+     *  ⚠ A BARE PHOTO_TAKEN_DONE DOES NOT SET THIS, and must not: the camera reports done for
+     *  a shutter whose visible capture failed. See [photoDoneNamesAFile]. */
     @Volatile var photoTakenFlag: Boolean = false
 
     // ---- Camera storage ----
@@ -165,15 +168,33 @@ object AutelProductHolder {
                 MediaStatus.RECORD_FAILED_SDCARD_REMOVED,
                 MediaStatus.RECORD_BUFFER_FULL -> isRecording = false
                 MediaStatus.PHOTO_TAKEN_DONE -> {
-                    photoTakenFlag = true
-                    // ⚠ ONLY A DONE THAT NAMES A FILE COUNTS AS A CONFIRMED CAPTURE, and this
-                    // timestamp is what decides whether a following failure is the firmware's
-                    // duplicate or a real loss. A failed shutter emits a url-less DONE and its
-                    // failure ~1 ms later; banking that as "a capture just succeeded" made the
-                    // failure look spurious and a real lost photo went to the log as INFO.
-                    // See photoDoneNamesAFile.
+                    // ⚠ ONLY A DONE THAT NAMES A FILE COUNTS AS A CONFIRMED CAPTURE. It gates
+                    // BOTH the pilot's notice and the timestamp, and it must gate both.
+                    //
+                    // The timestamp decides whether a following failure is the firmware's
+                    // duplicate or a real loss: a failed shutter emits a url-less DONE and its
+                    // failure ~1 ms later, so banking that as "a capture just succeeded" made
+                    // the failure look spurious and a real lost photo went to the log as INFO.
+                    //
+                    // ⚠ THE NOTICE IS THE SAME QUESTION AND WAS MISSED ONCE (2026-09-13). This
+                    // flag was set for ANY done, so a lost still still armed "Photo Saved" and
+                    // the only thing standing in front of the pilot was the failure callback
+                    // arriving in time AND carrying a word this process recognised. Neither is
+                    // guaranteed. A done that names nothing now says nothing.
+                    //
+                    // A real capture emits a SECOND, url-less done right after the first. That
+                    // event lands here too and is correctly ignored: the first one already set
+                    // the flag. See photoDoneNamesAFile.
+                    val now = android.os.SystemClock.elapsedRealtime()
                     if (photoDoneNamesAFile(detail)) {
-                        lastPhotoDoneMs = android.os.SystemClock.elapsedRealtime()
+                        photoTakenFlag = true
+                        lastPhotoDoneMs = now
+                    } else if (!isTrailingDoneOfAConfirmedCapture(
+                            if (lastPhotoDoneMs == 0L) Long.MAX_VALUE else now - lastPhotoDoneMs)) {
+                        // A url-less done that does NOT trail a confirmed one is the shape of a
+                        // lost still. Only that arms the clock — see isTrailingDoneOfA-
+                        // ConfirmedCapture for why the echo must not.
+                        lastUnconfirmedDoneMs = now
                     }
                 }
                 else -> { /* mode/update chatter — logged above, no state change */ }
@@ -197,7 +218,15 @@ object AutelProductHolder {
             // still even when the visible half fails, so "nothing happened" is not what this
             // looks like from the cockpit — without a notice the shutter appears to work and
             // the frame is simply missing from the card afterwards.
-            if (desc.contains("photo", ignoreCase = true)) photoFailedFlag = true
+            //
+            // ⚠ THE TEST IS NOT A WORD MATCH ALONE. `desc` is "unknown" when the SDK gives no
+            // description, and a bare word match then said "this is not about a photo" for a
+            // photo that had just been lost. isPhotoFailure reads the clock as well — see it
+            // for what the window means.
+            val unconfirmedMs = lastUnconfirmedDoneMs.let {
+                if (it == 0L) Long.MAX_VALUE else android.os.SystemClock.elapsedRealtime() - it
+            }
+            if (isPhotoFailure(desc, unconfirmedMs)) photoFailedFlag = true
             AppLog.w(TAG, "media state listener error: $desc")
         }
     }
@@ -206,6 +235,13 @@ object AutelProductHolder {
      *  (elapsedRealtime), 0 = never. A url-less DONE does NOT move this — see
      *  [photoDoneNamesAFile] and [isSpuriousPhotoFailure]. */
     @Volatile private var lastPhotoDoneMs = 0L
+
+    /** When the camera last reported a PHOTO_TAKEN_DONE that named **no** file
+     *  (elapsedRealtime), 0 = never. That event is the shape of a lost still, thus a failure
+     *  that follows it closely belongs to that shutter even with an empty description — see
+     *  [isPhotoFailure]. A real capture's second, url-less done also lands here and is
+     *  harmless: no failure follows it. */
+    @Volatile private var lastUnconfirmedDoneMs = 0L
 
     /** Set when the camera reports a photo failure that is NOT the firmware's known duplicate.
      *  Consumed and cleared by FlightActivity's HUD tick, which puts a refused notice on the

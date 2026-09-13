@@ -121,7 +121,7 @@ finished. Basic flight test by the operator before release.
 found from here takes a SMALL update (2.0.1, 2.0.2 …), not a held release. Do not treat an
 open finding as a reason to withhold the next fix.
 
-⚠ **THERE IS NO v1.7.8 IN THE FIELD AND NO `v1.7.8` TAG.** The fleet went from v1.7.7 to
+⚠ **THERE IS NO v1.7.8 IN THE FIELD AND NO `v1.7.8` TAG.** v1.7.7 was the last release before
 v2.0.0. A commit of 2026-09-12 (`5e01e12`) said 1.7.8 "goes to the fleet" and corrected the
 notes to match, but no tag, no GitHub release and no signed APK were ever produced, so nothing
 shipped under that number. 1.7.8 was the development line the work rode on, exactly as

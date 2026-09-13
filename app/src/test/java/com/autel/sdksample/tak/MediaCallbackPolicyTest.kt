@@ -63,4 +63,42 @@ class MediaCallbackPolicyTest {
         // are on the card. This must stay suppressed.
         assertTrue(isSpuriousPhotoFailure(incidentString, sincePhotoDoneMs = 27L))
     }
+
+    // ---- isPhotoFailure: the pilot is told, and an empty description does not silence it ----
+
+    @Test
+    fun `a failure that names a photo is a photo failure`() {
+        assertTrue(isPhotoFailure(incidentString, sinceUnconfirmedDoneMs = Long.MAX_VALUE))
+        // The firmware uses both words. A match on one only would be a coin toss.
+        assertTrue(isPhotoFailure("Take picture failed", sinceUnconfirmedDoneMs = Long.MAX_VALUE))
+    }
+
+    @Test
+    fun `a failure with NO description right after an unconfirmed done is a photo failure`() {
+        // ⚠ THE REGRESSION THIS PINS. AutelError.description can be null, and the caller has
+        // only "unknown" to put in its place. Word-matching alone called that "not a photo",
+        // set no failed flag, and the flight screen fell through to "Photo Saved" for a still
+        // that was never written. The url-less done 1 ms earlier is what identifies it.
+        assertTrue(isPhotoFailure("unknown", sinceUnconfirmedDoneMs = 1L))
+        assertTrue(isPhotoFailure("", sinceUnconfirmedDoneMs = 999L))
+    }
+
+    @Test
+    fun `the url-less done that trails a real capture is an echo, not a lost still`() {
+        // The 0022 sequence: done with a url, then a url-less done a few ms later. If that echo
+        // armed the clock, a firmware duplicate failure carrying no description would be read
+        // as a loss and the pilot would be told a SAVED photo was lost.
+        assertTrue(isTrailingDoneOfAConfirmedCapture(sinceConfirmedDoneMs = 5L))
+        // The 0021 sequence: a url-less done with no confirmed capture behind it, 13 s after
+        // the last good one. That is a lost still and must arm the clock.
+        assertFalse(isTrailingDoneOfAConfirmedCapture(sinceConfirmedDoneMs = 13_091L))
+        assertFalse(isTrailingDoneOfAConfirmedCapture(sinceConfirmedDoneMs = Long.MAX_VALUE))
+    }
+
+    @Test
+    fun `an unrelated failure long after any unconfirmed done is not a photo failure`() {
+        // A recording fault must not put a photo notice on the flight screen.
+        assertFalse(isPhotoFailure("SD card removed", sinceUnconfirmedDoneMs = Long.MAX_VALUE))
+        assertFalse(isPhotoFailure("unknown", sinceUnconfirmedDoneMs = 1_000L))
+    }
 }

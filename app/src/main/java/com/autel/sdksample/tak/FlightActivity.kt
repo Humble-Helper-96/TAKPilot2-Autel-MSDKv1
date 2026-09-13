@@ -171,8 +171,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private var codecView: AutelCodecView? = null
 
     /** Aspect ratio (w/h) of the frames the camera is currently sending; 0 until the first
-     *  frame. Changes when the pilot switches photo/video/IR — see [armVideoFill]. */
-    private var videoAspect: Float = 0f
+     *  frame. Changes when the pilot switches photo/video/IR — see [armVideoFill].
+     *
+     *  ⚠ WRITTEN ON THE SDK'S RENDER CALLBACK AND READ ON THE MAIN THREAD. It always was, and
+     *  [verifyLensAgainstVideo] now reads it on a delay rather than only inside the posted
+     *  repaint, so the volatile is explicit instead of resting on the post's happens-before. A
+     *  stale read here would raise a FALSE alarm about the lens, which is the one outcome this
+     *  check must not produce. */
+    @Volatile private var videoAspect: Float = 0f
     private var aircraftMarker: Marker? = null
     private var homeMarker: Marker? = null
     private var homeLine: Polyline? = null
@@ -727,6 +733,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // place markers from the home screen or with the app in the background.
         runCatching { AutelProductHolder.evo2?.remoteController?.setRemoteButtonControllerListener(null) }
         handler.removeCallbacks(refresh)
+        // The lens check holds this activity for its settle window and would otherwise fire at a
+        // screen that is no longer showing — see verifyLensAgainstVideo.
+        lensVerify?.let { handler.removeCallbacks(it) }
+        lensVerify = null
+        homeVerify?.let { handler.removeCallbacks(it) }
+        homeVerify = null
+        zoomVerify?.let { handler.removeCallbacks(it) }
+        zoomVerify = null
     }
 
     /**
@@ -1009,11 +1023,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // a second way to do it was clutter on the one screen the pilot flies from. The flag
         // behind this notice comes from the camera's own MediaStatus.PHOTO_TAKEN_DONE, thus it
         // fires for the HARDWARE button exactly as it did for the pill. Keep it.
-        // ⚠ THE FAILURE IS CHECKED FIRST AND CLEARS BOTH FLAGS. A shutter that loses its
-        // visible frame still reports PHOTO_TAKEN_DONE, so both flags can be set for the SAME
-        // shutter — and telling the pilot "Photo Saved" for a photo that was not saved is the
-        // fault this exists to stop (measured 2026-09-12: MAX_0021 and MAX_0024 never written,
-        // and the pilot was told both were saved).
+        // ⚠ THE FAILURE IS CHECKED FIRST AND CLEARS BOTH FLAGS, AND IT IS THE SECOND GUARD,
+        // NOT THE FIRST. The first is in AutelProductHolder: a PHOTO_TAKEN_DONE that names no
+        // file no longer sets photoTakenFlag at all, thus a lost still cannot reach the "Photo
+        // Saved" branch below. This order stays because a CONFIRMED capture can still be
+        // followed by a real failure, and the pilot must be told the worse of the two.
+        //
+        // The fault both guards exist to stop, measured 2026-09-12: MAX_0021 and MAX_0024 were
+        // never written and the pilot was told both were saved.
         if (AutelProductHolder.photoFailedFlag) {
             AutelProductHolder.photoFailedFlag = false
             AutelProductHolder.photoTakenFlag = false
@@ -1494,8 +1511,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                         loc.latitude, loc.longitude,
                         object : com.autel.common.CallbackWithNoParam {
                             override fun onSuccess() {
-                                AppLog.i(TAG, "setLocationAsHomePoint: OK")
-                                runOnUiThread { showNotice("Home Point Updated") }
+                                // ⚠ NOT "UPDATED". The camera is not the only part of this SDK
+                                // that reports success for work it did not do, and this is the
+                                // control where being wrong flies the aircraft to the wrong
+                                // field. The aircraft reports its OWN home point at ~2 Hz; that
+                                // is what tells the pilot, a moment later. See
+                                // verifyHomePointMoved and safety rule 4.
+                                AppLog.i(TAG, "setLocationAsHomePoint: accepted — " +
+                                    "waiting for the aircraft to report the new home point")
+                                runOnUiThread {
+                                    verifyHomePointMoved(loc.latitude, loc.longitude)
+                                }
                             }
                             override fun onFailure(error: com.autel.common.error.AutelError?) {
                                 AppLog.w(TAG, "setLocationAsHomePoint failed: ${error?.description}")
@@ -1511,6 +1537,74 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 }
                 .show()
         }
+    }
+
+    /** The pending home-point check, so a second reset replaces the first. */
+    private var homeVerify: Runnable? = null
+
+    /**
+     * Waits for the AIRCRAFT to report the home point the pilot asked for, then tells them.
+     *
+     * ⚠ **THE PILOT IS TOLD BY THE AIRCRAFT, NOT BY THE CALLBACK.** "Home Point Updated" used to
+     * appear the moment `setLocationAsHomePoint` returned success. That is the same class of
+     * claim as the camera's `OK` on a lens it never changed (see [verifyLensAgainstVideo]) on a
+     * control with a worse consequence: the home point is where Return to Home flies, and a
+     * pilot who has been told it moved has no other way to find out that it did not.
+     *
+     * ⚠ **NOTHING NEW IS ASKED OF THE AIRCRAFT.** `homeEnable` / `homeLatitude` /
+     * `homeLongitude` already arrive on the fly-controller telemetry at about 2 Hz, and this
+     * screen has been drawing the home marker and the home distance from them all along. This
+     * polls the snapshot faster than the push so the confirmation lands on the first report
+     * that carries it — no new getter, thus no new subscription hazard under safety rule 1.
+     *
+     * A timeout is NOT a refusal: [HomeCheck.NO_ANSWER] means the aircraft has not said, which
+     * is its own state and is reported as its own message. See [homePointVerdict] for the one
+     * case this cannot distinguish, and why that case does not matter.
+     */
+    private fun verifyHomePointMoved(wantLat: Double, wantLon: Double) {
+        homeVerify?.let { handler.removeCallbacks(it) }
+        val deadline = SystemClock.elapsedRealtime() + HOME_VERIFY_TIMEOUT_MS
+        val poll = object : Runnable {
+            override fun run() {
+                val hud = TakBridgeHolder.hud()
+                val separation = if (hud != null && hud.homeLat.isFinite() && hud.homeLon.isFinite())
+                    CameraSlantPoint.distanceMeters(hud.homeLat, hud.homeLon, wantLat, wantLon)
+                else Double.NaN
+                when (homePointVerdict(hud?.homeSet == true, separation)) {
+                    HomeCheck.MOVED -> {
+                        homeVerify = null
+                        AppLog.i(TAG, "home point check: the aircraft reports the new home " +
+                            "(%.1f m from the requested position)".format(separation))
+                        showNotice("Home Point Updated")
+                    }
+                    HomeCheck.NOT_MOVED, HomeCheck.NO_ANSWER -> {
+                        if (SystemClock.elapsedRealtime() < deadline) {
+                            // Still inside the window. The aircraft takes a moment to adopt the
+                            // new point and the old one reads as NOT_MOVED until it does, thus
+                            // neither answer is final until the time is up.
+                            handler.postDelayed(this, HOME_VERIFY_POLL_MS)
+                            return
+                        }
+                        homeVerify = null
+                        // The distinction is kept: "it is somewhere else" and "it has not said"
+                        // are different facts, and only the first is evidence of a lost write.
+                        if (separation.isFinite()) {
+                            AppLog.e(TAG, "HOME POINT DID NOT MOVE. setLocationAsHomePoint " +
+                                "reported OK and the aircraft still reports a home point " +
+                                "%.1f m from the requested position.".format(separation))
+                            showNotice("The home point did not move", refused = true)
+                        } else {
+                            AppLog.w(TAG, "home point check: the aircraft did not report a " +
+                                "home point within ${HOME_VERIFY_TIMEOUT_MS}ms")
+                            showNotice("The aircraft did not confirm the home point",
+                                refused = true)
+                        }
+                    }
+                }
+            }
+        }
+        homeVerify = poll
+        handler.post(poll)
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -2125,9 +2219,66 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val target = if (irOn) DisplayMode.VISIBLE else DisplayMode.IR
         cam.setDisplayMode(target, camCb("setDisplayMode($target)") {
             irOn = !irOn
+            verifyLensAgainstVideo(expectIr = target == DisplayMode.IR)
             refreshIrButtons()
             AppLog.i(TAG, "display mode now ${if (irOn) "IR" else "VISIBLE"}")
         })
+    }
+
+    /** The pending lens check, so a second toggle replaces the first rather than racing it. */
+    private var lensVerify: Runnable? = null
+
+    /**
+     * Checks the camera's `OK` against the PICTURE, a moment later.
+     *
+     * ⚠ **THE SUCCESS CALLBACK IS NOT EVIDENCE — SAFETY RULE 4.** The camera accepts a lens
+     * change it will not perform and returns success. The refusal in [onIrTapped] closes the one
+     * trigger that is measured (recording), and this closes the rest: whatever the reason, a
+     * lens that did not change is caught by the shape of the frame. See [lensAgreesWithFrame]
+     * for what the shapes are and why the answer has three values.
+     *
+     * ⚠ **THE PICTURE WINS, AND THAT IS THE POINT OF THE WHOLE THING.** On a contradiction this
+     * corrects [irOn], which is not cosmetic: that setter tells [TakBridgeHolder] which lens is
+     * live, and a wrong answer there sent the camera point to the entire TAK team tagged
+     * thermal, with the thermal field of view, over visible video. It also restores the right
+     * FILL rule, so the pilot stops seeing their own visible picture letterboxed by the thermal
+     * rule. Correcting the belief is what un-does both.
+     *
+     * ⚠ **NO READ-BACK IS USED HERE, DELIBERATELY.** `getDisplayMode` was measured timing out
+     * 350 ms after RECORD_START, so the channel that would answer is itself unhealthy exactly
+     * when the question matters. The frame size costs nothing and arrives anyway —
+     * [armVideoFill] is already listening to it for the FOV model.
+     */
+    private fun verifyLensAgainstVideo(expectIr: Boolean) {
+        lensVerify?.let { handler.removeCallbacks(it) }
+        val check = Runnable {
+            lensVerify = null
+            // Gone in the meantime — a disconnect stops the frames, thus the last aspect
+            // describes a picture that is no longer arriving and proves nothing.
+            if (AutelProductHolder.xt706 == null) return@Runnable
+            val aspect = videoAspect
+            when (lensAgreesWithFrame(believeIr = expectIr, frameAspect = aspect)) {
+                Verdict.AGREES ->
+                    AppLog.i(TAG, "lens check: the picture agrees " +
+                        "(${if (expectIr) "IR" else "VISIBLE"}, aspect ${"%.3f".format(aspect)})")
+                Verdict.INCONCLUSIVE ->
+                    AppLog.i(TAG, "lens check: no answer from the picture " +
+                        "(aspect ${"%.3f".format(aspect)}) — neither lens shape")
+                Verdict.CONTRADICTS -> {
+                    AppLog.e(TAG, "LENS DID NOT CHANGE. Asked for " +
+                        "${if (expectIr) "IR" else "VISIBLE"}, the camera reported OK, and the " +
+                        "picture is still ${if (expectIr) "VISIBLE" else "IR"} " +
+                        "(aspect ${"%.3f".format(aspect)}). Correcting the published lens.")
+                    // The belief goes back to what the picture shows. This repairs the wire as
+                    // well as the screen — see the note on this method.
+                    irOn = !expectIr
+                    refreshIrButtons()
+                    showNotice("The camera did not change lens", refused = true)
+                }
+            }
+        }
+        lensVerify = check
+        handler.postDelayed(check, LENS_VERIFY_SETTLE_MS)
     }
 
     /** White hot → black hot → ironbow, then round again. Only reachable while [irOn] — the
@@ -2268,6 +2419,48 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             TakBridgeHolder.setLiveZoom(target / ZOOM_RAW_PER_X.toDouble())
             AppLog.i(TAG, "zoom now ${zoomLabel(target)} (raw=$target)")
         })
+        verifyZoomAgainstCamera(target)
+    }
+
+    /** The pending zoom check. A held rocker writes repeatedly and each write replaces this, so
+     *  one check falls at the end of the burst rather than one per tick. */
+    private var zoomVerify: Runnable? = null
+
+    /**
+     * Checks the camera's reported zoom against what was asked for, once the write has settled.
+     *
+     * ⚠ **THIS ONE ONLY DIAGNOSES — see [ZoomVerifyPolicy]'s file note before extending it.**
+     * A zoom that does not take already corrects itself on both the wire and the pill, so there
+     * is nothing here to repair and nothing to tell the pilot. What was missing is a log line
+     * that can be told apart from the benign case, which is Autel Explorer having moved the
+     * zoom behind us — [seedZoomFromCamera] writes one wording for both.
+     *
+     * ⚠ IT WAITS THE SAME [ZOOM_SEED_SETTLE_MS] THAT SEEDING DOES. Believing the camera's
+     * reading sooner would accuse a write on data this screen elsewhere calls stale.
+     */
+    private fun verifyZoomAgainstCamera(requestedRaw: Int) {
+        zoomVerify?.let { handler.removeCallbacks(it) }
+        val check = Runnable {
+            zoomVerify = null
+            if (AutelProductHolder.xt706 == null) return@Runnable
+            // Superseded by a later write: that write started its own check, and this target is
+            // no longer what the pilot asked for.
+            if (pendingZoomRaw != requestedRaw) return@Runnable
+            val ratio = TakBridgeHolder.currentZoomFactor
+            if (!ratio.isFinite() || ratio < 1.0) return@Runnable    // nothing usable to compare
+            val reportedRaw = Math.round(ratio * ZOOM_RAW_PER_X).toInt()
+            if (zoomWriteWasIgnored(requestedRaw, reportedRaw)) {
+                AppLog.w(TAG, "ZOOM WRITE IGNORED. Asked for ${zoomLabel(requestedRaw)} " +
+                    "(raw=$requestedRaw), setDigitalZoomScale reported OK, and the camera " +
+                    "reports ${zoomLabel(reportedRaw)} (raw=$reportedRaw) " +
+                    "${ZOOM_VERIFY_SETTLE_MS}ms later. The published cone follows the CAMERA, " +
+                    "thus the team's geometry is right and the picture is not what was asked.")
+            } else {
+                AppLog.v(TAG, "zoom check: the camera is at ${zoomLabel(reportedRaw)} as asked")
+            }
+        }
+        zoomVerify = check
+        handler.postDelayed(check, ZOOM_VERIFY_SETTLE_MS)
     }
 
     /** "2X" for whole steps, "2.4X" for anything the rocker lands on between them. A pill reading

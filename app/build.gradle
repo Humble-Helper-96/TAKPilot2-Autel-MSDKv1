@@ -536,11 +536,18 @@ android {
         //        kbps on a link that was doing neither — a bandwidth fault where there was
         //        none, which is the opposite of what the line is for.
         //
-        // v1.7.8 — THE FLIGHT-SCREEN REFRESH, PART ONE. RELEASED (operator, 2026-09-12).
+        // v1.7.8 — THE FLIGHT-SCREEN REFRESH, PART ONE. NOT RELEASED. NO TAG, NO APK.
         //
-        //        ⚠ THE UI WORK STILL ENDS AT v2.0.0. This release does not finish it — the DJI
-        //        trees owe D14 to D18 and the screen may move again. 1.7.8 went to the fleet
-        //        because the operator asked for it, not because the refresh is complete.
+        //        ⚠ NOTHING EVER SHIPPED UNDER THIS NUMBER. This block said "RELEASED (operator,
+        //        2026-09-12)" and "1.7.8 went to the fleet" until 2026-09-13, and both were
+        //        wrong: no tag, no GitHub release and no signed APK were produced. 1.7.8 was
+        //        the development line this work rode on, exactly as originally planned, and it
+        //        went to v2.0.0 from there. v1.7.7 was the last release before v2.0.0. Do not
+        //        read the gap as a lost release, and do not restore the claim — the v2.0.0
+        //        block below has said so since it was written.
+        //
+        //        ⚠ THE UI WORK STILL ENDS AT v2.0.0. This line does not finish it — the DJI
+        //        trees owe D14 to D18 and the screen may move again.
         //
         //        versionName moves even though nothing is on the wire, for the reason recorded
         //        under v1.6.1: v1.7.7 IS TAGGED AND SHIPPED, and versionName is what a TAK
@@ -576,9 +583,35 @@ android {
         //        update — 2.0.1, 2.0.2 — not a held release.
         //
         //        ⚠ THERE IS NO v1.7.8 TAG AND NOTHING SHIPPED UNDER THAT NUMBER. It was the
-        //        development line the work rode on. The fleet went v1.7.7 -> v2.0.0.
-        versionCode 69
-        versionName "2.0.0"
+        //        development line the work rode on — see that block above.
+        //
+        // v2.0.1 — THE APPLICATION CHECKS ITS OWN CLAIMS. The first of the small updates the
+        //        operator called for when the v2.0.0 flight test was kept basic.
+        //
+        //        ⚠ EVERY ONE OF THESE IS SAFETY RULE 4. This SDK reports success for work it
+        //        did not do, and until now nothing compared the claim with the result. Three
+        //        writes are now checked against a signal that was ALREADY arriving, so no new
+        //        getter is added and no new subscription hazard comes with them:
+        //
+        //          setDisplayMode        against the live frame shape (thermal is 5:4, the
+        //                                visible stream 16:9). On a contradiction the published
+        //                                lens is corrected — that is what sent the camera point
+        //                                to the whole TAK team tagged thermal on 12 September.
+        //          setLocationAsHomePoint  against the aircraft's own home telemetry. "Home
+        //                                Point Updated" is no longer said on the callback; the
+        //                                aircraft says it. This is where RTH flies.
+        //          setDigitalZoomScale   against the camera's own zoomScale. LOG ONLY — that
+        //                                one already repairs itself on the wire and on the pill,
+        //                                so what was missing was a reason, not a fix.
+        //
+        //        Also: a PHOTO_TAKEN_DONE that names no file no longer arms "Photo Saved". The
+        //        gate existed since 12 September but covered only the spurious-failure clock,
+        //        not the pilot's notice, so a lost still could still be reported as saved when
+        //        the failure carried no description.
+        //
+        //        ⚠ NOT FLIGHT TESTED AT THE TIME OF THIS COMMIT. Built to be flown.
+        versionCode 70
+        versionName "2.0.1"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
