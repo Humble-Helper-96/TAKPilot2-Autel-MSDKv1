@@ -2938,6 +2938,29 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             cam.stopRecordVideo(camCb("stopRecordVideo"))
             return
         }
+        // ⚠ **IN STILLS MODE THIS PILL IS A SHUTTER** (operator, 2026-09-13). The pill has
+        // already changed shape and word to say so — see renderMediaMode.
+        //
+        // ⚠ NO MODE DANCE HERE, AND THAT IS THE POINT. The camera is ALREADY in stills, so the
+        // shutter is a single call with nothing to set and nothing to restore. The old
+        // on-screen shutter that was removed in v2.0.0 had to drag the camera SINGLE -> VIDEO
+        // underneath whatever it was doing; this cannot, because it only exists while the
+        // camera is in the mode it needs.
+        //
+        // ⚠ WHAT IT COSTS, RECORDED SO IT STAYS A DECISION: the pill could previously start a
+        // recording from ANY mode in one tap, by reading the mode, setting VIDEO and verifying.
+        // It no longer can while the camera is in stills. The hardware record button is the
+        // path for that, and since v2.0.7 it is one press. If that turns out to matter, put the
+        // recording back on a LONG press here rather than taking the shutter away again.
+        if (AutelProductHolder.mediaMode == MediaMode.SINGLE) {
+            AppLog.i(TAG, "tap: shutter (the camera is in SINGLE)")
+            runCatching { cam.startTakePhoto(camCb("startTakePhoto")) }
+                .onFailure {
+                    AppLog.e(TAG, "startTakePhoto threw: $it")
+                    toast("The photo could not be taken. The camera refused.")
+                }
+            return
+        }
         cam.getMediaMode(object : com.autel.common.CallbackWithOneParam<MediaMode> {
             override fun onSuccess(mode: MediaMode?) {
                 AppLog.i(TAG, "media mode before record: $mode")
@@ -3252,6 +3275,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             })
         }
         if (mode != null) announcedMediaMode = mode
+        // ⚠ THE RECORD PILL FOLLOWS THE CAMERA TOO (operator, 2026-09-13). In stills mode it is
+        // a shutter, not a record control — see onRecordToggleTapped. Driven from here rather
+        // than from the tap so it is right the moment the camera moves, including when the
+        // HARDWARE shutter moves it and this application is never asked.
+        if (::recordToggle.isInitialized) recordToggle.setPhotoMode(mode == MediaMode.SINGLE)
     }
 
     private fun renderLightsButton() {

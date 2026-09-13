@@ -52,12 +52,44 @@ class RecordToggleView @JvmOverloads constructor(
 
     private var isRecording: Boolean = false
 
+    /**
+     * True when the CAMERA is in stills mode, so this pill is a shutter rather than a record
+     * control (operator, 2026-09-13).
+     *
+     * ⚠ **THE PILL FOLLOWS THE CAMERA; IT DOES NOT SET IT.** The mode is read from the camera's
+     * own push — see [AutelProductHolder.mediaMode] — and the hardware shutter can move it
+     * without this application being asked. The pill changing shape IS the second cue that the
+     * camera is in stills: the HUD readout says it in words, this says it where the pilot's
+     * thumb already is.
+     */
+    private var photoMode: Boolean = false
+
+    fun setPhotoMode(photo: Boolean) {
+        if (photoMode == photo) return
+        photoMode = photo
+        // Owned here rather than by the caller: the description and the drawing are the same
+        // fact, and setting it from the HUD tick would rewrite it twice a second for nothing.
+        contentDescription = if (photo) "Take a photo. The camera is in photo mode."
+        else "Start or stop recording to the aircraft SD card"
+        invalidate()
+    }
+
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = pillStroke
     }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    /** The still-camera symbol for stills mode. Stroked, like the HUD readout's copy of it. */
+    private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = pillStroke
+        strokeJoin = Paint.Join.ROUND
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val glyphPath = android.graphics.Path()
+    private val glyphBox = RectF()
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         isFakeBoldText = true
         textAlign = Paint.Align.LEFT
@@ -86,6 +118,10 @@ class RecordToggleView @JvmOverloads constructor(
         val h = height.toFloat()
         val w = width.toFloat()
 
+        // ⚠ STILLS MODE TAKES THE IDLE TREATMENT AND NO COLOUR OF ITS OWN. A shutter is a
+        // momentary ACTION, not a state that is on — and red already means "the camera is
+        // writing to the card", which is the one meaning on this screen that must never be
+        // diluted. The GLYPH and the WORD carry the mode; the colour stays out of it.
         val content = if (isRecording) COLOR_RECORDING else COLOR_IDLE_CONTENT
         fillPaint.color = if (isRecording) liveFill else idleFill
         strokePaint.color = if (isRecording) COLOR_RECORDING else idleStroke
@@ -96,19 +132,28 @@ class RecordToggleView @JvmOverloads constructor(
         // to hold the left end and the text was centred in what was left, so the two moved
         // independently when the view's width changed. Measuring the pair keeps the pill
         // readable at any width the layout gives it.
-        val dotRadius = h * 0.10f
+        // In stills mode the dot becomes the still-camera symbol from [CameraGlyphs] — the SAME
+        // one the HUD's media-mode readout draws, so the pilot learns one symbol and meets it
+        // in both places.
+        val glyphSize = if (photoMode) h * 0.34f else h * 0.20f
         val gap = h * 0.16f
-        val label = "REC"
+        val label = if (photoMode) "PHOTO" else "REC"
         val textWidth = textPaint.measureText(label)
-        val groupWidth = dotRadius * 2f + gap + textWidth
+        val groupWidth = glyphSize + gap + textWidth
         val startX = (w - groupWidth) / 2f
         val cy = h / 2f
 
-        dotPaint.color = content
-        canvas.drawCircle(startX + dotRadius, cy, dotRadius, dotPaint)
+        if (photoMode) {
+            CameraGlyphs.still(glyphPath, glyphBox, startX, cy - glyphSize / 2f, glyphSize)
+            glyphPaint.color = content
+            canvas.drawPath(glyphPath, glyphPaint)
+        } else {
+            dotPaint.color = content
+            canvas.drawCircle(startX + glyphSize / 2f, cy, glyphSize / 2f, dotPaint)
+        }
 
         textPaint.color = content
         val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
-        canvas.drawText(label, startX + dotRadius * 2f + gap, textY, textPaint)
+        canvas.drawText(label, startX + glyphSize + gap, textY, textPaint)
     }
 }

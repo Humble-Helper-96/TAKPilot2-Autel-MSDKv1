@@ -157,49 +157,15 @@ class MediaModeView @JvmOverloads constructor(
     /**
      * A still camera, a movie camera, or a question mark.
      *
-     * Drawn rather than shipped as vectors so the outline pass can stroke the same path — an
-     * ImageView could not take the HUD's edge, and a bare white glyph over bright ground is the
-     * fault the outline exists to fix. `ic_camera_shutter` was deleted with the on-screen
-     * shutter pill on 2026-09-12 and is deliberately not resurrected: that was a BUTTON's icon.
+     * ⚠ THE SHAPES LIVE IN [CameraGlyphs] AND NOT HERE. The record pill becomes a shutter in
+     * stills mode and draws the same still-camera symbol; a pilot learns one symbol per mode,
+     * and two copies would drift apart the first time either file was touched alone.
      */
     private fun buildGlyph(left: Float, top: Float, size: Float) {
-        glyph.reset()
         when {
-            otherLabel != null || mode == null -> {
-                // Unknown: a question mark drawn as an arc and a dot, so it carries the outline
-                // like the other two instead of being text pretending to be a glyph.
-                val r = size * 0.22f
-                val cx = left + size / 2f
-                body.set(cx - r, top + size * 0.16f, cx + r, top + size * 0.16f + 2 * r)
-                glyph.addArc(body, 160f, 240f)
-                glyph.lineTo(cx, top + size * 0.62f)
-                glyph.moveTo(cx, top + size * 0.80f)
-                glyph.lineTo(cx, top + size * 0.84f)
-            }
-            mode == Mode.PHOTO -> {
-                // Still camera: body, the viewfinder hump on the left, and the lens.
-                val bodyTop = top + size * 0.28f
-                body.set(left + size * 0.06f, bodyTop, left + size * 0.94f, top + size * 0.86f)
-                glyph.addRoundRect(body, size * 0.10f, size * 0.10f, Path.Direction.CW)
-                glyph.moveTo(left + size * 0.28f, bodyTop)
-                glyph.lineTo(left + size * 0.36f, top + size * 0.16f)
-                glyph.lineTo(left + size * 0.60f, top + size * 0.16f)
-                glyph.lineTo(left + size * 0.68f, bodyTop)
-                glyph.addCircle(left + size * 0.50f, top + size * 0.57f, size * 0.17f,
-                    Path.Direction.CW)
-            }
-            else -> {
-                // Movie camera: body and the lens barrel pointing right, the shape every
-                // recorder glyph uses.
-                body.set(left + size * 0.06f, top + size * 0.30f, left + size * 0.66f,
-                    top + size * 0.82f)
-                glyph.addRoundRect(body, size * 0.08f, size * 0.08f, Path.Direction.CW)
-                glyph.moveTo(left + size * 0.70f, top + size * 0.46f)
-                glyph.lineTo(left + size * 0.94f, top + size * 0.32f)
-                glyph.lineTo(left + size * 0.94f, top + size * 0.80f)
-                glyph.lineTo(left + size * 0.70f, top + size * 0.66f)
-                glyph.close()
-            }
+            otherLabel != null || mode == null -> CameraGlyphs.unknown(glyph, body, left, top, size)
+            mode == Mode.PHOTO -> CameraGlyphs.still(glyph, body, left, top, size)
+            else -> CameraGlyphs.movie(glyph, body, left, top, size)
         }
     }
 }
