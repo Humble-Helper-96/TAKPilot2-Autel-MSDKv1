@@ -243,16 +243,25 @@ refresh. Checked on the controller by screenshot; NOT flight tested.
 applications, or it lands in none". The operator is taking the Autel screen to where they want
 it FIRST, then porting. Read it that way and not as drift:
 
-- The rule is NOT repealed. The DJI trees and the specification owe everything below, and the
-  debt grows with each change here. Do not let a fourth or fifth change land before it is paid.
-- **The specification is the arbiter and it is NOT yet amended.** Until it is, the Autel tree
-  is ahead of the specification, not right against it.
+- The rule is NOT repealed. The DJI trees owe everything below.
+- ✅ **THE SPECIFICATION IS AMENDED (2026-09-12) AND THE DEBT IS PAID ON THE DOCUMENT SIDE.**
+  §4.2 is two floating capsules, §4.3 is outlined text with no panels, §4.4 has the size
+  hierarchy, §4.9 has the rounded and clipped map, and §6.7 is a new section defining the pill.
+  §6.1 carries the new tokens and §7 the new dimensions. **This tree is now RIGHT against the
+  specification rather than ahead of it** — a reading of §4.3 that still expects panels is
+  reading a stale copy.
+- **What remains unpaid is the CODE in the DJI trees**, listed as D14 to D18 in the conformance
+  ledger. Those rows are two trees behind THIS tree, which is the reverse of every other row in
+  that document.
+- ⚠ **D4 IS SUPERSEDED.** The ledger closed a finding on 2026-08-14 that GAVE both DJI trees the
+  HUD panels. §4.3 has since removed panels entirely. A closed ledger row does not prove the
+  rule behind it still stands.
 - The DJI phone port has a MEASURED constraint waiting — see the height budget below.
 
 ⚠ **THE HUD PANELS ARE GONE AND THE READOUTS CARRY A BLACK OUTLINE** — see
-[OutlinedTextView]. This CONTRADICTS two MUST clauses in specification §4.3 (the panels, and
-the panel-width rule) and needs a §4.4 emphasis rule. **THE SPECIFICATION IS NOT YET AMENDED
-AND THE DJI TREES ARE NOT PORTED.**
+[OutlinedTextView]. This replaced two MUST clauses in specification §4.3 (the panels, and the
+panel-width rule) and added the §4.4 size hierarchy. **THE SPECIFICATION NOW SAYS SO; THE DJI
+TREES ARE STILL NOT PORTED.**
 
 - **The mini-map carries the same outline**, as `flightMapContainer`'s foreground
   (`bg_map_outline`), thus it follows the map to its expanded size with no second value.
