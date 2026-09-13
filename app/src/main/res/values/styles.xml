@@ -257,6 +257,19 @@
         <item name="android:textSize">@dimen/flight_readout_text_size</item>
     </style>
 
+    <!-- HUD text drawn by OutlinedTextView: a black outline replaces the drop shadow, thus the
+         shadow is switched OFF here. Leaving it on draws a halo on the outline pass too, which
+         reads as a smear rather than a border. -->
+    <style name="hudTextOutlined" parent="hudText">
+        <item name="android:shadowRadius">0</item>
+        <item name="android:shadowDx">0</item>
+        <item name="android:shadowDy">0</item>
+    </style>
+
+    <style name="flightReadoutOutlined" parent="hudTextOutlined">
+        <item name="android:textSize">@dimen/flight_readout_text_size</item>
+    </style>
+
     <!-- One cell of the flight-screen resource-monitor row (flightResourceMonitorRow). Equal
          weight + centered text is what makes the five cells land evenly spaced across the row's
          width, not just left-packed. -->

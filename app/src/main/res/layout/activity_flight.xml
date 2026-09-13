@@ -428,17 +428,26 @@
              ground (snow, wet asphalt, a white roof) washed the readouts out. The drop-shadow in
              flightReadoutText helps but is not enough on its own.
 
-             PANEL WIDTH IS THE MAP'S WIDTH, not wrap_content: the map is the widest thing in this
-             column, and matching it keeps the exposure block, the readouts and the map flush on
-             their right edge as one instrument stack. Letting the panel wrap would push it 8dp
+             BLOCK WIDTH IS THE MAP'S WIDTH, not wrap_content: the map is the widest thing in
+             this column, and matching it keeps the exposure block, the readouts and the map
+             flush on their right edge as one instrument stack. Letting it wrap would push it 8dp
              past the map on the padding alone, which reads as a misalignment. Children are
-             match_parent so they inset with the panel's padding instead of overhanging it. -->
+             match_parent so they inset with the block's padding instead of overhanging it.
+
+             ⚠ THE TRANSLUCENT PANEL IS GONE (operator, 2026-09-12) and the readouts carry a
+             BLACK OUTLINE instead — see OutlinedTextView. The panel existed to stop white text
+             washing out over snow, wet asphalt or a white roof, and it worked, but it covered
+             live video the pilot flies from; its opacity was walked 55 % to 40 % to 20 % chasing
+             that trade. An outline is legible on any background and covers only the pixels
+             around the glyphs. The padding below was supplied by the drawable and is now
+             explicit — REMOVING A BACKGROUND SILENTLY REMOVES ITS PADDING. -->
         <LinearLayout
             android:layout_width="@dimen/flight_map_size"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_hud_panel"
             android:gravity="end"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="6dp">
 
             <!-- EV compensation slider biasing the auto-exposure, with the live ISO/shutter the
                  camera chose beneath it. -->
@@ -452,14 +461,14 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
-                <TextView style="@style/hudText" android:layout_width="0dp"
+                <com.autel.sdksample.tak.OutlinedTextView style="@style/hudTextOutlined" android:layout_width="0dp"
                     android:layout_weight="1" android:gravity="start" android:text="-2" />
 
-                <TextView style="@style/hudText" android:layout_width="0dp"
+                <com.autel.sdksample.tak.OutlinedTextView style="@style/hudTextOutlined" android:layout_width="0dp"
                     android:layout_weight="1" android:gravity="center"
                     android:letterSpacing="0.08" android:text="EV" android:textColor="@color/tp_accent" />
 
-                <TextView style="@style/hudText" android:layout_width="0dp"
+                <com.autel.sdksample.tak.OutlinedTextView style="@style/hudTextOutlined" android:layout_width="0dp"
                     android:layout_weight="1" android:gravity="end" android:text="+2" />
             </LinearLayout>
 
@@ -493,17 +502,17 @@
                  Seconds are the whole point — without them it cannot resolve the delay it exists
                  to show. It was monospace so the digits would not jitter as they change width;
                  dropped 2026-08-04 (operator) to match the rest of the HUD. -->
-            <TextView
+            <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvClock"
-                style="@style/flightReadoutText"
+                style="@style/flightReadoutOutlined"
                 android:layout_marginTop="10dp"
                 android:layout_marginBottom="4dp"
                 android:gravity="end"
                 android:text="" />
 
-            <TextView
+            <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvOverlayText"
-                style="@style/flightReadoutText"
+                style="@style/flightReadoutOutlined"
                 android:layout_marginBottom="4dp"
                 android:gravity="end"
                 android:text="" />
@@ -512,9 +521,9 @@
                  Its own view so it can carry the same accuracy colour as the crosshair centre
                  ring: placement error scales as 1/sin^2(pitch), so a shallow angle is a real
                  accuracy warning rather than decoration. -->
-            <TextView
+            <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvGimbalPitch"
-                style="@style/flightReadoutText"
+                style="@style/flightReadoutOutlined"
                 android:gravity="end"
                 android:text="" />
         </LinearLayout>
@@ -532,14 +541,16 @@
             android:layout_weight="1" />
 
         <!-- BOTTOM HUD BLOCK, pinned above the map. Order (operator, 2026-08-04):
-             RTH, HOME, FAA. Same translucent backing as the top block, for the same reason. -->
+             RTH, HOME, FAA. Outlined text and no backing, the same as the top block — see the
+             note there and OutlinedTextView. -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="6dp"
-            android:background="@drawable/bg_hud_panel"
             android:gravity="end"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="6dp">
 
             <!-- RTH altitude the AIRCRAFT reports, never the value Pre-Flight requested.
                  This is a safety readout: on 2026-08-02 a pilot flew two sorties believing the RTH
@@ -548,27 +559,27 @@
                  reproduce exactly that failure on the flight screen.
                  Shows a dashed placeholder when the aircraft has not answered, in amber: unknown
                  must look unknown. -->
-            <TextView
+            <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvRthAltitude"
-                style="@style/flightReadoutText"
+                style="@style/flightReadoutOutlined"
                 android:layout_marginBottom="4dp"
                 android:gravity="end"
                 android:text="RTH --" />
 
             <!-- HOME distance and bearing, between RTH and the FAA label (operator, 2026-08-04).
                  Split out of fpvOverlayText so it could move down here on its own. -->
-            <TextView
+            <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvHomeDistance"
-                style="@style/flightReadoutText"
+                style="@style/flightReadoutOutlined"
                 android:layout_marginBottom="4dp"
                 android:gravity="end"
                 android:text="HOME — ft  —°T" />
 
             <!-- FAA UASFM ceiling; own view so it can turn amber/red independently. Advisory.
                  Last of the bottom group, directly above the map. -->
-            <TextView
+            <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvFaaCeiling"
-                style="@style/flightReadoutText"
+                style="@style/flightReadoutOutlined"
                 android:gravity="end"
                 android:text=""
                 android:visibility="gone" />

@@ -5,8 +5,13 @@ package com.autel.sdksample.tak
  *
  * Consumed by [ScreenCaptureEncoder], which caps the captured screen to [maxHeight] (a CEILING
  * on the vertical dimension, NOT a format — the screen's aspect ratio is preserved and the width
- * follows from it, so a 4:3 controller at the 720 tier is 960x720, not 1280x720) and encodes at
- * [fps] / [bitrateBps].
+ * follows from it, so this 4:3 controller at the 768 tier is 1024x768, not 1366x768) and encodes
+ * at [fps] / [bitrateBps].
+ *
+ * ⚠ **[maxHeight] IS SET FROM THE PANEL, NOT FROM A ROUND NUMBER.** LOW and STANDARD divide this
+ * controller's 1536-pixel height by 4 and by 2. Read the note on the constants before you change
+ * either, and re-do that arithmetic for any other panel — these values do not travel between
+ * trees.
  *
  * **Each tier carries one resolution step MORE than the DJI blueprint** (480/720/1080 here vs
  * 360/480/720 there). That extra step is bought with H.265, which delivers roughly the same
@@ -44,11 +49,66 @@ enum class TranscodeProfile(val maxHeight: Int, val fps: Int, val bitrateBps: In
     // the budget properly — 275k was NOT retried, since VBR redistributes bits rather than
     // creating them and would not rescue it.
     //
+    // ⚠ **375k -> 250k on 2026-09-12, AND THE REASON IS THE 4:1 SCALE, NOT A NEW OPINION.**
+    // Every number above was measured at 640x480. The tier is 512x384 now, which is 36 % fewer
+    // pixels, thus 375k became 0.191 bits/pixel — more precision than a frame that small can
+    // show. The operator flew it and called the picture "VERY poor, due to the very low res",
+    // which is the signal that the limit is the RESOLUTION and the extra bits buy nothing.
+    //
+    // The anchor for 250k is the flown configuration, not a guess:
+    //
+    //   640x480 @ 375k  = 0.122 bpp   flown for weeks, acceptable      (Baseline profile)
+    //   640x480 @ 275k  = 0.090 bpp   "really bad", 2026-08-01
+    //   512x384 @ 250k  = 0.127 bpp   THIS — slightly ABOVE the flown budget, at 33 % less
+    //   512x384 @ 175k  = 0.089 bpp   the floor: this is the "really bad" budget again
+    //
+    // So the picture keeps the per-pixel budget that was already accepted and gives back a
+    // third of the bandwidth — on the one tier where TOTAL bitrate is the whole point. It
+    // should in fact look better than the old 375k did, because H.264 now asks for HIGH
+    // profile and CABAC is worth another 10 to 15 % (see VideoCodec).
+    //
+    // ⚠ DO NOT GO BELOW 200k WITHOUT FLYING IT. 175k is the measured "really bad" budget and
+    // VBR cannot rescue a budget that is simply too small.
+    //
+    // LOW is STILL the richer tier per pixel, which is the design above: 0.127 against
+    // STANDARD's 0.068. Lowering the total did not flatten the curve.
+    //
     // ⚠ So the three tiers no longer share bits/pixel, and LOW can look BETTER per pixel than
     // STANDARD. That is the design, not a bug — do not "fix" it by flattening the curve.
-    LOW(480, 10, 375_000),        // marginal/cellular links — lowest total bitrate, see above
-    STANDARD(720, 15, 800_000),   // default — original target, restored once VBR fixed the pulse
-    HIGH(1080, 15, 1_800_000);    // same bits/pixel as STANDARD, at 1080p
+    //
+    // ---- INTEGER SCALING (operator, 2026-09-12) ----
+    //
+    // LOW and STANDARD now divide the panel by a WHOLE NUMBER. The controller is 2048x1536, thus:
+    //
+    //   LOW       1536 / 4 = 384   ->  512x384    (was 480 -> 640x480,  a 3.2 : 1 scale)
+    //   STANDARD  1536 / 2 = 768   ->  1024x768   (was 720 -> 960x720,  a 2.133 : 1 scale)
+    //
+    // A whole-number scale puts each output pixel over an exact block of source pixels: 4 for
+    // LOW, 16 for STANDARD... no — 2x2=4 for STANDARD and 4x4=16 for LOW. A fractional scale
+    // does not, thus each output pixel takes an uneven share of its neighbours. On camera video
+    // that is a small softness. ON TEXT IT IS NOT: the HUD readouts, the map labels and the AR
+    // callouts are thin high-contrast strokes, and an uneven share breaks a stroke into light
+    // and dark parts that also SHIMMER as the picture moves. That is the worst thing this
+    // stream does, and the reason the tiers are set from the panel and not from a round number.
+    //
+    // ⚠ THESE ARE THE ONLY TWO CLEAN STEPS THAT EXIST HERE, and the arithmetic says so:
+    // 2048 = 2^11 (no factor of 3) and 1536 = 2^9 x 3, thus every common divisor is a power of
+    // two. A 3:1 scale gives 682.67 x 512 — the height divides and the WIDTH DOES NOT, which is
+    // worse than a fractional scale on both axes, because the fault is then different in each
+    // direction. The next step, 8:1, is 256x192 and far too small to read.
+    //
+    // ⚠ HIGH CANNOT BE MADE CLEAN, and it is left alone. 1536 / 1080 is 1.422, and the only
+    // whole-number scale above 768 is 1:1 (1536), which is the whole panel at a bandwidth this
+    // fleet does not have. Do not "complete the set".
+    //
+    // The bits-per-pixel move with the pixels, at the SAME bitrate:
+    //   LOW       0.122 -> 0.191   (36 % fewer pixels, thus richer)
+    //   STANDARD  0.077 -> 0.068   (14 % more pixels, thus slightly leaner)
+    // STANDARD trades a little per-pixel budget for a clean scale. That is the judgement to
+    // re-examine if the picture is worse rather than better — see the release notes.
+    LOW(384, 10, 250_000),        // marginal/cellular links — lowest total bitrate, 4:1 scale
+    STANDARD(768, 15, 800_000),   // default — 2:1 scale, the cleanest reduction available
+    HIGH(1080, 15, 1_800_000);    // 1080p. NOT an integer scale — see the note above
 
     /** The `video_profile` pref value. Derived, so a new tier cannot be saved under a typo. */
     val prefValue: String get() = name.lowercase()

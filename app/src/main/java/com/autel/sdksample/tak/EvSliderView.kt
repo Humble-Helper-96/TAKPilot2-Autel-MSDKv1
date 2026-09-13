@@ -39,7 +39,6 @@ class EvSliderView @JvmOverloads constructor(
 
     private val density = resources.displayMetrics.density
     private val thumbRadius = 7f * density
-    private val trackInset = thumbRadius + 1f * density
     private val tickHalf = 4f * density
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -53,6 +52,34 @@ class EvSliderView @JvmOverloads constructor(
         strokeCap = Paint.Cap.ROUND
     }
     private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+
+    /**
+     * BLACK OUTLINE, the same treatment the readouts get (operator, 2026-09-12).
+     *
+     * This control sits over live video with no panel behind it any more — see
+     * [OutlinedTextView] for why the translucent backing went away. The track and the ticks are
+     * `tp_accent` and the thumb is white; over a bright scene both vanish exactly as the text
+     * did. Each shape is therefore drawn TWICE: a black pass slightly fatter, then the real
+     * colour on top.
+     *
+     * The outline width is [R.dimen.hud_text_outline_width], the same per-device dimen the text
+     * uses, so the whole HUD carries one weight of edge. It is added to BOTH sides of a stroke,
+     * thus the black line is the coloured line plus twice the outline.
+     */
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val outlineWidth = resources.getDimension(R.dimen.hud_text_outline_width)
+
+    /**
+     * ⚠ THE INSET CARRIES THE OUTLINE TOO. The thumb sits at [trackInset] from each end at the
+     * extremes of travel, and it is now drawn at [thumbRadius] PLUS the outline. Without the
+     * extra room the outlined thumb is clipped flat against the view's edge at -2 and at +2 —
+     * the same measurement fault the readouts had (2026-09-12). It is invisible mid-track,
+     * which is where a screenshot usually catches it.
+     */
+    private val trackInset = thumbRadius + 1f * density + outlineWidth
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -70,6 +97,23 @@ class EvSliderView @JvmOverloads constructor(
         val left = trackInset
         val right = width - trackInset
 
+        val fx = if (steps <= 0) 0.5f else index.toFloat() / steps
+        val thumbX = left + (right - left) * fx
+
+        // OUTLINE PASS FIRST, every shape, fattened by the outline width on each side. Drawing
+        // it per-shape rather than per-layer would let the track's black edge cut across the
+        // ticks and the thumb; one pass underneath keeps the edge outside the whole control.
+        outlinePaint.style = Paint.Style.STROKE
+        outlinePaint.strokeWidth = linePaint.strokeWidth + outlineWidth * 2f
+        canvas.drawLine(left, cy, right, cy, outlinePaint)
+        outlinePaint.strokeWidth = tickPaint.strokeWidth + outlineWidth * 2f
+        for (f in floatArrayOf(0.25f, 0.5f, 0.75f)) {
+            val x = left + (right - left) * f
+            canvas.drawLine(x, cy - tickHalf, x, cy + tickHalf, outlinePaint)
+        }
+        outlinePaint.style = Paint.Style.FILL
+        canvas.drawCircle(thumbX, cy, thumbRadius + outlineWidth, outlinePaint)
+
         // Static full-width line.
         canvas.drawLine(left, cy, right, cy, linePaint)
 
@@ -80,8 +124,6 @@ class EvSliderView @JvmOverloads constructor(
         }
 
         // Thumb.
-        val fx = if (steps <= 0) 0.5f else index.toFloat() / steps
-        val thumbX = left + (right - left) * fx
         canvas.drawCircle(thumbX, cy, thumbRadius, thumbPaint)
     }
 

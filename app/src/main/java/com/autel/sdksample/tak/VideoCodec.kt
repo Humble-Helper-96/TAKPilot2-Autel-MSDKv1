@@ -56,10 +56,33 @@ enum class VideoCodec(val mime: String, val label: String) {
      * H.264 / AVC. The compatible choice — the safe default when the viewing clients are not
      * known in advance.
      *
-     * Asks for **Baseline**, not High. Baseline has no B-frames, and that matters here beyond
-     * compatibility: B-frames reorder output, which adds latency to a feed whose whole purpose is
-     * telling a pilot what is happening now, and they complicate the RTSP packetiser's
-     * timestamping. High profile would buy some compression efficiency and cost both.
+     * ## High profile, with B-frames switched off (operator, 2026-09-12)
+     *
+     * This asked for **Baseline** until this date. The reason recorded here was B-frames: they
+     * reorder the output, which adds latency to a feed that exists to tell a pilot what happens
+     * now, and they make the packetiser's timestamps harder. That cost is real.
+     *
+     * **But the profile does not decide the B-frames.** High PERMITS them; it does not use them.
+     * `ScreenCaptureEncoder` now sets `KEY_MAX_B_FRAMES` to 0 with every format it tries, thus
+     * the encoder cannot make one whatever the profile allows. The latency property stays.
+     *
+     * What High adds, and Baseline cannot do:
+     *  - **CABAC** entropy coding. Baseline has only CAVLC. CABAC is worth 10 to 15 % of the
+     *    bitrate at the same picture, and MORE at a low bitrate.
+     *  - **The 8x8 transform.** It helps most on large flat areas and on sharp text — the sky,
+     *    the terrain and the HUD readouts, which is what this stream sends.
+     *
+     * Measured before the change: 960x720 at 15 fps and 800 kbps is 0.077 bits for each pixel.
+     * That is a low number, thus the CABAC gain is at the high end of its range.
+     *
+     * ⚠ **Compatibility does not change.** Every H.264 decoder made in the last 15 years reads
+     * High profile; it is what broadcast and streaming use. Baseline is for hardware from before
+     * that. This is not the H.265 question — see [H265].
+     *
+     * Neither profile is load-bearing: the variant ladder in [ScreenCaptureEncoder] gives up
+     * profile and level if the encoder refuses them. Look for `full (profile+level…)` in the
+     * `screen capture` log line to confirm that High was ACCEPTED, because a silent fall to a
+     * lower rung looks the same as a change that did nothing.
      */
     H264("video/avc", "H.264"),
 
@@ -83,7 +106,9 @@ enum class VideoCodec(val mime: String, val label: String) {
      */
     val profile: Int get() = when (this) {
         H265 -> MediaCodecInfo.CodecProfileLevel.HEVCProfileMain
-        H264 -> MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
+        // High, not Baseline — see the note on [H264]. Safe only while ScreenCaptureEncoder
+        // sets KEY_MAX_B_FRAMES to 0. Do not remove that line and keep this one.
+        H264 -> MediaCodecInfo.CodecProfileLevel.AVCProfileHigh
     }
 
     val level: Int get() = when (this) {

@@ -1015,7 +1015,18 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         updateAntennaAim(hud)
 
         // Same readout as the DJI blueprint, imperial throughout (see Units).
-        fpvOverlayText.text = buildString {
+        //
+        // ⚠ SPANNED, NOT A PLAIN STRING (operator, 2026-09-12). THE HEIGHT IS THE ONE NUMBER A
+        // PILOT CHECKS CONSTANTLY, and it used to be set exactly like the clock, the callsign
+        // and the coordinates — four lines of one size, so the eye had to read the block to
+        // find it. Now the height's DIGITS are large and its unit is small, and the coordinates
+        // (a reference figure, looked up only when asked for) are small. Moving the line order
+        // in 2026-08-02 was the same intent; this is the part the order alone could not do.
+        //
+        // The unit shrinks rather than the number growing alone, so the block gains only about
+        // 0.4 of a line. That matters: see the height budget on flight_map_size in dimens.xml —
+        // this column ends in the mini-map, and overflow CLIPS THE MAP SILENTLY.
+        fpvOverlayText.text = android.text.SpannableStringBuilder().apply {
             // LINE ORDER IS DELIBERATE (operator, 2026-08-02), most-glanced-at first:
             //   1 callsign + speed   2 AGL/MSL   3 lat/lon   4 home
             // Height moved up to second because it is the number a pilot checks constantly;
@@ -1029,13 +1040,28 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // point). Labelling an uncorrected figure AGL is exactly the inaccuracy the terrain
             // correction exists to remove, so the label moves with it. MSL is computed
             // separately and can be present while the first still reads ALT. See TerrainAgl.
-            if (hud != null && hud.hasFix) {
-                append("%s %s".format(
+            val heightStart = length
+            val heightText = if (hud != null && hud.hasFix) {
+                "%s %s".format(
                     Units.feet(aglReading.meters),
                     if (aglReading.terrainCorrected) "AGL" else "ALT",
-                ))
+                )
             } else {
-                append("— ft AGL")
+                "— ft AGL"
+            }
+            append(heightText)
+            // Split at the FIRST space: Units.feet is "<number> ft", so everything before it is
+            // the figure and everything after is the unit and the label. Guarded, because a
+            // format with no space would otherwise span the whole line at the large size and
+            // blow the column's height budget.
+            val unitAt = heightText.indexOf(' ')
+            if (unitAt > 0) {
+                setSpan(android.text.style.RelativeSizeSpan(HEIGHT_FIGURE_SCALE),
+                    heightStart, heightStart + unitAt,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.RelativeSizeSpan(HEIGHT_UNIT_SCALE),
+                    heightStart + unitAt, length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             // AGL AND MSL GET THEIR OWN LINES, never "AGL · MSL" on one.
             //
@@ -1048,11 +1074,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             val msl = aglReading.mslMeters
             append(if (msl != null) "%s MSL".format(Units.feet(msl)) else "— ft MSL")
             append('\n')
+            // The coordinates recede. They are the line a pilot reads only when somebody asks
+            // for them, and making them smaller is what lets the height stand out WITHOUT the
+            // block growing — see the note at the top of this builder.
+            val coordStart = length
             if (hud != null && hud.hasFix) {
                 append("%.4f, %.4f".format(hud.lat, hud.lon))
             } else {
                 append("—, —")
             }
+            setSpan(android.text.style.RelativeSizeSpan(REFERENCE_SCALE),
+                coordStart, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             // HOME used to be a fourth line here. It moved to its own view in the BOTTOM block,
             // between RTH and the FAA ceiling (operator, 2026-08-04) — it reads as return-to-home
             // information, which is what the rest of that group is.
@@ -3338,6 +3370,24 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         /** Minimum height above ground for a marker drop, feet. Below this the slant
          *  solve degenerates onto the aircraft's own position — see dropRefusalReason. */
+        /**
+         * Relative text sizes inside the telemetry readout (operator, 2026-09-12).
+         *
+         * The height's FIGURE is large and its unit small, so the eye lands on the number a
+         * pilot checks constantly instead of reading four same-sized lines to find it. The
+         * coordinates shrink because they are looked up only on request.
+         *
+         * ⚠ THESE ARE A HEIGHT BUDGET, NOT A TASTE. The HUD column ends in the mini-map and
+         * overflow clips that map SILENTLY — see flight_map_size in dimens.xml. The block is
+         * four lines; at these values it grows by about 0.4 of a line, because the unit and
+         * the coordinates give back most of what the figure takes. Raising the figure without
+         * lowering something else spends budget that the DJI phone sibling does not have.
+         * Re-measure with `dumpsys activity top` after any change here.
+         */
+        private const val HEIGHT_FIGURE_SCALE = 1.55f
+        private const val HEIGHT_UNIT_SCALE = 0.80f
+        private const val REFERENCE_SCALE = 0.85f
+
         private const val MIN_DROP_AGL_FT = 25.0
 
         /** 24-hour clock with seconds, for the HUD. Held as one instance rather than

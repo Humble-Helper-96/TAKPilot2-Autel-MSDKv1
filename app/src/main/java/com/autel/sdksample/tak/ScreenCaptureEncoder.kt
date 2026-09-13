@@ -158,6 +158,28 @@ class ScreenCaptureEncoder(
      * The profile keys are cosmetic here; the frame-rate cap is the only thing that stops the
      * encoder receiving the panel's 60fps. See the rung comment below.
      */
+    /**
+     * NO B-FRAMES (operator, 2026-09-12).
+     *
+     * A B-frame is coded from a LATER frame, thus the encoder must hold a frame back before it
+     * can send one. A pilot flying from this picture pays that delay, and it also makes the
+     * packetiser's timestamps harder.
+     *
+     * This is what lets [VideoCodec.H264] ask for HIGH profile in place of Baseline. High
+     * PERMITS a B-frame; it does not make one, and this stops the encoder from choosing one.
+     * Baseline forbade them by construction, which is why it was used before — but it also
+     * gave up CABAC and the 8x8 transform, which is real picture quality at no bandwidth.
+     *
+     * ⚠ IT GOES ON THE PROFILE RUNGS ONLY, AND THAT IS DELIBERATE. On the base format it would
+     * be on every rung, thus an encoder that refused this API-29 key would fail EVERY rung and
+     * send no video at all — worse than a soft picture. On the rungs that ask for the profile,
+     * the pairing is also correct: a rung that gives up the profile gets the encoder's own
+     * default (Baseline or Main on the components here), where B-frames were never a risk.
+     */
+    private fun noBFrames(f: MediaFormat) {
+        if (Build.VERSION.SDK_INT >= 29) f.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+    }
+
     private fun configureEncoder(
         w: Int, h: Int, withIntraRefresh: Boolean,
     ): Pair<MediaCodec, String>? {
@@ -175,6 +197,7 @@ class ScreenCaptureEncoder(
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
                     f.setInteger(MediaFormat.KEY_PROFILE, codec.profile)
                     f.setInteger(MediaFormat.KEY_LEVEL, codec.level)
+                    noBFrames(f)
                     if (Build.VERSION.SDK_INT >= 30) {
                         f.setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, profile.fps.toFloat())
                     }
@@ -183,6 +206,7 @@ class ScreenCaptureEncoder(
                     f.setInteger(MediaFormat.KEY_BITRATE_MODE, mode)
                     f.setInteger(MediaFormat.KEY_PROFILE, codec.profile)
                     f.setInteger(MediaFormat.KEY_LEVEL, codec.level)
+                    noBFrames(f)
                 },
                 // KEEP THE FRAME-RATE CAP WHEN THE PROFILE KEYS GO. Until 2026-08-30 the
                 // max-fps key was only on the rung above the two profile rungs, thus a

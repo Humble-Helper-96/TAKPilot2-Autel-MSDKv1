@@ -664,6 +664,22 @@
 	<dimen name="crosshair_ring_width">3px</dimen>
 	<dimen name="crosshair_ring_outline_width">6px</dimen>
 
+	<!-- Black outline around HUD readout glyphs — see OutlinedTextView (2026-09-12). This is
+	     the VISIBLE width; the class doubles it, because a centred stroke hides its inner half
+	     under the fill.
+
+	     ⚠ PER-DEVICE, for the same reason flight_readout_text_size is. This base bucket is for
+	     the smaller screens (and the DJI phone sibling) where the readouts are 12sp: a stroke
+	     that reads well at 18sp fills in the counters of 12sp glyphs and turns them to mud.
+	     values-w820dp (the Smart Controller V3) carries the heavier value. Re-measure on a real
+	     screen over a BRIGHT scene before changing either — that is the case this exists for.
+
+	     ⚠ THIS IS THE STROKE WIDTH AND HALF OF IT FALLS INSIDE THE LETTER. Keep it near an
+	     eighth of the text size. The first attempt used 1.8dp here and DOUBLED it in the view;
+	     on the controller that left about 1px of white inside a 5px stem and the whole readout
+	     rendered as black blobs (2026-09-12). 1.5dp is 3px against this bucket's 24px text. -->
+	<dimen name="hud_text_outline_width">1.5dp</dimen>
+
 	<!-- Warning banner — PER-DEVICE, specification §4.8 (2026-09-10). The text size, and the
 	     width the banner may take before the text wraps. Do not copy the DJI values: that
 	     screen is 768dp wide and this one is 1024dp. 15sp is what this tree always used. 480dp

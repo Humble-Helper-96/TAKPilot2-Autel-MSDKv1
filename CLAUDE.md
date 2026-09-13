@@ -114,20 +114,93 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.7.6 is OPEN on master** (versionCode 66, 2026-09-10). Three items, all bench-pending:
+**v1.7.7 is OPEN on master** (versionCode 67, from 2026-09-12). Video encoding AND the first
+step of a flight-screen refresh. Checked on the controller by screenshot; NOT flight tested.
+
+⚠ **THE HUD PANELS ARE GONE AND THE READOUTS CARRY A BLACK OUTLINE** — see
+[OutlinedTextView]. This CONTRADICTS two MUST clauses in specification §4.3 (the panels, and
+the panel-width rule) and needs a §4.4 emphasis rule. **THE SPECIFICATION IS NOT YET AMENDED
+AND THE DJI TREES ARE NOT PORTED**, thus the fleet is out of step until both happen — a UI
+change lands in all three applications or in none.
+
+- **The translucent panel behind each HUD block is removed.** It stopped white text washing
+  out over snow, wet asphalt or a white roof, and it worked — but it covered live video, and
+  its opacity had already been walked 55 % to 40 % to 20 % chasing that trade. A black
+  outline is legible on ANY background and covers only the pixels around the glyphs.
+  `OutlinedTextView` draws the text layout twice: a black stroked pass, then the fill.
+- **The height readout has a size hierarchy.** Its FIGURE is large and its unit small; the
+  coordinates shrink. `HEIGHT_FIGURE_SCALE` / `HEIGHT_UNIT_SCALE` / `REFERENCE_SCALE` in
+  `FlightActivity`. The unit and the coordinates give back most of what the figure takes, so
+  the block grows only about 0.4 of a line.
+- **The EV slider, its ticks and its thumb take the same outline**, at the same per-device
+  dimen, so the whole HUD carries one weight of edge.
+
+⚠ **THREE FAULTS WERE FOUND BY LOOKING AT THE SCREEN, AND EVERY ONE LOOKED LIKE SOMETHING
+ELSE.** Read them before touching this code:
+
+1. **The stroke was twice too wide** (taken from a CSS mockup, where the same word means the
+   visible half, then doubled again in the view). The readouts rendered as black blobs.
+   Keep the stroke near an EIGHTH of the text size.
+2. **The fill pass was not white.** `OutlinedTextView` bypasses `super.onDraw`, and that is
+   what normally sets the paint's colour from the resolved text colour — so a saved-and-
+   restored colour just carries the wrong value forward. Read `currentTextColor` at fill time.
+   This looked exactly like fault 1 and survived the first correction.
+3. **The outline was CLIPPED FLAT on the right of every line.** A TextView is measured for the
+   glyphs' advance width, which is the fill; the stroke's outer half falls outside it and the
+   canvas is clipped to the view. Half the stroke of padding on each side is the fix. The EV
+   thumb had the same fault at the ends of travel, where a mid-track screenshot hides it.
+
+⚠ **THE HEIGHT BUDGET IS NOW THE RISK FOR THE DJI PHONE PORT.** The outline padding costs
+about 1dp top and bottom on each of six views (~12dp) and the hierarchy about 5.8dp. The
+recorded headroom on a Pixel-class screen is ~19dp, and the column's failure mode is the
+mini-map being clipped SILENTLY — see `flight_map_size` in `dimens.xml`. Measure with
+`dumpsys activity top` on the phone before landing this there. This controller is 720dp and
+has hundreds of dp spare.
+
+It also carries the video work:
+
+- **H.264 asks for HIGH profile, not Baseline** (`VideoCodec.profile`). Baseline has no CABAC
+  and no 8x8 transform. Both are picture quality at NO extra bandwidth, and the gain is
+  largest at a low bit-per-pixel — this stream runs at 0.077 (960x720, 15 fps, 800 kbps).
+  ⚠ **Safe ONLY because `ScreenCaptureEncoder.noBFrames` pins `KEY_MAX_B_FRAMES` to 0.**
+  High PERMITS a B-frame; a B-frame is coded from a LATER frame, thus it delays the picture a
+  pilot flies from. The old Baseline choice forbade them by construction and gave up CABAC to
+  do it. Do not delete `noBFrames` and keep the profile. The key goes on the PROFILE RUNGS
+  only: on the base format an encoder that refused this API-29 key would fail every rung and
+  send no video at all.
+  ⚠ **NOT yet flight tested, and High is not confirmed supported on this SoC.** Check the
+  `screen capture` log line: `variant: … / full (profile+level…)` means High was ACCEPTED. A
+  silent fall to `max-fps, no profile/level` looks exactly like a change that did nothing.
+
+Decided AGAINST for this version, with reasons, so they are not re-opened:
+
+- **The IDR interval stays at 10 s.** I-frames are ~9 % of the bandwidth and 20 s would free
+  about half of that, but the operator needs QUICK JOINS for clients (2026-09-12). A late
+  viewer waiting longer for its first clean picture is not worth 4 % of bitrate.
+- **H.265 stays unselected.** It is already a pilot choice on the Video Servers screen and it
+  is the biggest gain available, but the operator will not use it until every client on the
+  net can decode HEVC (2026-09-12). This is a fleet-readiness decision, not a code one.
+
+**v1.7.6 IS COMMITTED AND BENCH TESTED, NOT RELEASED** — versionCode 66, 2026-09-12, tested
+in flight on the controller. Every item verified on hardware:
 
 - **The warning banner opens on a tap and closes on a ✕** — both §4.8 slots, ported from
   MSDKv5. `FlightWarnings.Display.all` is the open list. `FlightActivity.renderWarning` owns
   the repaint; `warningDismissedSignature` holds the closed set. ⚠ A close hides ONE SET of
   warnings and never the banner: the signature is compared on every repaint. The banner row
-  is a later `FrameLayout` child than `flightCrosshair`, thus it takes the touch and a tap on
-  a warning cannot drop a marker. Per-device sizing is in `dimens.xml` (`flight_warning_*`).
-  The Field Guide has the new "Warnings (top left)" entry; the handout was regenerated.
+  is a later `FrameLayout` child than `flightCrosshair`, thus it takes the touch. **Verified
+  in flight: two taps on a live warning, no marker dropped.** Also verified with two warnings
+  at once — BATTERY LOW took the banner from AT ALTITUDE LIMIT (worst first), the ▾ appeared,
+  and the open list showed both, battery first. Per-device sizing is in `dimens.xml`
+  (`flight_warning_*`). The Field Guide has the "Warnings (top left)" entry.
 - **`AppLog` buffers lines and keeps the public stream open.** One MediaStore open per
   archive file, not per line. Flush at 8 KB or 1 s, at once on E and FATAL, and on Clear,
   Delete and logging-off. A process the system KILLS can lose the last second of lines.
-  This is also the new `taklite-core` master; Autel conforms fully now (the AppLog drift is
-  gone). DJIv5 drifts on five files until its sync.
+  **Measured in flight with logging ON:** MediaProvider fell from 12,622 log lines to 63 and
+  left the CPU top four; janky frames 3.81 % -> 1.75 %, slow UI thread 555 -> 63, 99th
+  percentile 105 ms -> 19 ms. Logging ON is now smoother than logging OFF was before. Flush
+  on disable measured at 37 ms, nothing lost.
+  This is also the `taklite-core` master; Autel conforms fully. DJIv5 and DJIv4 are synced.
 - **A stopped stream no longer logs "connection failed"** or puts "Stream failed" on the
   status line — `AutelVideoStreamer.handleFailed` returns early on the `stopped` flag.
 

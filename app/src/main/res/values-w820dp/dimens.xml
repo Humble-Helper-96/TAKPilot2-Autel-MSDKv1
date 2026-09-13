@@ -45,4 +45,10 @@
 	<dimen name="crosshair_arm_line_width">1.875px</dimen>
 	<dimen name="crosshair_ring_width">3.75px</dimen>
 	<dimen name="crosshair_ring_outline_width">7.5px</dimen>
+
+	<!-- Heavier than the base bucket: these readouts are 18sp (36px) here, and an outline
+	     sized for 12sp disappears against a bright scene. 2dp is 4px, about an eighth of the
+	     text size — the stroke is centred, so half of that is covered by the fill. See
+	     OutlinedTextView; going much above this fills the letters in. -->
+	<dimen name="hud_text_outline_width">2dp</dimen>
 </resources>
