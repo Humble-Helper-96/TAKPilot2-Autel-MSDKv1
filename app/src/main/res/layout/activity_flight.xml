@@ -525,12 +525,12 @@
                  ⚠ UNKNOWN IS ITS OWN STATE. Amber "— MODE" until the camera answers, never
                  collapsed into one of the two real modes. Same rule as the RTH altitude and the
                  exterior lights. -->
-            <com.autel.sdksample.tak.OutlinedTextView
+            <com.autel.sdksample.tak.MediaModeView
                 android:id="@+id/fpvMediaMode"
-                style="@style/flightReadoutOutlined"
-                android:layout_marginTop="6dp"
-                android:gravity="end"
-                android:text="— MODE" />
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="6dp" />
 
             <!-- Thermal palette, under the exposure block (operator's placement, 2026-07-31).
                  It belongs with the image-quality controls rather than in the toolbar: it changes

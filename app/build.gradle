@@ -657,8 +657,34 @@ android {
         //        ⚠ The column is NOT shorter: the block loses about a line and the new readout
         //        spends most of it back. Fine here (720dp, hundreds spare); MEASURE IT on the
         //        DJI phone with `dumpsys activity top`, where the mini-map clips silently.
-        versionCode 72
-        versionName "2.0.3"
+        //
+        // v2.0.4 — THE MODE READOUT GAINS A GLYPH, AND AR GETS THE RIGHT EDGE BACK.
+        //
+        //        The media-mode readout was a word; it is now a still-camera or movie-camera
+        //        glyph AND the word, both carrying the HUD's outline (MediaModeView). Still a
+        //        READOUT — no pill, no fill, no frame. A two-position switch is the obvious
+        //        design and is wrong for the same reason the LIVE and REC knobs were: nothing
+        //        here can put the camera back in video without starting a recording.
+        //
+        //        ⚠ AR EDGE ARROWS NOW REACH THE RIGHT EDGE, UNDER THE HUD COLUMN. The clamp
+        //        excluded the column's whole WIDTH — about 208dp, a fifth of this screen, on
+        //        the edge a pilot scans most. That was correct when the readouts sat on
+        //        translucent panels; those went on 2026-09-12 and the inset outlived its
+        //        reason. Outlined text hides nothing behind it.
+        //        Opaque chrome is still excluded: the toolbar band by inset, and the MINI-MAP
+        //        BY CORNER — an arrow that would land on it is lifted just above it and keeps
+        //        its place on the edge, rather than being pushed a fifth of the screen inboard.
+        //        The map bounds are MEASURED every layout pass, so the expanded map is covered
+        //        with no second value to keep in step.
+        //
+        //        Specification §4.1 and §4.3 amended; ledger D22 and D23.
+        //
+        //        ⚠ THE COLUMN WAS MEASURED ON THE CONTROLLER at v2.0.3 with dumpsys: the
+        //        weighted spacer held 230px / 115dp of slack and the mini-map ended exactly on
+        //        the column's bottom padding. Nothing is clipped here. The DJI phone still owes
+        //        its own measurement — see ledger D20.
+        versionCode 73
+        versionName "2.0.4"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

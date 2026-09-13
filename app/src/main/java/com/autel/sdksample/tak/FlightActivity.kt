@@ -51,7 +51,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
     /** Camera media mode readout. See [renderMediaMode]. */
-    private lateinit var fpvMediaMode: TextView
+    private lateinit var fpvMediaMode: MediaModeView
     private lateinit var fpvHomeDistance: TextView
     private lateinit var fpvAntennaArc: AntennaAimView
     private lateinit var fpvFaaCeiling: TextView
@@ -318,16 +318,28 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // Load the calibrated FOV before the overlay draws anything with it.
         ArSettings.loadFov(this)
         ArSettings.loadAimOffsets(this)
-        // Chrome insets so edge arrows cannot be parked under the toolbar or the HUD column
-        // where they're invisible — the exact case (aircraft directly overhead) the indicator
-        // matters most. Measured from the real views after layout, re-read every pass, so a
-        // toolbar/HUD/map-size change cannot silently break it.
+        // Chrome insets so edge arrows cannot be parked where they are invisible — the exact
+        // case (aircraft directly overhead) the indicator matters most. Measured from the real
+        // views after layout and re-read every pass, so a toolbar or map-size change cannot
+        // silently break it. OPAQUE chrome only — see setChromeInsets.
         val toolbarView = findViewById<View>(R.id.flightToolbar)
-        val hudColumn = findViewById<View>(R.id.flightHudColumn)
         toolbarView.viewTreeObserver.addOnGlobalLayoutListener {
+            // ⚠ THE HUD COLUMN'S WIDTH USED TO BE THE RIGHT INSET AND IS NOT ANY MORE
+            // (operator, 2026-09-13). It was right while the readouts sat on translucent
+            // panels; those are gone, the column is outlined text over live video, and an arrow
+            // behind it is perfectly visible. The inset was costing about 208dp — a fifth of
+            // this screen — of the edge a pilot scans most.
+            //
+            // The MAP is still opaque, so its top-left corner goes across instead, and the
+            // arrow is lifted above it rather than pushed inboard. The map MOVES: toggleMapSize
+            // resizes it, and this listener re-reads it on every layout pass, thus the expanded
+            // map is covered with no second value to keep in step.
+            val mapOnScreen = IntArray(2).also { mapContainer.getLocationOnScreen(it) }
+            val arOnScreen = IntArray(2).also { arOverlay.getLocationOnScreen(it) }
             arOverlay.setChromeInsets(
                 top = toolbarView.height.toFloat(),
-                right = hudColumn.width.toFloat(),
+                mapLeft = (mapOnScreen[0] - arOnScreen[0]).toFloat(),
+                mapTop = (mapOnScreen[1] - arOnScreen[1]).toFloat(),
             )
             // The obstacle radar needs the TOP inset for the same reason and did not have it:
             // its top-face arc and distance label drew from the view's top edge, which put them
@@ -3148,22 +3160,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      */
     private fun renderMediaMode() {
         if (!::fpvMediaMode.isInitialized) return
-        val mode = AutelProductHolder.mediaMode
-        fpvMediaMode.text = when (mode) {
-            null -> "— MODE"
-            MediaMode.VIDEO -> "VIDEO"
-            MediaMode.SINGLE -> "PHOTO"
-            else -> mode.name
-        }
-        fpvMediaMode.setTextColor(
-            if (mode == null) androidx.core.content.ContextCompat.getColor(
-                applicationContext, R.color.tp_state_unknown)
-            else Color.WHITE)
-        fpvMediaMode.contentDescription = when (mode) {
-            null -> "Camera mode not known"
-            MediaMode.VIDEO -> "Camera is in video mode"
-            MediaMode.SINGLE -> "Camera is in photo mode"
-            else -> "Camera mode ${mode.name}"
+        when (val mode = AutelProductHolder.mediaMode) {
+            null -> fpvMediaMode.setMode(null)
+            MediaMode.VIDEO -> fpvMediaMode.setMode(MediaModeView.Mode.VIDEO)
+            MediaMode.SINGLE -> fpvMediaMode.setMode(MediaModeView.Mode.PHOTO)
+            // A mode this application does not handle — Autel Explorer can leave the camera in
+            // one — is shown by NAME rather than mapped onto one of the two it knows. Inventing
+            // a glyph for a mode the code does not handle is how a readout starts lying.
+            else -> fpvMediaMode.setMode(null, unhandledName = mode.name)
         }
     }
 
