@@ -560,8 +560,25 @@ android {
         //
         //        The Field Guide HANDOUTS are deleted, generator included. FieldGuideActivity
         //        is the guide; there is nothing left to regenerate.
-        versionCode 68
-        versionName "1.7.8"
+        //
+        // v2.0.0 — THE FLIGHT-SCREEN REFRESH IS FINISHED. RELEASED (operator, 2026-09-13).
+        //
+        //        The toolbar is two floating capsules over the video, every control in them is
+        //        one family of pills at two widths, the mini-map is rounded and clipped, and
+        //        the on-screen shutter is gone because the controller has a hardware one.
+        //
+        //        It also carries three faults found in flight on 12 September: the camera
+        //        ignores a lens change while recording and reports OK, a PHOTO_TAKEN_DONE is
+        //        not proof a photo was saved, and a lost photo was being reported to the pilot
+        //        as saved.
+        //
+        //        ⚠ THE FLIGHT TEST WAS BASIC (operator). Anything found from here takes a SMALL
+        //        update — 2.0.1, 2.0.2 — not a held release.
+        //
+        //        ⚠ THERE IS NO v1.7.8 TAG AND NOTHING SHIPPED UNDER THAT NUMBER. It was the
+        //        development line the work rode on. The fleet went v1.7.7 -> v2.0.0.
+        versionCode 69
+        versionName "2.0.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

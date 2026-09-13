@@ -114,21 +114,25 @@ version applied only while v1.6.0 was open; it is spent. New work takes a new ve
 
 v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channel selection.
 
-**v1.7.8 IS RELEASED** — tag `v1.7.8`, versionCode 68, 2026-09-12. The flight-screen refresh,
-part one. ⚠ **NOT FLIGHT TESTED as a build** — checked on the controller by screenshot, and the
-three camera faults in it were found in flight on the release day.
+**v2.0.0 IS RELEASED** — tag `v2.0.0`, versionCode 69, 2026-09-13. The flight-screen refresh,
+finished. Basic flight test by the operator before release.
 
-⚠ **THE UI WORK STILL ENDS AT v2.0.0 (operator).** This release does not finish it: the DJI
-trees owe D14 to D18, and the screen may move again before 2.0.0. An earlier note here said
-1.7.8 must never be released; the operator released it on 2026-09-12 and that instruction is
-spent. New work takes a new version.
+⚠ **FULL DEBUGGING IS DEFERRED, BY THE OPERATOR'S CALL.** The flight test was basic. Anything
+found from here takes a SMALL update (2.0.1, 2.0.2 …), not a held release. Do not treat an
+open finding as a reason to withhold the next fix.
 
-The versionName had to move off 1.7.7 even though nothing changed on the wire, for the reason
-recorded under v1.6.1: **v1.7.7 is tagged and shipped**, and versionName is what a TAK server's
-Connected Users panel shows for this client. A development build still calling itself 1.7.7 is
+⚠ **THERE IS NO v1.7.8 IN THE FIELD AND NO `v1.7.8` TAG.** The fleet went from v1.7.7 to
+v2.0.0. A commit of 2026-09-12 (`5e01e12`) said 1.7.8 "goes to the fleet" and corrected the
+notes to match, but no tag, no GitHub release and no signed APK were ever produced, so nothing
+shipped under that number. 1.7.8 was the development line the work rode on, exactly as
+originally planned. Do not read the gap as a lost release.
+
+The versionName had to move off 1.7.7 during development even though nothing changed on the
+wire, for the reason recorded under v1.6.1: versionName is what a TAK server's Connected Users
+panel shows for this client, so a development build still calling itself 1.7.7 is
 indistinguishable from the released one in the one place the fleet looks.
 
-In v1.7.8 so far:
+In v2.0.0:
 
 - **The toolbar is TWO FLOATING CAPSULES over the video** — status on the left, actions on the
   right — and the solid blue bar is gone (`bg_toolbar` deleted). `bg_hud_capsule` is the fill,
