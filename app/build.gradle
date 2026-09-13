@@ -749,8 +749,41 @@ android {
         //        "in video" — on a CHANGE only, never on the first answer at connect. The
         //        readout says what it is; this says it just moved, which is the half a pilot
         //        busy flying will otherwise miss.
-        versionCode 76
-        versionName "2.0.7"
+        //
+        // v2.0.8 — THE OBSTACLE INDICATORS ARE A GRADIENT, NOT AN ARC.
+        //
+        //        The GUI refresh reaches the avoidance display. Each face is now a translucent
+        //        wash bleeding in from its edge, reaching DEEPER into the screen and getting
+        //        LESS transparent as the obstacle closes. An arc had to be READ — found at the
+        //        edge, its thickness judged; a wash is seen without being looked at, in the
+        //        pilot's peripheral vision, while their eyes are on the centre of the frame.
+        //
+        //        ⚠ DEPTH RUNS ON t SQUARED. Linear spent its travel in the far field, because
+        //        the thresholds are 39 ft and 13 ft: measured on the controller it went 5 % of
+        //        the screen at 39 ft to 19 % at 13 ft and then only 19 % to 25 % across the
+        //        whole danger range. Two faces at 7.0 ft and 1.6 ft drew 456px and 515px and
+        //        read as the same severity. Squared gives 14 % at 13 ft and 24 % at contact.
+        //        ⚠ ALPHA STAYS LINEAR — depth carries the urgency, opacity carries presence.
+        //        ⚠ WARN_CM AND DANGER_CM ARE UNCHANGED. Those are flight-validated thresholds
+        //        that decide WHEN a warning exists; only the curve between them is a feel
+        //        question.
+        //
+        //        ⚠ CAPPED BELOW OPAQUE (185/255). This covers live video, and a pilot steering
+        //        away from an obstacle has to see what they are steering INTO.
+        //
+        //        The top band starts at the TRUE top edge and draws behind the toolbar capsules
+        //        — they float, so a wash starting below them looked like it came from nowhere.
+        //        It is topInset PLUS the depth, because at 39 ft the depth alone is about 38dp
+        //        against a 60dp toolbar and the whole band would hide. The LABEL still clears
+        //        the chrome, which is what topInset was fed to this view for.
+        //
+        //        The distance label is AMBER ON RED and no longer white on black: it was reading
+        //        as one more HUD readout on the display that most needs telling apart from them.
+        //        The pair is fixed — the band says how bad, the label says what it is.
+        //
+        //        Specification §4.13 is new; §4.1 and §6.1 renamed off "arc". Ledger D24.
+        versionCode 77
+        versionName "2.0.8"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

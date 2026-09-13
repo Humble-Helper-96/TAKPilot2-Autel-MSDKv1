@@ -2,22 +2,34 @@ package com.autel.sdksample.tak
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.ContextCompat
 import com.autel.sdksample.R
 
 /**
- * Obstacle proximity drawn as arcs on the edges of the FPV, one per aircraft face.
+ * Obstacle proximity drawn as a translucent gradient bleeding in from the edge nearest the
+ * hazard, one per aircraft face.
  *
- * MODELLED ON AUTEL EXPLORER, deliberately. The operator flew Explorer immediately after a wall
- * strike on this app and its HUD did the job well: an arc bowing in from the edge nearest the
- * obstacle, with the distance printed on it, amber at moderate range and red when close. Copying
- * a proven safety display beats inventing one, and a pilot who switches between the two apps
- * should not have to learn two visual languages for the same hazard.
+ * ⚠ **IT WAS AN ARC UNTIL 2026-09-13** — a stroked bow springing in from the edge with the
+ * distance on a filled pill, copied from Autel Explorer after a wall strike because copying a
+ * proven safety display beat inventing one. The operator replaced it in the GUI refresh with a
+ * gradient: a wash that grows DEEPER into the screen and LESS transparent as the obstacle gets
+ * closer.
+ *
+ * The reason it is better is the reason the arc was chosen in the first place, carried further.
+ * An arc had to be READ — found at the edge, its thickness and colour judged. A gradient is
+ * seen without being looked at, in the pilot's peripheral vision, while their eyes are on the
+ * subject in the centre of the frame. Closing rate becomes a thing that grows toward you rather
+ * than a line that thickens.
+ *
+ * ⚠ **IT COVERS LIVE VIDEO, WHICH IS WHY IT STAYS TRANSLUCENT AT ITS WORST.** This is the same
+ * trade the HUD panels lost in §4.3 — but it resolves the other way here, and deliberately: a
+ * panel covered the picture ALL THE TIME to make text legible, while this appears only when
+ * something is within [WARN_CM] and the thing it covers is the direction of the hazard. It is
+ * still capped below opaque, because a pilot steering away from an obstacle must be able to see
+ * what they are steering INTO.
  *
  * FOUR EDGES PLUS AN EXPLICIT REAR READOUT. The aircraft reports six faces. Left, right, up and
  * down map to screen edges the way Explorer draws them — keeping that shared visual language
@@ -60,19 +72,56 @@ class ObstacleEdgeView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
+
+    /** Fills the gradient band. The shader carries the colour; [Paint.setAlpha] modulates it. */
+    private val washPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    /**
+     * ⚠ FOUR SHADERS, BUILT ONCE, REUSED FOR EVER — see the no-allocation rule below.
+     *
+     * Each is a unit-length ramp (0..1) in one direction for one colour, and the LOCAL MATRIX
+     * stretches it to the band's current depth and points it at the right edge. Rebuilding a
+     * LinearGradient per face per frame would allocate on a view that redraws at the radar's
+     * push rate, on the one display that must never stutter.
+     *
+     * Three stops, not two. A straight ramp to transparent BANDS visibly over live video on this
+     * panel; the extra stop at the half-way point bends the falloff so the dense part hugs the
+     * edge and the tail fades out of notice.
+     */
+    private val washShaders = HashMap<Int, android.graphics.LinearGradient>(4)
+    private val washMatrix = android.graphics.Matrix()
+    /**
+     * ⚠ **AMBER ON RED, NOT THE HUD'S WHITE ON BLACK** (operator, 2026-09-13). Every other
+     * readout on this screen is white text with a black outline, and the obstacle distance was
+     * reading as one more of them — on the one display whose whole job is to be told apart from
+     * the others at a glance, while the pilot's eyes are on the centre of the frame.
+     *
+     * ⚠ THE PAIR IS FIXED AND DOES NOT FOLLOW THE STATE. The BAND behind it already carries
+     * amber-or-red; a label that changed with it would say the same thing twice and would stop
+     * being a constant thing the eye can learn. This says "obstacle"; the wash says "how bad".
+     */
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = ContextCompat.getColor(context, R.color.tp_hud_obstacle_warn)
         textAlign = Paint.Align.CENTER
         isFakeBoldText = true
     }
-    private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val rect = RectF()
+    /** The RED pass behind the amber distance text — see textPaint for why it is not the HUD's
+     *  black. It keeps the HUD's WIDTH (`hud_text_outline_width`), so the screen still carries
+     *  one edge weight even where it does not carry one edge colour. */
+    private val textOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.tp_hud_obstacle_danger)
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+        style = Paint.Style.STROKE
+        strokeWidth = resources.getDimension(R.dimen.hud_text_outline_width)
+        strokeJoin = Paint.Join.ROUND
+    }
 
     // Reused across draws. This view redraws at the radar's push rate, so onDraw must not
-    // allocate: the chevron Path is reset and refilled, and one FontMetrics is filled in place
-    // (the `fontMetrics` property allocates a fresh object on every read).
+    // allocate: the chevron Path is reset and refilled, and the gradient shaders are built once
+    // and re-aimed with a matrix rather than rebuilt. The FontMetrics that used to live here
+    // went with the label's pill — outlined text needs no box measured around it.
     private val chevronPath = android.graphics.Path()
-    private val fontMetrics = Paint.FontMetrics()
 
     /**
      * Feeds the latest radar sample. Safe to call at the sensor's own rate.
@@ -148,56 +197,118 @@ class ObstacleEdgeView @JvmOverloads constructor(
 
     private enum class Side { LEFT, RIGHT, TOP, BOTTOM }
 
+    /**
+     * One face, as a gradient bleeding in from its edge.
+     *
+     * Two things move with the distance and they are the whole design:
+     *
+     *  - **DEPTH.** The band reaches further toward the centre of the screen as the obstacle
+     *    gets closer. That is the part a pilot reads without looking — something growing toward
+     *    them from the side the hazard is on.
+     *  - **OPACITY.** It also gets less transparent, so a distant obstacle is a hint and a near
+     *    one is hard to ignore.
+     *
+     * Colour keeps the flight-validated meaning it had as an arc: amber beyond [DANGER_CM], red
+     * inside it. The step is deliberately hard rather than a blend — "you are now close" is a
+     * different statement from "something is there", and a pilot must be able to tell which one
+     * they are being given at a glance.
+     *
+     * ⚠ **THE BAND SPANS THE WHOLE EDGE**, where the arc covered 0.62 of it. An arc needed ends
+     * to read as an arc; a wash does not, and a full edge says "this side" more plainly than a
+     * centred smear. The TOP band still starts below [topInset] for the reason that inset
+     * exists — the one face whose warning means "you are about to hit something above you" was
+     * the one drawn under the toolbar.
+     */
     private fun drawEdge(canvas: Canvas, e: Edge, side: Side, w: Float, h: Float) {
         val cm = e.cm ?: return
         if (cm == CLEAR || cm > WARN_CM) return          // nothing worth showing
 
-        // Nearer = more opaque, thicker and redder. A binary red/not-red gives the pilot no
-        // sense of closing rate, which is the thing they actually steer on.
         val t = (1f - (cm.toFloat() / WARN_CM)).coerceIn(0f, 1f)
-        arcPaint.color = if (cm <= DANGER_CM) COLOR_DANGER else COLOR_WARN
-        arcPaint.alpha = (90 + 165 * t).toInt().coerceAtMost(255)
-        arcPaint.strokeWidth = dp(5f) + dp(9f) * t
+        val danger = cm <= DANGER_CM
+        val color = if (danger) COLOR_DANGER else COLOR_WARN
 
-        val bow = dp(26f) + dp(30f) * t                 // how far the arc bows inward
-        val inset = dp(4f)
-        val span = 0.62f                                // fraction of the edge the arc covers
+        // ⚠ **DEPTH RUNS ON t SQUARED, AND THAT IS THE WHOLE POINT OF THE CONTROL** (operator,
+        // 2026-09-13). A linear ramp spends its travel in the far field, because WARN_CM is
+        // 39 ft and DANGER_CM is 13 ft: measured on the controller it went 5 % of the screen at
+        // 39 ft to 19 % at 13 ft, and then only 19 % to 25 % across the ENTIRE danger range. Two
+        // faces at 7.0 ft and 1.6 ft drew 456px and 515px — four times the distance, thirteen
+        // per cent of the difference — and read as the same severity.
+        //
+        // Squaring redistributes it where a pilot needs it: about 14 % at 13 ft and 24 % at
+        // contact, ten points of travel across the danger range instead of six, and a quieter
+        // far field where an obstacle 39 ft away should be a hint rather than a wash.
+        //
+        // ⚠ ALPHA STAYS LINEAR. Depth carries the urgency; opacity carries presence. Squaring
+        // both would make a distant obstacle both thin AND nearly invisible, and the far-field
+        // warning still has to register at the edge.
+        val depthT = t * t
+        // A fraction of the dimension the band grows ALONG, so it reads the same on a 1024dp
+        // controller and a phone — §7 forbids carrying a dp value between screens.
+        val along = if (side == Side.LEFT || side == Side.RIGHT) w else h
+        val depth = along * (MIN_DEPTH_FRAC + (MAX_DEPTH_FRAC - MIN_DEPTH_FRAC) * depthT)
+        val vertical = side == Side.TOP || side == Side.BOTTOM
+        // ⚠ THE TOP BAND STARTS AT THE TRUE TOP EDGE AND DRAWS BEHIND THE TOOLBAR (operator,
+        // 2026-09-13). The capsules float with video between and around them, so a wash that
+        // begins below them reads as starting from nowhere; beginning at the edge is what makes
+        // it look like it is coming from outside the frame.
+        //
+        // ⚠ **IT IS topInset PLUS THE DEPTH, NOT THE DEPTH.** The chrome would otherwise eat
+        // the band: at 39 ft the depth is about 38dp against a 60dp toolbar, so the whole thing
+        // would hide behind the capsules and the one face that means "you are about to hit
+        // something above you" would show nothing at all. Adding the inset keeps the VISIBLE
+        // depth below the chrome equal to every other edge's.
+        val topSpan = if (side == Side.TOP) topInset + depth else depth
 
-        val cx: Float; val cy: Float
+        washPaint.shader = washShader(vertical, danger, color).also { sh ->
+            washMatrix.reset()
+            when (side) {
+                Side.LEFT -> washMatrix.setScale(depth, 1f)
+                Side.RIGHT -> { washMatrix.setScale(-depth, 1f); washMatrix.postTranslate(w, 0f) }
+                Side.TOP -> washMatrix.setScale(1f, topSpan)
+                Side.BOTTOM -> { washMatrix.setScale(1f, -depth); washMatrix.postTranslate(0f, h) }
+            }
+            sh.setLocalMatrix(washMatrix)
+        }
+        washPaint.alpha = (MIN_WASH_ALPHA + (MAX_WASH_ALPHA - MIN_WASH_ALPHA) * t).toInt()
+
+        val labelX: Float; val labelY: Float
         when (side) {
             Side.LEFT -> {
-                val len = h * span
-                rect.set(inset - bow, (h - len) / 2f, inset + bow, (h + len) / 2f)
-                canvas.drawArc(rect, -70f, 140f, false, arcPaint)
-                cx = inset + bow + dp(20f); cy = h / 2f
+                canvas.drawRect(0f, 0f, depth, h, washPaint)
+                labelX = dp(LABEL_INSET); labelY = h / 2f
             }
             Side.RIGHT -> {
-                val len = h * span
-                rect.set(w - inset - bow, (h - len) / 2f, w - inset + bow, (h + len) / 2f)
-                canvas.drawArc(rect, 110f, 140f, false, arcPaint)
-                cx = w - inset - bow - dp(20f); cy = h / 2f
+                canvas.drawRect(w - depth, 0f, w, h, washPaint)
+                labelX = w - dp(LABEL_INSET); labelY = h / 2f
             }
             Side.TOP -> {
-                // Pushed below the toolbar by [topInset]. Without it the arc and its distance
-                // label drew from the view's top edge and sat underneath the toolbar, so the one
-                // face whose warning means "you are about to hit something above you" was the
-                // one the pilot could not read.
-                val len = w * span
-                val top = topInset + inset
-                rect.set((w - len) / 2f, top - bow, (w + len) / 2f, top + bow)
-                canvas.drawArc(rect, 20f, 140f, false, arcPaint)
-                cx = w / 2f; cy = top + bow + dp(22f)
+                canvas.drawRect(0f, 0f, w, topSpan, washPaint)
+                // ⚠ THE LABEL STILL CLEARS THE CHROME. The band may hide behind a capsule; the
+                // DISTANCE must not. That is the whole reason topInset was fed to this view.
+                labelX = w / 2f; labelY = topInset + dp(LABEL_INSET)
             }
             Side.BOTTOM -> {
-                val len = w * span
-                rect.set((w - len) / 2f, h - inset - bow, (w + len) / 2f, h - inset + bow)
-                canvas.drawArc(rect, 200f, 140f, false, arcPaint)
-                cx = w / 2f; cy = h - inset - bow - dp(14f)
+                canvas.drawRect(0f, h - depth, w, h, washPaint)
+                labelX = w / 2f; labelY = h - dp(LABEL_INSET)
             }
         }
-        drawLabel(canvas, cx, cy, cm)
+        washPaint.shader = null
+        drawLabel(canvas, labelX, labelY, cm)
     }
 
+    /** Cached per direction and per colour — see [washShaders]. */
+    private fun washShader(vertical: Boolean, danger: Boolean, color: Int):
+        android.graphics.LinearGradient {
+        val key = (if (vertical) 2 else 0) or (if (danger) 1 else 0)
+        return washShaders.getOrPut(key) {
+            android.graphics.LinearGradient(
+                0f, 0f, if (vertical) 0f else 1f, if (vertical) 1f else 0f,
+                intArrayOf(color, color and 0x00FFFFFF or (0x66 shl 24), color and 0x00FFFFFF),
+                floatArrayOf(0f, MID_STOP, 1f),
+                android.graphics.Shader.TileMode.CLAMP,
+            )
+        }
+    }
 
     /**
      * Rear proximity, as a captioned readout rather than an edge arc.
@@ -240,25 +351,63 @@ class ObstacleEdgeView @JvmOverloads constructor(
         drawLabel(canvas, cx, cy, cm, "REAR ")
     }
 
-    /** Distance in feet on a filled pill, matching Explorer's readout. */
+    /**
+     * Distance in feet, as OUTLINED TEXT.
+     *
+     * ⚠ IT WAS WHITE ON A FILLED PILL IN THE ARC'S COLOUR, and the pill went with the arc
+     * (2026-09-13). Two reasons. The gradient behind it already carries the colour, so a second
+     * coloured block said the same thing twice and hid more video doing it. And every other
+     * readout on this screen is outlined text over the picture — §4.3 — so the pill was the odd
+     * one out on the one display a pilot reads fastest.
+     *
+     * Same edge weight as the rest of the HUD (`hud_text_outline_width`), thus this cannot
+     * drift away from the readouts beside it.
+     */
     private fun drawLabel(canvas: Canvas, cx: Float, cy: Float, cm: Int, caption: String = "") {
         val feet = cm / CM_PER_FOOT
         val text = caption + "%.1fft".format(feet)
         textPaint.textSize = dp(15f)
-        val tw = textPaint.measureText(text)
-        val padH = dp(8f); val padV = dp(5f)
-        val fm = fontMetrics.also { textPaint.getFontMetrics(it) }
-        rect.set(cx - tw / 2f - padH, cy - (-fm.ascent) - padV,
-                 cx + tw / 2f + padH, cy + fm.descent + padV)
-        labelBg.color = arcPaint.color
-        labelBg.alpha = 235
-        canvas.drawRoundRect(rect, dp(5f), dp(5f), labelBg)
+        textOutline.textSize = dp(15f)
+        canvas.drawText(text, cx, cy, textOutline)
         canvas.drawText(text, cx, cy, textPaint)
     }
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
 
     companion object {
+        /**
+         * How deep the band reaches at its weakest and at its worst, as a FRACTION of the
+         * dimension it grows along. A fraction and not a dp: §7 forbids carrying a dp value
+         * between screens, and this has to read the same on a 1024dp controller and a phone.
+         *
+         * At WARN_CM the band is a hint at the edge; at contact it covers about a quarter of
+         * the way to the centre, which is hard to miss and still leaves the middle of the frame
+         * — where the pilot is looking — clear.
+         */
+        private const val MIN_DEPTH_FRAC = 0.05f
+        private const val MAX_DEPTH_FRAC = 0.26f
+
+        /**
+         * Opacity at the edge, weakest to worst, 0-255.
+         *
+         * ⚠ **THE TOP END IS CAPPED WELL BELOW OPAQUE ON PURPOSE.** This covers live video, and
+         * a pilot steering away from an obstacle has to see what they are steering INTO. 185 is
+         * about 73 %: unmissable, still see-through.
+         */
+        private const val MIN_WASH_ALPHA = 50f
+        private const val MAX_WASH_ALPHA = 185f
+
+        /**
+         * Where the middle gradient stop sits, and it is not decoration. A straight two-stop
+         * ramp to transparent BANDS visibly over live video; bending the falloff here keeps the
+         * dense part against the edge and fades the tail out of notice.
+         */
+        private const val MID_STOP = 0.5f
+
+        /** dp from the edge to the distance text. Clears half the text's own width, so the
+         *  centred label cannot hang off the side it belongs to. */
+        private const val LABEL_INSET = 34f
+
         /** Face reported "clear". Distinct from "no data" so the edge stops drawing. */
         private const val CLEAR = Int.MAX_VALUE
 
