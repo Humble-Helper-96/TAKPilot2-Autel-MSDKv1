@@ -597,7 +597,8 @@
         <FrameLayout
             android:id="@+id/flightMapContainer"
             android:layout_width="@dimen/flight_map_size"
-            android:layout_height="@dimen/flight_map_height">
+            android:layout_height="@dimen/flight_map_height"
+            android:foreground="@drawable/bg_map_outline">
 
             <com.autel.sdksample.tak.LockedMapView
                 android:id="@+id/flightMap"

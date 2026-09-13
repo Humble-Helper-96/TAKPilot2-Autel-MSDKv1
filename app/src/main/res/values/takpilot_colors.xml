@@ -105,6 +105,18 @@
 
     <!-- Effects -->
     <color name="tp_shadow">#CC000000</color>       <!-- HUD text drop-shadow -->
+
+    <!-- The edge every HUD element carries over live video (operator, 2026-09-12): the
+         readouts, the EV slider and the mini-map's frame. It replaced the translucent panels,
+         which covered the picture the pilot flies from.
+
+         ⚠ FULLY OPAQUE, AND THAT IS THE POINT. tp_shadow above is 80% black and reads as a
+         halo; this has to survive being HALF COVERED by the glyph fill drawn over it, so any
+         transparency here shows as a grey smear rather than a border. See OutlinedTextView.
+
+         One token for all three so the HUD carries one weight and colour of edge. The width
+         is hud_text_outline_width, which is per-device. -->
+    <color name="tp_hud_outline">#FF000000</color>
     <!-- Wash behind the flight-screen HUD text panels. 20% black: enough to lift the
          readouts off snow or wet asphalt, light enough to see movement through it.
          Flight-tuned (operator, 2026-08-04) — do not re-tune without the aircraft.

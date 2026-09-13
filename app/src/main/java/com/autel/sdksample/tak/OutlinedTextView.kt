@@ -2,7 +2,6 @@ package com.autel.sdksample.tak
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatTextView
@@ -67,6 +66,11 @@ class OutlinedTextView @JvmOverloads constructor(
     private val strokeWidthPx: Float =
         resources.getDimension(R.dimen.hud_text_outline_width)
 
+    /** One token for every HUD edge — the readouts, the EV slider and the mini-map frame.
+     *  Specification §6.1: colours come from takpilot_colors.xml, never from a literal here. */
+    private val outlineColor: Int =
+        androidx.core.content.ContextCompat.getColor(context, R.color.tp_hud_outline)
+
     init {
         // ⚠ ROOM FOR THE OUTLINE, OR IT IS CLIPPED FLAT (2026-09-12).
         //
@@ -101,7 +105,7 @@ class OutlinedTextView @JvmOverloads constructor(
         p.style = Paint.Style.STROKE
         p.strokeWidth = strokeWidthPx
         p.strokeJoin = Paint.Join.ROUND
-        p.color = Color.BLACK
+        p.color = outlineColor
         textLayout.draw(canvas)
 
         // Pass 2 — the text itself, over the outline. The fill covers the INNER half of the

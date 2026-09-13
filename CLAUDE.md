@@ -117,11 +117,27 @@ v1.6.1 is RELEASED; it carried the Field Guide rewrite AND the removal of channe
 **v1.7.7 is OPEN on master** (versionCode 67, from 2026-09-12). Video encoding AND the first
 step of a flight-screen refresh. Checked on the controller by screenshot; NOT flight tested.
 
+⚠ **AUTEL LEADS THE FLIGHT-SCREEN WORK, AND THE DJI TREES FOLLOW LATER (operator,
+2026-09-12).** This is a DELIBERATE, TEMPORARY departure from "a UI change lands in all three
+applications, or it lands in none". The operator is taking the Autel screen to where they want
+it FIRST, then porting. Read it that way and not as drift:
+
+- The rule is NOT repealed. The DJI trees and the specification owe everything below, and the
+  debt grows with each change here. Do not let a fourth or fifth change land before it is paid.
+- **The specification is the arbiter and it is NOT yet amended.** Until it is, the Autel tree
+  is ahead of the specification, not right against it.
+- The DJI phone port has a MEASURED constraint waiting — see the height budget below.
+
 ⚠ **THE HUD PANELS ARE GONE AND THE READOUTS CARRY A BLACK OUTLINE** — see
 [OutlinedTextView]. This CONTRADICTS two MUST clauses in specification §4.3 (the panels, and
 the panel-width rule) and needs a §4.4 emphasis rule. **THE SPECIFICATION IS NOT YET AMENDED
-AND THE DJI TREES ARE NOT PORTED**, thus the fleet is out of step until both happen — a UI
-change lands in all three applications or in none.
+AND THE DJI TREES ARE NOT PORTED.**
+
+- **The mini-map carries the same outline**, as `flightMapContainer`'s foreground
+  (`bg_map_outline`), thus it follows the map to its expanded size with no second value.
+- **`tp_hud_outline` is the ONE token for every HUD edge** — readouts, EV slider, map frame.
+  It is FULLY OPAQUE on purpose: the outline is half covered by the fill drawn over it, so any
+  transparency reads as a grey smear. The width is `hud_text_outline_width`, per-device.
 
 - **The translucent panel behind each HUD block is removed.** It stopped white text washing
   out over snow, wet asphalt or a white roof, and it worked — but it covered live video, and

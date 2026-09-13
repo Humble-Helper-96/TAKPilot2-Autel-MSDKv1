@@ -67,7 +67,7 @@ class EvSliderView @JvmOverloads constructor(
      * thus the black line is the coloured line plus twice the outline.
      */
     private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK
+        color = ContextCompat.getColor(context, R.color.tp_hud_outline)
         strokeCap = Paint.Cap.ROUND
     }
     private val outlineWidth = resources.getDimension(R.dimen.hud_text_outline_width)

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Black outline around the flight-screen mini-map (operator, 2026-09-12).
+
+     WHY: the map sits over live video with no panel behind it, the same as the HUD readouts
+     since the translucent blocks were removed. Its own tiles are pale — a road layer over a
+     light background — so its EDGE disappears against a bright scene exactly as the white text
+     did, and the map stops reading as a distinct instrument.
+
+     WHY THE SAME WEIGHT AS THE TEXT: hud_text_outline_width is the one per-device value the
+     whole HUD uses for its edge, so the map, the readouts and the EV slider carry a single
+     treatment rather than three values that drift apart. See OutlinedTextView.
+
+     This is the FOREGROUND of flightMapContainer, not of the map view itself. The container is
+     what toggleMapSize resizes, thus the outline follows the map to its expanded size with no
+     second value to keep in step. A GradientDrawable stroke is inset by half its width inside
+     the bounds, so unlike a Canvas stroke on text it cannot be clipped by the view edge.
+
+     Square corners on purpose: the map is a square instrument in a column of square-edged
+     readouts, and a rounded frame would read as a card sitting on the video. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <solid android:color="@android:color/transparent" />
+
+    <stroke
+        android:width="@dimen/hud_text_outline_width"
+        android:color="@color/tp_hud_outline" />
+</shape>
