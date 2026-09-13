@@ -166,7 +166,15 @@ object AutelProductHolder {
                 MediaStatus.RECORD_BUFFER_FULL -> isRecording = false
                 MediaStatus.PHOTO_TAKEN_DONE -> {
                     photoTakenFlag = true
-                    lastPhotoDoneMs = android.os.SystemClock.elapsedRealtime()
+                    // ⚠ ONLY A DONE THAT NAMES A FILE COUNTS AS A CONFIRMED CAPTURE, and this
+                    // timestamp is what decides whether a following failure is the firmware's
+                    // duplicate or a real loss. A failed shutter emits a url-less DONE and its
+                    // failure ~1 ms later; banking that as "a capture just succeeded" made the
+                    // failure look spurious and a real lost photo went to the log as INFO.
+                    // See photoDoneNamesAFile.
+                    if (photoDoneNamesAFile(detail)) {
+                        lastPhotoDoneMs = android.os.SystemClock.elapsedRealtime()
+                    }
                 }
                 else -> { /* mode/update chatter — logged above, no state change */ }
             }
@@ -185,13 +193,25 @@ object AutelProductHolder {
                     "successful capture (ignored): $desc")
                 return
             }
+            // A REAL loss, thus the pilot is told. The camera writes the thermal half of a
+            // still even when the visible half fails, so "nothing happened" is not what this
+            // looks like from the cockpit — without a notice the shutter appears to work and
+            // the frame is simply missing from the card afterwards.
+            if (desc.contains("photo", ignoreCase = true)) photoFailedFlag = true
             AppLog.w(TAG, "media state listener error: $desc")
         }
     }
 
-    /** When the camera last reported PHOTO_TAKEN_DONE (elapsedRealtime), 0 = never. See
-     *  [isSpuriousPhotoFailure]. */
+    /** When the camera last reported a PHOTO_TAKEN_DONE **that named a file**
+     *  (elapsedRealtime), 0 = never. A url-less DONE does NOT move this — see
+     *  [photoDoneNamesAFile] and [isSpuriousPhotoFailure]. */
     @Volatile private var lastPhotoDoneMs = 0L
+
+    /** Set when the camera reports a photo failure that is NOT the firmware's known duplicate.
+     *  Consumed and cleared by FlightActivity's HUD tick, which puts a refused notice on the
+     *  flight screen. Measured 2026-09-12: two stills in one flight lost their visible frame
+     *  and the card proved it — MAX_0021.JPG and MAX_0024.JPG were never written. */
+    @Volatile var photoFailedFlag: Boolean = false
 
     /**
      * The digital-zoom value the camera reported AT CONNECT, in the SDK's raw int units.

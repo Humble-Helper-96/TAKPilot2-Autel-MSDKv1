@@ -167,7 +167,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var toolbarBattery: BatteryGaugeView
     private lateinit var toolbarGps: TextView
     private lateinit var rthButton: ImageButton
-    private lateinit var shootPhotoButton: ImageButton
 
     private var codecView: AutelCodecView? = null
 
@@ -330,6 +329,57 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         irPaletteButton.setOnClickListener { onIrPaletteTapped() }
         map = findViewById(R.id.flightMap)
         mapContainer = findViewById(R.id.flightMapContainer)
+        // ROUND THE MAP ITSELF, not just its frame (operator, 2026-09-12).
+        //
+        // bg_map_outline is the container's FOREGROUND: it draws the border over the map but
+        // clips nothing, so rounding that drawable alone leaves square tiles filling the corners
+        // the border has curved away from. The clip has to happen here.
+        //
+        // This works because osmdroid's MapView draws its tiles onto the ordinary view Canvas.
+        // ⚠ IT WOULD NOT WORK FOR A SurfaceView-BACKED MAP — a surface is composited separately
+        // and a parent's outline clip does not touch it. If the map is ever swapped for one of
+        // those (MapLibre and Google Maps both use one by default), this silently stops clipping
+        // and the corners come back square while the border stays rounded.
+        //
+        // ⚠ THE CLIP RADIUS IS THE FRAME'S PLUS HALF THE STROKE. IT IS NOT hud_pill_radius.
+        //
+        // A GradientDrawable strokes a path that is INSET BY HALF THE STROKE WIDTH from the
+        // drawable's bounds, and the stroke straddles that path. So a frame declaring an 8dp
+        // corner actually presents an OUTER edge of radius 8 + strokeWidth/2, which curves away
+        // from the corner faster than an 8dp clip does. Clipping at the frame's own 8dp left a
+        // sliver of map outside the border at each corner (operator, 2026-09-12) — the map was
+        // correctly clipped and the border was correctly drawn; they simply were not the same
+        // curve.
+        //
+        // ⚠ THE CUT IS PUT ON THE STROKE'S CENTRE LINE, NOT ON ITS OUTER EDGE — that is the
+        // whole +stroke rather than +stroke/2 below.
+        //
+        // Matching the outer edge exactly was tried first and STILL left a sliver on one corner
+        // (operator, 2026-09-12). Two anti-aliased edges — the renderer's outline clip and the
+        // drawable's stroke — were being asked to agree to the pixel, and they do not have to.
+        // Landing the cut on the middle of the band instead gives half the stroke width of
+        // tolerance on EACH side: the border covers the map with room to spare, and there is
+        // still half a stroke of border inboard of the cut, so no video shows through between
+        // them either.
+        //
+        // The obvious alternative was to thicken the frame. That is rejected on purpose:
+        // hud_text_outline_width is the ONE edge weight the whole HUD shares — the readouts and
+        // the EV slider draw with it too — so widening it to fix a corner would thicken every
+        // glyph outline on the screen. This costs nothing outside the map.
+        //
+        // Both dimens are per-device (hud_text_outline_width has a values-w820dp override), thus
+        // this is computed rather than written down as a third number that would drift.
+        //
+        // A hair of pale map can still be found at one corner under magnification. Widening the
+        // frame to close it was tried and rejected — see bg_map_outline. Do not reopen it.
+        val mapFrameStroke = resources.getDimension(R.dimen.hud_text_outline_width)
+        val mapClipRadius = resources.getDimension(R.dimen.hud_pill_radius) + mapFrameStroke
+        mapContainer.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, mapClipRadius)
+            }
+        }
+        mapContainer.clipToOutline = true
         map.onDoubleTap = { toggleMapSize() }
         // Must be resolved before the map setup below, which calls applyMapZoom() and labels
         // this button.
@@ -436,11 +486,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // operator's choice of "always on" over "remember my last setting".
         arOverlay.start()
         refreshArButton()
-        shootPhotoButton = findViewById(R.id.flightShootPhotoButton)
-        shootPhotoButton.setOnClickListener {
-            AppLog.v(TAG, "tap: Photo")
-            onShootPhotoTapped()
-        }
         zoomButton.setOnClickListener {
             AppLog.v(TAG, "tap: Zoom (currently ${zoomLabel(zoomRaw)})")
             // Tap cycles 1X <-> 2X. From 4X it returns to 1X rather than stepping down,
@@ -958,14 +1003,22 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // press — so a record that failed to start, or stopped itself (card full/removed),
         // shows truthfully within a tick.
         recordToggle.setRecording(AutelProductHolder.isRecording)
-        // Shutter is locked out while recording. Shooting a still mid-record would drag the
-        // camera through VIDEO -> SINGLE -> VIDEO underneath a running recording — which at best
-        // jumps the picture the pilot and the whole TAK team are watching, and at worst
-        // interrupts the recording itself. Greyed rather than hidden so the control does not
-        // move around under the pilot's thumb.
-        shootPhotoButton.isEnabled = !AutelProductHolder.isRecording
-        shootPhotoButton.alpha = if (AutelProductHolder.isRecording) 0.4f else 1f
-        if (AutelProductHolder.photoTakenFlag) {
+        // ⚠ THIS NOTICE IS THE ONLY CONFIRMATION A PHOTO GIVES THE PILOT (2026-09-12).
+        //
+        // The on-screen shutter pill was removed — this controller has a hardware shutter, and
+        // a second way to do it was clutter on the one screen the pilot flies from. The flag
+        // behind this notice comes from the camera's own MediaStatus.PHOTO_TAKEN_DONE, thus it
+        // fires for the HARDWARE button exactly as it did for the pill. Keep it.
+        // ⚠ THE FAILURE IS CHECKED FIRST AND CLEARS BOTH FLAGS. A shutter that loses its
+        // visible frame still reports PHOTO_TAKEN_DONE, so both flags can be set for the SAME
+        // shutter — and telling the pilot "Photo Saved" for a photo that was not saved is the
+        // fault this exists to stop (measured 2026-09-12: MAX_0021 and MAX_0024 never written,
+        // and the pilot was told both were saved).
+        if (AutelProductHolder.photoFailedFlag) {
+            AutelProductHolder.photoFailedFlag = false
+            AutelProductHolder.photoTakenFlag = false
+            showNotice("The photo did not save", refused = true)
+        } else if (AutelProductHolder.photoTakenFlag) {
             AutelProductHolder.photoTakenFlag = false
             showNotice("Photo Saved")
         }
@@ -2030,14 +2083,43 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * a two-way VISIBLE/IR toggle (operator's spec). The other modes are a settings-screen
      * question, not something to cycle through blind in flight.
      *
-     * State flips only in the success callback. If the camera rejects the change the buttons
-     * keep showing what the camera is actually doing, rather than what we asked for.
+     * ⚠ **THE CAMERA WILL NOT CHANGE LENS WHILE IT IS RECORDING, AND IT SAYS `OK` ANYWAY**
+     * (measured in flight 2026-09-12). This is safety rule 4 in the flesh, and the comment that
+     * used to sit here — "if the camera rejects the change the buttons keep showing what the
+     * camera is actually doing" — was WRONG: the camera does not reject it. It accepts the call,
+     * returns success, and does nothing.
+     *
+     * The proof is the app's own frame measurements. Mid-recording, eight VISIBLE/IR toggles
+     * over 22 seconds all logged `setDisplayMode: OK` and the incoming video never once changed
+     * shape — it stayed 1920x1080. Five seconds after RECORD_STOP the same button gave
+     * `video frame size 640x512` 13 ms later, which is the thermal sensor's native size.
+     *
+     * What the pilot saw was this application letterboxing its own VISIBLE picture, because it
+     * had believed itself and applied the thermal FIT rule. Worse, and the real reason this is
+     * refused rather than merely logged: it told [TakBridgeHolder] the active lens was IR, so
+     * **the camera point went to the whole TAK team tagged as thermal, with the thermal field
+     * of view**, while the aircraft streamed visible light. That is bad geometry on everyone
+     * else's map.
+     *
+     * A read-back is NOT the fix here: `getDisplayMode` and `getIrColor` were both measured
+     * timing out 350 ms after RECORD_START, so the channel that would answer the question is
+     * itself unhealthy while recording. Refusing the request is honest, immediate and needs
+     * nothing from the camera.
+     *
+     * Otherwise, state flips only in the success callback.
      */
     private fun onIrTapped() {
         val cam = AutelProductHolder.xt706
         if (cam == null) {
             AppLog.w(TAG, "IR ignored — camera not connected (or not an XT70x)")
             toast("The camera is not connected.")
+            return
+        }
+        if (AutelProductHolder.isRecording) {
+            // Refused, not silently dropped: showNotice's refused flag is the amber transient
+            // on the flight screen, which IS in the screen capture the team sees — §4.8.
+            AppLog.w(TAG, "IR refused — the camera is recording and will ignore a lens change")
+            showNotice("Stop the recording to change the lens", refused = true)
             return
         }
         val target = if (irOn) DisplayMode.VISIBLE else DisplayMode.IR
@@ -2053,6 +2135,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *  at WHITE HOT: indexOf returns -1, and -1 + 1 is index 0. */
     private fun onIrPaletteTapped() {
         val cam = AutelProductHolder.xt706 ?: return
+        // Same refusal as the lens, same reason — see onIrTapped. This is the SAME camera
+        // channel: getIrColor was measured timing out alongside getDisplayMode 350 ms after
+        // RECORD_START. A palette that silently does not change is a smaller lie than a lens
+        // that does not change, but it is the same lie.
+        if (AutelProductHolder.isRecording) {
+            AppLog.w(TAG, "IR palette refused — the camera is recording")
+            showNotice("Stop the recording to change the palette", refused = true)
+            return
+        }
         val target = irPaletteCycle[(irPaletteCycle.indexOf(irPalette) + 1) % irPaletteCycle.size]
         cam.setIrColor(target, camCb("setIrColor($target)") {
             irPalette = target
@@ -2515,8 +2606,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * which button was pressed last — see updateHud().
      *
      * Recording needs the camera in VIDEO media mode; mirrored from the blueprint's mode dance
-     * (DJI needed a flat-mode switch first for the same reason). Mode checked per press rather
-     * than assumed, since a photo fallback (see [onShootPhotoTapped]) may have left it changed.
+     * (DJI needed a flat-mode switch first for the same reason).
+     *
+     * ⚠ **THE MODE IS READ ON EVERY PRESS, NEVER ASSUMED, AND THAT MATTERS MORE SINCE
+     * 2026-09-12.** A still leaves the camera in SINGLE if anything interrupts the return to
+     * VIDEO. The application used to be the only thing that could take a still, and it owned
+     * that dance; the on-screen shutter is now GONE and the pilot uses the controller's
+     * HARDWARE shutter, which this application neither drives nor observes. So the camera can
+     * arrive here in a mode nothing in this process chose. Do not replace this read with a
+     * cached value.
      */
     private fun onRecordToggleTapped() {
         val cam = AutelProductHolder.camera
@@ -2527,7 +2625,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
         if (AutelProductHolder.isRecording) {
             // Nothing to restore: VIDEO is the resting mode, so stopping leaves the camera
-            // exactly where it belongs and the picture does not move. See [onShootPhotoTapped].
+            // exactly where it belongs and the picture does not move.
             cam.stopRecordVideo(camCb("stopRecordVideo"))
             return
         }
@@ -2650,30 +2748,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * belongs on the photo path, not on record start/stop. Recording is the thing that must
      * stay visually still, because that is when the TAK team is watching the screen capture.
      */
-    private fun onShootPhotoTapped() {
-        val cam = AutelProductHolder.camera
-        if (cam == null) {
-            AppLog.w(TAG, "photo ignored — camera not connected")
-            toast("The camera is not connected.")
-            return
-        }
-        cam.startTakePhoto(object : CallbackWithNoParam {
-            override fun onSuccess() { AppLog.i(TAG, "startTakePhoto: OK (direct)") }
-            override fun onFailure(error: AutelError?) {
-                AppLog.i(TAG, "direct photo rejected (${error?.description}) — trying SINGLE-mode fallback")
-                cam.setMediaMode(MediaMode.SINGLE, camCb("setMediaMode(SINGLE)") {
-                    cam.startTakePhoto(camCb("startTakePhoto") {
-                        // Back to the resting mode. Delayed for the same reason the record path
-                        // waits: this camera acknowledges a mode change before it can act on it,
-                        // and the still is still being written when the shutter call returns.
-                        handler.postDelayed(
-                            { cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO rest)")) },
-                            MODE_SWITCH_SETTLE_MS)
-                    })
-                })
-            }
-        })
-    }
 
     /**
      * Drives the LIVE pill from what the stream is ACTUALLY doing, not from whether a streamer

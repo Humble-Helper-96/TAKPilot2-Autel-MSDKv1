@@ -216,8 +216,9 @@ class FieldGuideActivity : AppCompatActivity() {
      */
     private fun sectionControllerButtons() {
         section("3. The controller buttons")
-        body("These buttons do the same functions as the buttons on the screen. They are the " +
-            "most commonly used features.")
+        body("Most of these buttons do the same functions as the buttons on the screen. They " +
+            "are the most commonly used features. The shutter button and the RTH button have " +
+            "no button on the screen.")
 
         keyEntry(
             "C1",
@@ -241,6 +242,22 @@ class FieldGuideActivity : AppCompatActivity() {
             "Push it and release it. The zoom moves one level: 1X, 2X, 3X, 4X, 6X, 8X, 10X, " +
                 "12X, 16X.",
             "Push it and hold it. The zoom moves through the levels. Release it to stop.",
+        )
+
+        // The screen pill was removed on 2026-09-12: this controller has a hardware shutter,
+        // and a second way to do it was clutter on the one screen the pilot flies from. Section
+        // 3 is the ONE place a hardware mapping is written down, thus the fact moved here
+        // rather than leaving the guide with the pill.
+        keyEntry(
+            "Shutter button",
+            "Takes a photo. The app saves the photo to the card in the aircraft, not to the " +
+                "controller. The screen shows \"Photo Saved\". If the screen shows \"The photo " +
+                "did not save\", the photo is NOT on the card. Take it again.\n\n" +
+                "One press saves BOTH cameras: a normal photo and a thermal photo. It does " +
+                "this for the camera you do not see, too.\n\n" +
+                "WHILE THE AIRCRAFT RECORDS, ONE PRESS SAVES THE NORMAL PHOTO ONLY. You get " +
+                "no thermal photo until the recording stops.",
+            null,
         )
 
         keyEntry(
@@ -359,13 +376,6 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(image(R.drawable.ic_camera_shutter) to "Photo"),
-            "Photo",
-            "This button takes a photo. The app saves the photo to the card in the aircraft, " +
-                "not to the controller.",
-        )
-
-        entry(
             listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
             "Zoom",
             "Touch: changes between 1X and 2X. Touch and hold: 4X. From 4X, a touch or a " +
@@ -376,7 +386,11 @@ class FieldGuideActivity : AppCompatActivity() {
         entry(
             listOf(zoomPill("IR") to "Thermal"),
             "IR: the thermal camera",
-            "This changes the image between the normal camera and the thermal camera.",
+            "This changes the image between the normal camera and the thermal camera.\n\n" +
+                "YOU CANNOT CHANGE THE CAMERA WHILE THE AIRCRAFT RECORDS. The app tells you " +
+                "to stop the recording. The aircraft records one camera only, and it is the " +
+                "camera you were on when the recording started. Select the camera you want " +
+                "BEFORE you start to record.",
         )
 
         entry(
@@ -823,7 +837,7 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun rec(recording: Boolean): View =
         RecordToggleView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(74), dp(34))
+            layoutParams = LinearLayout.LayoutParams(dp(66), dp(34))
             setRecording(recording)
         }
 
@@ -892,7 +906,7 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun live(state: LiveToggleView.State): View =
         LiveToggleView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(82), dp(34))
+            layoutParams = LinearLayout.LayoutParams(dp(66), dp(34))
             setState(state)
         }
 

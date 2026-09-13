@@ -2,7 +2,6 @@ package com.autel.sdksample.tak
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -14,16 +13,37 @@ import androidx.core.content.ContextCompat
 import com.autel.sdksample.R
 
 /**
- * Live-stream badge — a "LIVE" pill with a fixed icon knob on the LEFT (matching
- * [RecordToggleView] so both badges read as "toggled left = off/paused"). Not a sliding switch:
- * the pill just swaps between static looks — black/gray + pause icon when off, red/white + play
- * icon when live, amber/white + a blinking sync icon while [DroneVideoStreamer] is retrying a
- * dropped RTSP connection — like the reference badge images, so "LIVE" always stays fully
- * readable instead of being covered by a moving knob.
+ * Live-stream badge — a glyph and a label, drawn as a toggle pill to the same specification as
+ * the AR, IR and exterior-lights pills beside it (operator, 2026-09-12).
  *
- * The RECONNECTING state exists so a pilot watching a network blip doesn't mistake "paused" for
- * "off" and tap LIVE expecting a fresh start — mid auto-reconnect, tapping LIVE cancels it
- * (VideoStreamerHolder.stop()), same as tapping it while live stops it.
+ * Three states: a play triangle and "LIVE" in white on the neutral pill when off, the SAME
+ * triangle and label in red when the stream is up, and a blinking sync ring with "SYNC" in
+ * amber while [VideoStreamerHolder] is retrying a dropped connection.
+ *
+ * ⚠ **THE OFF STATE KEEPS THE PLAY TRIANGLE — IT MUST NOT GO BACK TO A PAUSE GLYPH**
+ * (operator, 2026-09-12). Off and live differ by COLOUR ALONE, which is how every other pill
+ * in the capsule works: AR reads "AR" in white or in green, never "AR" against some other
+ * word. A pause glyph also said the wrong thing — it is the symbol for a stream that is
+ * SUSPENDED and could resume where it left off, while this control is stopped and starts a new
+ * stream. The triangle says what the next tap does; the colour says what is happening now.
+ *
+ * The RECONNECTING state exists so a pilot watching a network blip does not read a retry as a
+ * stopped stream and tap LIVE expecting a fresh start — mid auto-reconnect, tapping LIVE
+ * cancels it (VideoStreamerHolder.stop()), same as tapping it while live stops it. It is the
+ * one state that changes both the glyph AND the word, because it is the one state where the
+ * next tap does something other than what the triangle promises.
+ *
+ * ## It was a switch, and the knob was why
+ *
+ * See [RecordToggleView] for the whole reasoning — the two changed together. In short: a large
+ * white knob circle at one end of a round track is the universal affordance for a slider, so
+ * both controls read as something to drag. Squaring the corner alone did not fix it.
+ *
+ * ⚠ **RED AND AMBER ARE NOT GREEN, AND THAT IS THE POINT.** Green on the neighbouring pills
+ * means "this feature is on". Red here means "the picture is going out to the team" and amber
+ * means "the link dropped and we are retrying". Only the hue departs from the neighbours; the
+ * treatment — a 30 % wash, a full-strength stroke, and the content in the same colour — does
+ * not.
  */
 class LiveToggleView @JvmOverloads constructor(
     context: Context,
@@ -32,22 +52,32 @@ class LiveToggleView @JvmOverloads constructor(
 
     // Flight-tuned HUD colours, resolved once per view. Were literals here until
     // 2026-08-14 (conformance A1); the values are unchanged — see takpilot_colors.xml.
-    private val COLOR_OFF_TRACK = ContextCompat.getColor(context, R.color.tp_hud_toggle_off)
-    private val COLOR_LIVE_TRACK = ContextCompat.getColor(context, R.color.tp_hud_toggle_active)
-    private val COLOR_RECONNECT_TRACK = ContextCompat.getColor(context, R.color.tp_hud_toggle_reconnect)
+    private val COLOR_LIVE = ContextCompat.getColor(context, R.color.tp_hud_toggle_active)
+    private val COLOR_RECONNECT = ContextCompat.getColor(context, R.color.tp_hud_toggle_reconnect)
+    private val COLOR_IDLE_CONTENT = ContextCompat.getColor(context, R.color.tp_text_primary)
+
+    /** The pill's shape and idle look, shared with the drawable-backed pills beside it. */
+    private val cornerRadius = resources.getDimension(R.dimen.hud_pill_radius)
+    private val pillStroke = resources.getDimension(R.dimen.hud_pill_stroke)
+    private val idleFill = ContextCompat.getColor(context, R.color.tp_pill_idle_fill)
+    private val idleStroke = ContextCompat.getColor(context, R.color.tp_pill_idle_stroke)
+    private val liveFill = ContextCompat.getColor(context, R.color.tp_pill_live_fill)
+    private val syncFill = ContextCompat.getColor(context, R.color.tp_pill_sync_fill)
 
     enum class State { OFF, LIVE, RECONNECTING }
 
     private var state: State = State.OFF
     private var blinkOn = true
 
-    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val knobPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = pillStroke
+    }
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
         isFakeBoldText = true
-        textAlign = Paint.Align.CENTER
+        textAlign = Paint.Align.LEFT
     }
 
     private val trackRect = RectF()
@@ -99,7 +129,9 @@ class LiveToggleView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        trackRect.set(0f, 0f, w.toFloat(), h.toFloat())
+        // ⚠ INSET BY HALF THE STROKE, OR THE BORDER IS CLIPPED FLAT — see RecordToggleView.
+        val half = pillStroke / 2f
+        trackRect.set(half, half, w - half, h - half)
         textPaint.textSize = h * 0.4f
     }
 
@@ -107,63 +139,55 @@ class LiveToggleView @JvmOverloads constructor(
         super.onDraw(canvas)
         val h = height.toFloat()
         val w = width.toFloat()
-        val radius = h / 2f
 
-        val trackColor = when (state) {
-            State.LIVE -> COLOR_LIVE_TRACK
-            State.RECONNECTING -> if (blinkOn) COLOR_RECONNECT_TRACK else COLOR_OFF_TRACK
-            State.OFF -> COLOR_OFF_TRACK
+        // The blink dims the WHOLE pill back to idle, not just the glyph, so a retry reads at a
+        // glance from the same distance the solid states do.
+        val lit = state == State.LIVE || (state == State.RECONNECTING && blinkOn)
+        val content = when {
+            !lit -> COLOR_IDLE_CONTENT
+            state == State.LIVE -> COLOR_LIVE
+            else -> COLOR_RECONNECT
         }
-        trackPaint.color = trackColor
-        canvas.drawRoundRect(trackRect, radius, radius, trackPaint)
+        fillPaint.color = when {
+            !lit -> idleFill
+            state == State.LIVE -> liveFill
+            else -> syncFill
+        }
+        strokePaint.color = if (lit) content else idleStroke
+        canvas.drawRoundRect(trackRect, cornerRadius, cornerRadius, fillPaint)
+        canvas.drawRoundRect(trackRect, cornerRadius, cornerRadius, strokePaint)
 
-        // Knob sits fixed at the LEFT end in every state — matching RecordToggleView so both
-        // badges read as "toggled left = off/paused" consistently; only its icon/color changes.
-        val knobInset = h * 0.08f
-        val knobRadius = radius - knobInset
-        val knobCy = h / 2f
-        val knobCx = radius
-        canvas.drawCircle(knobCx, knobCy, knobRadius, knobPaint)
+        // Glyph and label are CENTRED AS ONE GROUP — see RecordToggleView for why.
+        val iconRadius = h * 0.13f
+        val gap = h * 0.16f
+        val label = if (state == State.RECONNECTING) "SYNC" else "LIVE"
+        val textWidth = textPaint.measureText(label)
+        val groupWidth = iconRadius * 2f + gap + textWidth
+        val startX = (w - groupWidth) / 2f
+        val cy = h / 2f
+        val iconCx = startX + iconRadius
 
-        // "LIVE" is centered in the region right of the knob, so the knob never covers it.
-        val textAreaStart = knobCx + knobRadius
-        val textCenterX = (textAreaStart + w) / 2f
-        val textY = h / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
-        canvas.drawText(if (state == State.RECONNECTING) "SYNC" else "LIVE", textCenterX, textY, textPaint)
+        textPaint.color = content
+        val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
+        canvas.drawText(label, startX + iconRadius * 2f + gap, textY, textPaint)
 
-        iconPaint.color = trackColor
-        val iconRadius = knobRadius * 0.42f
-        when (state) {
-            State.LIVE -> {
-                // Play triangle, pointing right.
-                iconPath.reset()
-                iconPath.moveTo(knobCx - iconRadius * 0.7f, knobCy - iconRadius)
-                iconPath.lineTo(knobCx - iconRadius * 0.7f, knobCy + iconRadius)
-                iconPath.lineTo(knobCx + iconRadius, knobCy)
-                iconPath.close()
-                canvas.drawPath(iconPath, iconPaint)
-            }
-            State.RECONNECTING -> {
-                // Circular reconnect arrows — a broken ring with two arrowheads.
-                sweepRect.set(knobCx - iconRadius, knobCy - iconRadius, knobCx + iconRadius, knobCy + iconRadius)
-                ringPaint.color = iconPaint.color
-                ringPaint.strokeWidth = iconRadius * 0.35f
-                canvas.drawArc(sweepRect, -30f, 150f, false, ringPaint)
-                canvas.drawArc(sweepRect, 150f, 150f, false, ringPaint)
-            }
-            State.OFF -> {
-                // Pause bars.
-                val barW = iconRadius * 0.55f
-                val gap = iconRadius * 0.35f
-                canvas.drawRect(
-                    knobCx - gap - barW, knobCy - iconRadius,
-                    knobCx - gap, knobCy + iconRadius, iconPaint
-                )
-                canvas.drawRect(
-                    knobCx + gap, knobCy - iconRadius,
-                    knobCx + gap + barW, knobCy + iconRadius, iconPaint
-                )
-            }
+        iconPaint.color = content
+        if (state == State.RECONNECTING) {
+            // Circular reconnect arrows — a broken ring with two arrowheads.
+            sweepRect.set(iconCx - iconRadius, cy - iconRadius, iconCx + iconRadius, cy + iconRadius)
+            ringPaint.color = content
+            ringPaint.strokeWidth = iconRadius * 0.35f
+            canvas.drawArc(sweepRect, -30f, 150f, false, ringPaint)
+            canvas.drawArc(sweepRect, 150f, 150f, false, ringPaint)
+        } else {
+            // Play triangle, pointing right — in BOTH the off and the live state. See the note
+            // on the class about why "off" does not get a pause glyph.
+            iconPath.reset()
+            iconPath.moveTo(iconCx - iconRadius * 0.7f, cy - iconRadius)
+            iconPath.lineTo(iconCx - iconRadius * 0.7f, cy + iconRadius)
+            iconPath.lineTo(iconCx + iconRadius, cy)
+            iconPath.close()
+            canvas.drawPath(iconPath, iconPaint)
         }
     }
 

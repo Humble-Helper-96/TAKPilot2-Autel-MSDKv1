@@ -157,9 +157,79 @@ In v1.7.8 so far:
   Guide) before the lights made a fourth, so the AR name was already wrong. The three pill
   drawables moved off raw hex onto tokens (`tp_pill_*`); the values are byte-identical and only
   the amber fill is new.
+
+⚠ **THREE FAULTS CAME OUT OF THE 12 SEPTEMBER FLIGHT, AND THE SD CARD SETTLED ALL OF THEM.**
+The logs alone were not enough for any of the three; the card is what turned an inference into
+a fact. Pull both when a camera question comes up.
+
+1. **THE CAMERA WILL NOT CHANGE LENS WHILE IT IS RECORDING, AND IT RETURNS `OK` ANYWAY.**
+   Safety rule 4 in the flesh. Eight VISIBLE/IR toggles over 22 s, every one logging
+   `setDisplayMode: OK`, and the incoming video never changed shape — it stayed 1920x1080.
+   Five seconds after RECORD_STOP the same button gave `video frame size 640x512` **13 ms**
+   later, which is the thermal sensor's native size. The pilot saw the application letterbox
+   its own VISIBLE picture, because it believed itself and applied the thermal FIT rule.
+   ⚠ The real damage was on the wire: it told the bridge the lens was IR, so **the camera point
+   went to the whole TAK team tagged thermal, with the thermal FOV**, over visible video.
+   `onIrTapped` and `onIrPaletteTapped` now REFUSE while `isRecording`, with an amber §4.8
+   notice. A read-back is NOT the fix — `getDisplayMode` and `getIrColor` were both measured
+   timing out 350 ms after RECORD_START, so the channel that would answer is itself unhealthy.
+   **Autel Explorer behaves the same way** (operator checked), thus this matches the vendor.
+
+2. **A `PHOTO_TAKEN_DONE` IS NOT PROOF A PHOTO WAS SAVED.** When the visible capture fails the
+   camera still reports DONE — with NO detail. A real capture's DONE carries a thumbnail url
+   naming the file, and is followed by a SECOND, url-less DONE. Cross-referenced with the card:
+   stills 0022/0023/0025 had a url and both halves are on the card; stills 0021 and 0024 had no
+   url and **MAX_0021.JPG and MAX_0024.JPG do not exist**.
+   ⚠ `lastPhotoDoneMs` was moved by ANY done, so a failed shutter's own failure landed ~1 ms
+   later, inside `SPURIOUS_PHOTO_FAIL_WINDOW_MS`, and a REAL loss was logged as the firmware's
+   harmless duplicate. Only a done that names a file counts now — see `photoDoneNamesAFile`,
+   pinned by four tests against these exact cases. The pilot was also told "Photo Saved" for
+   both lost photos; a real failure now shows "The photo did not save".
+
+3. **WHAT THE AIRCRAFT SAVES FOLLOWS `DisplayMode`, AND EXPLORER PROVES IT SAVES MORE THAN WE
+   ASK FOR.** `DisplayMode` has four values — VISIBLE, IR, PICTURE_IN_PICTURE, OVERLAP — and
+   this application only ever uses two. On a card written by Autel Explorer, ONE recording
+   produced three video files at the same number (`MAX_0002` / `MIX_0002` / `IRX_0002`) and ONE
+   shutter press consumed three consecutive numbers: visible, blended, thermal.
+   **OPEN QUESTION FOR v2.0.0, NOT MEASURED BY US:** selecting a blend mode appears to make the
+   camera save all three streams, for video and for stills. `IRX_0001.MP4` sitting alone on that
+   card fits it — thermal display, thermal only. If it holds, a search gets visible, thermal and
+   the blend from one recording, and the lens lock above stops mattering. It needs one test:
+   select PIP or OVERLAP, record briefly, count the files.
+   ⚠ On OUR card, with the app in VISIBLE throughout, a still outside a recording wrote BOTH
+   halves and a still DURING a recording wrote the visible only. That is what the Field Guide
+   now tells the pilot, and it is true for this application as configured — do not generalise
+   it to Explorer's configuration.
+
 - **The Field Guide mirrors all three lights states** via `lightsPill(dark)`, the way it already
   mirrored the TAK badge and the AR pill. It drew two bare white bulbs before, which disagreed
   with the screen the pilot holds.
+- **The actions capsule is ONE FAMILY OF PILLS.** LIVE and REC were fully-round switches with a
+  large white knob; the knob is what made them read as something to DRAG, and squaring the
+  corner alone did not fix it. They take the same treatment as AR — a 30 % wash, a
+  full-strength stroke, and the content in that colour — with only the hue differing, because
+  red means "going out to the team" and amber "retrying", not "this feature is on".
+  ⚠ **SIX PILLS, TWO WIDTHS, and that is a rule now** (operator): AR / zoom / IR / lights at
+  54dp, LIVE / REC at 66dp. It was 46/54/46/46/66/62. Both numbers are the measured minimum for
+  their content — 54 from the zoom pill's fractional labels, 66 from the word "SYNC" — so
+  neither collapses into the other. `hud_pill_radius` and `hud_pill_stroke` drive all six, the
+  three drawables and the two canvas views.
+- **The on-screen shutter pill is GONE.** The controller has a hardware shutter and a second way
+  to do it was clutter. ⚠ The "Photo Saved" notice STAYS and is now the hardware button's only
+  confirmation — its flag comes from the camera's own MediaStatus, so it fires either way. REC
+  still reads the media mode on EVERY press, and that matters more now, not less: the hardware
+  shutter can leave the camera in SINGLE and this application neither drives nor observes it.
+- **The mini-map has rounded corners** — `flightMapContainer` clips to a rounded outline and
+  `bg_map_outline` curves with it. ⚠ This works only because osmdroid draws tiles to the
+  ordinary Canvas; a SurfaceView-backed map is composited separately and a parent outline clip
+  does NOT touch it, so a swap would silently leave square tiles behind a rounded border. The
+  clip is `hud_pill_radius + stroke`, putting the cut on the MIDDLE of the frame's stroke — the
+  frame's outer edge is `radius + stroke/2`, not `radius`, and matching that exactly still left
+  a seam where two anti-aliased edges met. A hair is still findable under magnification;
+  widening the frame to close it was tried and REJECTED ("close enough ... dont thicken it up").
+- **The WIDE / NEAR button is a pill**, with one deliberate departure: it keeps the dark capsule
+  fill because it sits ON the map, where the pills' 20 % white wash is invisible over pale
+  street tiles. A pill's shape and hairline, a capsule's fill.
 
 **v1.7.7 IS RELEASED** — tag `v1.7.7`, versionCode 67, 2026-09-12. Video encoding AND the first
 step of the flight-screen refresh. ⚠ **NOT FLIGHT TESTED** — checked by screenshot and from the

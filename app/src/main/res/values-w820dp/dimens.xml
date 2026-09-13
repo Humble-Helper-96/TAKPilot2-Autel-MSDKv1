@@ -55,4 +55,5 @@
     <!-- The controller draws 48dp buttons in the actions capsule; 52dp is that plus the
          capsule's own vertical padding. See the base bucket for why this is a MINIMUM. -->
     <dimen name="hud_capsule_height">52dp</dimen>
+
 </resources>

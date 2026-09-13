@@ -163,6 +163,10 @@
     <color name="tp_hud_signal_poor">#F44336</color>
     <color name="tp_hud_obstacle_warn">#FFCC00</color>
     <color name="tp_hud_obstacle_danger">#FF3B30</color>
+    <!-- ⚠ NOTHING CONSUMES THIS SINCE 2026-09-12. It was the flat grey fill of the LIVE and
+         REC switches; both are now pills and take tp_pill_idle_fill like every other pill in
+         the capsule. Kept because specification §6.1 still lists it and the DJI trees still
+         draw it — it goes when they take the same change. -->
     <color name="tp_hud_toggle_off">#3A3A3A</color>
     <color name="tp_hud_toggle_active">#E53935</color>
     <color name="tp_hud_toggle_reconnect">#FFB74D</color>
@@ -188,5 +192,13 @@
     <color name="tp_pill_idle_stroke">#99FFFFFF</color>
     <color name="tp_pill_active_fill">#4D4CAF50</color>
     <color name="tp_pill_unknown_fill">#4DFFB74D</color>
+    <!-- The same 30 % wash for the two pills that report a BROADCAST state rather than a
+         feature: LIVE and REC. They are red and amber instead of green because "the picture is
+         going out to the team" and "the link dropped and we are retrying" are not the same
+         claim as "this feature is enabled" (operator, 2026-09-12). The treatment is identical
+         to the pills beside them; only the hue differs.
+         Washes of tp_hud_toggle_active and tp_hud_toggle_reconnect. -->
+    <color name="tp_pill_live_fill">#4DE53935</color>
+    <color name="tp_pill_sync_fill">#4DFFB74D</color>
 
 </resources>

@@ -717,4 +717,16 @@
 
          hud_control_radius is the matching corner. -->
     <dimen name="hud_capsule_height">44dp</dimen>
+
+    <!-- THE SHAPE OF EVERY TOGGLE PILL IN THE ACTIONS CAPSULE — AR, zoom, IR, lights, LIVE and
+         REC. Three of those are shape drawables and two are canvas views that draw their own
+         round rect, so the number had to stop living in five places.
+
+         ⚠ 8dp IS NOT hud_control_radius (20dp), AND THE DIFFERENCE IS DELIBERATE. The capsule
+         is the container and takes the large radius; the pills INSIDE it take the small one. A
+         pill at the container's radius reads as a second container rather than a control in
+         one. This is the same two-radius rule the mini-map frame follows. -->
+    <dimen name="hud_pill_radius">8dp</dimen>
+    <dimen name="hud_pill_stroke">1.5dp</dimen>
+
 </resources>

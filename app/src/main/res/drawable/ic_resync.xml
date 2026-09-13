@@ -5,8 +5,9 @@
     android:viewportHeight="24"
     android:tint="#FFFFFF">
     <!-- Video Re-Sync: circular sync arrows around a video camera.
-         Tinted white at the VECTOR level — the same mechanism ic_camera_shutter uses — rather
-         than in the layout, so the Field Guide's example renders identically to the toolbar.
+         Tinted white at the VECTOR level rather than in the layout, so the Field Guide's
+         example renders identically to the toolbar. (ic_camera_shutter was the other icon
+         drawn this way; it went with the on-screen shutter pill on 2026-09-12.)
          That guide's whole premise is that its icons ARE the app's icons; a layout-only tint
          would have quietly broken it.
          The path colours below are now overridden by the tint and kept only so the shapes stay
