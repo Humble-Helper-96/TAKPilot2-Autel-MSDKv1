@@ -255,9 +255,14 @@ it FIRST, then porting. Read it that way and not as drift:
   §6.1 carries the new tokens and §7 the new dimensions. **This tree is now RIGHT against the
   specification rather than ahead of it** — a reading of §4.3 that still expects panels is
   reading a stale copy.
-- **What remains unpaid is the CODE in the DJI trees**, listed as D14 to D18 in the conformance
-  ledger. Those rows are two trees behind THIS tree, which is the reverse of every other row in
-  that document.
+- ✅ **THE DJI CODE IS PAID TOO, 2026-09-13.** D14 to D18 landed in MSDKv5 (`7d3ec20`) and
+  MSDKv4 (`d938531`). All three applications carry the amended sections.
+  ⚠ **Both DJI ports are closed against the BUILD and not against a device** — neither a phone
+  nor an RC Plus 2 was attached. Each of those screens has a budget that fails SILENTLY, and
+  neither tree should be released until it is measured with `dumpsys activity top`.
+  ⚠ **The pill widths did NOT transfer.** MSDKv5 uses 48dp where this tree uses 54dp: its
+  toolbar had about 34dp of slack and 54dp would have cost 24dp of it. §4.2 was amended to make
+  the RULE the MUST and the numbers per-device — see finding X3.
 - ⚠ **D4 IS SUPERSEDED.** The ledger closed a finding on 2026-08-14 that GAVE both DJI trees the
   HUD panels. §4.3 has since removed panels entirely. A closed ledger row does not prove the
   rule behind it still stands.
@@ -265,8 +270,8 @@ it FIRST, then porting. Read it that way and not as drift:
 
 ⚠ **THE HUD PANELS ARE GONE AND THE READOUTS CARRY A BLACK OUTLINE** — see
 [OutlinedTextView]. This replaced two MUST clauses in specification §4.3 (the panels, and the
-panel-width rule) and added the §4.4 size hierarchy. **THE SPECIFICATION NOW SAYS SO; THE DJI
-TREES ARE STILL NOT PORTED.**
+panel-width rule) and added the §4.4 size hierarchy. **THE SPECIFICATION SAYS SO AND BOTH DJI
+TREES ARE NOW PORTED** — unmeasured on hardware, see above.
 
 - **The mini-map carries the same outline**, as `flightMapContainer`'s foreground
   (`bg_map_outline`), thus it follows the map to its expanded size with no second value.
