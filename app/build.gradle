@@ -926,8 +926,44 @@ android {
         //        would cry wolf. In the air nothing writes, so a mismatch is real.
         //        ⚠ A SWITCH THE AIRCRAFT HAS NOT REPORTED IS NOT A MISMATCH — unknown is its own
         //        state, and the next push re-asks.
-        versionCode 83
-        versionName "2.0.14"
+        //
+        // v2.1.0 — RELEASED (operator, 2026-09-13). The fourteen small updates that followed
+        //        v2.0.0 drawn into one release.
+        //
+        //        ⚠ A MINOR BUMP AND NOT A FIFTEENTH PATCH, deliberately. The standing rule was
+        //        that a finding takes a small update, and fourteen of them honoured it — but
+        //        the sum is not a patch: the obstacle display is a new visual language, the
+        //        media-mode readout and the dynamic record pill are new controls, and FIVE
+        //        specification MUSTs moved (§4.1, §4.3, §4.4, §4.13, §6.7). versionName is what
+        //        a TAK server's Connected Users panel shows, so it is the one place the fleet
+        //        reads what a controller is running: 2.0.0 -> 2.1.0 says the screen changed,
+        //        where 2.0.14 would say a bug was fixed.
+        //
+        //        What it carries, in one line each — the detail is in the v2.0.1 to v2.0.14
+        //        blocks above and must not be repeated here:
+        //
+        //          - the application verifies what the camera and the aircraft actually did
+        //            (lens, home point, zoom) instead of trusting the success callback;
+        //          - the obstacle indicators are a gradient from the edge nearest the hazard;
+        //          - the HUD says which media mode the camera is in, and the record pill
+        //            becomes a shutter in stills;
+        //          - AR markers and edge arrows reach the true screen edge;
+        //          - the hardware buttons arm when the aircraft arrives, not only at onResume;
+        //          - one press of the hardware record button records;
+        //          - the zoom survives a media-mode change;
+        //          - a video stall leaves a line in the log;
+        //          - Data Sync opens at all.
+        //
+        //        ⚠ FLIGHT TESTED ON 2026-09-13 across several sorties. Verified in the air:
+        //        the home point with 99 m of real separation, two signal losses and their
+        //        recovery, the hardware-button re-arm on a live reconnect, the AR edge arrows,
+        //        the lens checks, one-press record, the zoom restore both directions, and the
+        //        obstacle gradient against a closing wall.
+        //        ⚠ NOT EXERCISED: the airborne avoidance-mismatch banner, which needs a link
+        //        loss at altitude that returns with a setting changed. Its code path ran and
+        //        correctly found nothing to report.
+        versionCode 84
+        versionName "2.1.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
