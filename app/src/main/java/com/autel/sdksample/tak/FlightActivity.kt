@@ -3350,7 +3350,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *
      * Waits [MODE_SWITCH_SETTLE_MS] after the camera's own report of the new mode, for the
      * reason that constant exists: this camera acknowledges a change before it can act on one.
-     * [applyZoomRaw]'s own check then says in the log whether it took.
+     * [applyZoomRaw]'s own check then says in the log whether it took. Measured in flight
+     * 2026-09-13: the write was accepted 94 ms after being issued, both directions, no retry.
+     *
+     * ⚠ **THE RESTORE LANDS AFTER THE CAPTURE, AND THAT IS FINE. DO NOT "FIX" IT** (operator,
+     * 2026-09-13). The shutter fires, the camera drops to 1x, and this restores a second or so
+     * later — so the STILL on the card is taken wide while the live view comes back zoomed:
+     *
+     *     16:55:08.006  TAKEN_PHOTO
+     *     16:55:08.191  zoomScaleRaw=100 mode=SINGLE
+     *     16:55:09.439  zoomScaleRaw=200 mode=SINGLE   <- our restore
+     *     16:55:10.084  PHOTO_TAKEN_DONE (MAX_0106.JPG)
+     *
+     * It does not matter, because this is DIGITAL zoom — a crop of the same sensor read. The
+     * wide frame contains everything the zoomed one would and more, and it can be cropped
+     * afterwards at no loss. What this restores is the PILOT'S VIEW and the framing they were
+     * working to, which is the thing that was actually disrupted.
+     *
+     * So do not delay the shutter, do not reorder the write, and do not chase the capture. Each
+     * of those trades a real risk against a problem that is not one.
      */
     private fun restoreZoomAfterModeChange() {
         val intended = pendingZoomRaw
