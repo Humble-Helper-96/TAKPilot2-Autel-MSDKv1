@@ -1038,8 +1038,44 @@ android {
         //        ⚠ OFF THE UI THREAD, CACHED, AND RE-ASKED EVERY 10 s. The card repaints every
         //        1.5 s; probing inline would stall it for the timeout on every tick, and probing
         //        per paint would be a port scan of the operator's own server.
-        versionCode 87
-        versionName "2.1.3"
+        //
+        // v2.1.4 — THE PILOT CAN STOP A RETURN, AND EVERY RETURN RAISES A BANNER.
+        //
+        //        From a 12.5-hour mission: an aircraft returned home on its own for a reason the
+        //        pilot could not see, he could only fight it on the sticks, and there was no way
+        //        to cancel. Two separate faults, both ours.
+        //
+        //        ⚠ 1. THE BANNER COVERED THREE GO-HOME MODES OUT OF SIX. FlightWarnings ended
+        //        its `when` with `else -> {}`, so LOW_BATTERY, RC_LOST and EXCEED_RANGE warned
+        //        and NORMAL_GO_HOME, GO_HOME_HOVER, MISSION_GO_HOME and FlightModeShotVideoGohome
+        //        said NOTHING. The three that were covered are the three with a REASON attached;
+        //        the silent ones are the ordinary ones, and NORMAL_GO_HOME is what an RC button
+        //        press or an SDK goHome() produces. A drone flying itself with no banner reads
+        //        as a runaway. RTH_OTHER claims no reason, because the SDK gives none and a
+        //        guessed reason on a safety banner is worse than none.
+        //
+        //        ⚠ 2. AutelFlyController.cancelReturn AND cancelLand HAVE BEEN ON THE INTERFACE
+        //        THE WHOLE TIME, WITH ZERO CALL SITES. Found by sweeping the aar — standing rule
+        //        8, "three wrong 'the SDK cannot do this' calls came from auditing one
+        //        subsystem". The pilot was right that there was no way to cancel: there was no
+        //        way in THIS APPLICATION.
+        //
+        //        ⚠ CANCEL IS ALSO HOW THE STICKS COME BACK. The same mission reported that fine
+        //        adjustments were refused during a return but worked once the aircraft was
+        //        descending on its own. That is the airframe ignoring stick on the return leg
+        //        and is not ours to change — but ending the return ends it.
+        //
+        //        Both live in the RTH LONG-PRESS MENU (operator, 2026-09-14), which replaces the
+        //        long-press going straight to the home-point reset. An item appears only when it
+        //        applies.
+        //        ⚠ NO CONFIRMATION, BY THE OPERATOR'S DECISION. goHome has one; this is the UNDO
+        //        of something the aircraft started by itself, the pilot is fighting it, and a
+        //        dialog costs seconds. Choosing it from a long-press menu is already deliberate
+        //        and the §4.8 banner has been saying a return is running.
+        //        ⚠ VERIFIED AGAINST THE FLY MODE, not the callback — safety rule 4 on the
+        //        control that most needs it. Still returning after 1500ms and the pilot is told.
+        versionCode 88
+        versionName "2.1.4"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

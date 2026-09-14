@@ -494,12 +494,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.v(TAG, "RTH tapped")
             confirmRth()
         }
-        // Long-press moves the home point to WHERE THE PILOT IS STANDING (the controller's own
-        // GPS), matching the DJI blueprint's gesture. Genuinely wired, not a placeholder — see
-        // confirmResetHome() for why it must not use the aircraft's position instead.
+        // Long-press opens the RTH menu. It moved from going straight to the home-point reset
+        // on 2026-09-14, when Cancel Return needed a home — see rthMenu.
         rthButton.setOnLongClickListener {
-            AppLog.v(TAG, "RTH long-pressed — reset home point")
-            confirmResetHome()
+            AppLog.v(TAG, "RTH long-pressed — menu")
+            rthMenu()
             true
         }
 
@@ -3960,6 +3959,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          *  the delay AutelProductHolder uses for the same reason. */
         private const val LAMP_READ_DELAY_MS = 4500L
 
+        /** How long the aircraft is given to leave the go-home mode before the pilot is told
+         *  the cancel did not take. Two telemetry pushes at the bridge's 2 Hz, so a mode that
+         *  has changed has certainly been reported. */
+        private const val RTH_CANCEL_CONFIRM_MS = 1500L
+
         private const val TAG = "FlightActivity"
 
         /** Which SDK custom button drives the quick marker: "A" or "B". Set from the
@@ -4182,4 +4186,109 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         /** How long to wait for the controller's receiver to answer before giving up. */
         private const val LOCATION_TIMEOUT_MS = 12_000L
     }
+
+    /**
+     * The RTH long-press menu: cancel a return that is running, or move the home point.
+     *
+     * ⚠ **THE AIRCRAFT CAN RETURN HOME ON ITS OWN AND THIS APPLICATION COULD NOT STOP IT.**
+     * On a 12.5-hour mission an aircraft went home for a reason the pilot could not see, and he
+     * could only fight it on the sticks. `AutelFlyController.cancelReturn` has been on the
+     * interface the whole time with ZERO call sites — found by sweeping the aar (standing rule
+     * 8: "three wrong 'the SDK cannot do this' calls came from auditing one subsystem").
+     *
+     * ⚠ **CANCEL IS ALSO HOW THE PILOT GETS THE STICKS BACK.** The same mission reported that
+     * fine adjustments were refused during a return but worked once the aircraft was descending
+     * on its own. That is the airframe ignoring stick on the return leg and it is not ours to
+     * change — but ending the return ends that, and `cancelLand` does the same for the landing.
+     *
+     * ⚠ **NO CONFIRMATION, BY THE OPERATOR'S DECISION (2026-09-14).** `goHome` has one and this
+     * deliberately does not: this is the UNDO of something the aircraft started by itself, the
+     * pilot is fighting it while they read this, and a dialog costs seconds they do not have.
+     * Choosing it from a long-press menu is already a deliberate act, and the §4.8 banner has
+     * been telling them a return is running — so the tap is never blind.
+     *
+     * ⚠ **AN ITEM IS OFFERED ONLY WHEN IT APPLIES.** A menu that lists Cancel Return while
+     * nothing is returning teaches a pilot that the menu does not mean what it says, on the one
+     * screen where that must never be true.
+     */
+    private fun rthMenu() {
+        val fc = AutelProductHolder.evo2?.flyController
+        val mode = FlightWarnings.flyMode
+        val returning = FlightWarnings.returningHome(mode)
+        val landing = mode == com.autel.common.flycontroller.FlyMode.LANDING
+
+        val b = AlertDialog.Builder(this, R.style.TakDialogTheme).setTitle("Return to Home")
+        b.setMessage(when {
+            returning -> "The aircraft is returning home."
+            landing -> "The aircraft is landing."
+            else -> null
+        })
+        if (fc != null && returning) {
+            b.setPositiveButton("Cancel Return") { _, _ -> cancelReturn(fc) }
+        } else if (fc != null && landing) {
+            b.setPositiveButton("Cancel Landing") { _, _ -> cancelLanding(fc) }
+        }
+        b.setNeutralButton("Reset Home Point…") { _, _ -> confirmResetHome() }
+        b.setNegativeButton("Close", null)
+        b.show()
+    }
+
+    /**
+     * Stops a return, then CHECKS THE AIRCRAFT AGREED — safety rule 4 on the control that most
+     * needs it.
+     *
+     * The `onSuccess` here means the command was taken, not that the aircraft stopped. Truth is
+     * [FlightWarnings.returningHome] reading the fly mode off the telemetry the bridge already
+     * publishes: if the aircraft is still returning after [RTH_CANCEL_CONFIRM_MS], the pilot is
+     * told so rather than being left with a notice that says it worked.
+     */
+    private fun cancelReturn(fc: com.autel.sdk.flycontroller.AutelFlyController) {
+        AppLog.w(TAG, "CANCEL RETURN requested by the pilot (mode=${FlightWarnings.flyMode})")
+        showNotice("Cancelling the return")
+        runCatching {
+            fc.cancelReturn(object : com.autel.common.CallbackWithNoParam {
+                override fun onSuccess() { AppLog.i(TAG, "cancelReturn: accepted") }
+                override fun onFailure(error: AutelError?) {
+                    AppLog.e(TAG, "cancelReturn FAILED: ${error?.description}")
+                    runOnUiThread { showNotice("The aircraft refused to stop the return", refused = true) }
+                }
+            })
+        }.onFailure { AppLog.e(TAG, "cancelReturn threw: ${it.message}") }
+        handler.postDelayed({
+            val still = FlightWarnings.returningHome(FlightWarnings.flyMode)
+            if (still) {
+                AppLog.e(TAG, "RETURN DID NOT STOP — the aircraft is still in " +
+                    "${FlightWarnings.flyMode} ${RTH_CANCEL_CONFIRM_MS}ms after cancelReturn")
+                showNotice("The return did not stop", refused = true)
+            } else {
+                AppLog.i(TAG, "return cancelled — the aircraft is in ${FlightWarnings.flyMode}")
+                showNotice("Return cancelled. You have the aircraft.")
+            }
+        }, RTH_CANCEL_CONFIRM_MS)
+    }
+
+    /** As [cancelReturn], for the landing phase. Verified the same way. */
+    private fun cancelLanding(fc: com.autel.sdk.flycontroller.AutelFlyController) {
+        AppLog.w(TAG, "CANCEL LANDING requested by the pilot")
+        showNotice("Cancelling the landing")
+        runCatching {
+            fc.cancelLand(object : com.autel.common.CallbackWithNoParam {
+                override fun onSuccess() { AppLog.i(TAG, "cancelLand: accepted") }
+                override fun onFailure(error: AutelError?) {
+                    AppLog.e(TAG, "cancelLand FAILED: ${error?.description}")
+                    runOnUiThread { showNotice("The aircraft refused to stop the landing", refused = true) }
+                }
+            })
+        }.onFailure { AppLog.e(TAG, "cancelLand threw: ${it.message}") }
+        handler.postDelayed({
+            val still = FlightWarnings.flyMode == com.autel.common.flycontroller.FlyMode.LANDING
+            if (still) {
+                AppLog.e(TAG, "LANDING DID NOT STOP ${RTH_CANCEL_CONFIRM_MS}ms after cancelLand")
+                showNotice("The landing did not stop", refused = true)
+            } else {
+                showNotice("Landing cancelled. You have the aircraft.")
+            }
+        }, RTH_CANCEL_CONFIRM_MS)
+    }
+
 }

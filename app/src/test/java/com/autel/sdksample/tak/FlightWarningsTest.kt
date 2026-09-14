@@ -6,6 +6,7 @@ import com.autel.common.flycontroller.FlyLimitAreaWarning
 import com.autel.common.flycontroller.FlyMode
 import com.autel.common.flycontroller.MainFlyState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -251,5 +252,39 @@ class FlightWarningsTest {
         FlightWarnings.gimbalErratic = true
         FlightWarnings.onStatus(status(compassValid = false), batteryPct = 80, airborne = true)
         assertEquals(listOf("COMPASS INTERFERENCE"), FlightWarnings.displayAt(t0)!!.all)
+    }
+
+    // ---- returningHome: swept from the aar 2026-09-14, standing rule 8 ----
+
+    @Test
+    fun `every go-home mode counts as returning home`() {
+        // ⚠ THE THREE THAT WERE COVERED ARE THE THREE WITH A REASON. The ordinary ones were
+        // silent, and NORMAL_GO_HOME — what an RC button press or an SDK goHome() produces — was
+        // among them. On a 12.5-hour mission an aircraft returned home and the pilot could not
+        // see why.
+        for (m in listOf(
+            FlyMode.NORMAL_GO_HOME,
+            FlyMode.LOW_BATTERY_GO_HOME,
+            FlyMode.EXCEED_RANGE_GO_HOME,
+            FlyMode.RC_LOST_GO_HOME,
+            FlyMode.GO_HOME_HOVER,
+            FlyMode.MISSION_GO_HOME,
+            FlyMode.FlightModeShotVideoGohome,
+        )) {
+            assertTrue("$m must count as returning home", FlightWarnings.returningHome(m))
+        }
+    }
+
+    @Test
+    fun `ordinary flight is not returning home`() {
+        // The gate also decides whether the RTH menu offers Cancel Return. Offering to cancel
+        // something that is not running teaches a pilot the menu does not mean what it says.
+        for (m in listOf(
+            FlyMode.GPS_FLIGHT, FlyMode.ATTI_FLIGHT, FlyMode.TAKEOFF, FlyMode.LANDING,
+            FlyMode.DISARM, FlyMode.MOTOR_SPINNING, FlyMode.WAYPOINT_MODE, FlyMode.UNKNOWN,
+        )) {
+            assertFalse("$m must not count as returning home", FlightWarnings.returningHome(m))
+        }
+        assertFalse(FlightWarnings.returningHome(null))
     }
 }

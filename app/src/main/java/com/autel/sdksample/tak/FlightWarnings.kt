@@ -46,6 +46,10 @@ object FlightWarnings {
         RTH_BATTERY(false, "RETURNING HOME — LOW BATTERY"),
         RTH_RC_LOST(false, "RETURNING HOME — SIGNAL LOST"),
         RTH_RANGE(false, "RETURNING HOME — RANGE LIMIT"),
+        /** Any other go-home the aircraft entered. ⚠ NO REASON IS CLAIMED, because the SDK
+         *  gives none for these modes and a guessed reason on a safety banner is worse than
+         *  no reason — see [returningHome]. */
+        RTH_OTHER(false, "RETURNING HOME"),
         /** Set by AutelAvoidance when connect-time enforcement could not verify a switch
          *  against the aircraft. On flight 2026-08-13 the LANDING_PROTECT write timed out
          *  with no retry, and the aircraft flew unprotected while the app showed the
@@ -103,7 +107,19 @@ object FlightWarnings {
      * @param airborne    the PLI's own airborne test, computed in the same callback — NOT
      *   read back from the companion so this can never disagree with the frame it came with.
      */
+    /**
+     * The fly mode from the most recent status push, or null before the first one.
+     *
+     * ⚠ ONE SOURCE. The flight screen's RTH menu needs the same answer this file computes its
+     * go-home banner from — see [returningHome] — and a second copy read from somewhere else
+     * would be a second thing to keep in step on a safety control. The Hud snapshot
+     * deliberately does not carry it: this object already receives it on every push.
+     */
+    @Volatile var flyMode: com.autel.common.flycontroller.FlyMode? = null
+        private set
+
     fun onStatus(status: FlyControllerStatus, batteryPct: Int, airborne: Boolean) {
+        flyMode = status.flyMode
         val next = compute(status, batteryPct, airborne)
         synchronized(lock) {
             if (next == active) return
@@ -156,7 +172,15 @@ object FlightWarnings {
             FlyMode.LOW_BATTERY_GO_HOME -> out.add(Warning.RTH_BATTERY)
             FlyMode.RC_LOST_GO_HOME -> out.add(Warning.RTH_RC_LOST)
             FlyMode.EXCEED_RANGE_GO_HOME -> out.add(Warning.RTH_RANGE)
-            else -> {}
+            // ⚠ **EVERY OTHER GO-HOME RAISES A BANNER TOO, AND IT DID NOT UNTIL 2026-09-14.**
+            // This `when` ended in `else -> {}`, so the three named reasons warned and the rest
+            // said NOTHING. On a 12.5-hour mission an aircraft returned home on its own and the
+            // pilot could not see why — NORMAL_GO_HOME is what an RC button press or an SDK
+            // goHome() produces, and it was one of the silent ones.
+            //
+            // A drone flying itself with no banner reads as a runaway, which is the whole
+            // reason this block exists. Better a banner with no reason than no banner.
+            else -> if (returningHome(s.flyMode)) out.add(Warning.RTH_OTHER)
         }
         if (avoidanceNotApplied) out.add(Warning.AVOIDANCE_NOT_APPLIED)
         if (gimbalErratic) out.add(Warning.GIMBAL_ERRATIC)
@@ -214,4 +238,33 @@ object FlightWarnings {
     }
 
     private const val TAG = "FlightWarnings"
+
+    /**
+     * True for every FlyMode in which the aircraft is flying itself home or has arrived and is
+     * holding there.
+     *
+     * ⚠ **SWEPT FROM THE aar, NOT REMEMBERED** (2026-09-14, standing rule 8). The enum carries
+     * SIX go-home states and this application warned on three of them:
+     *
+     *     NORMAL_GO_HOME  LOW_BATTERY_GO_HOME  EXCEED_RANGE_GO_HOME
+     *     RC_LOST_GO_HOME  GO_HOME_HOVER  MISSION_GO_HOME
+     *
+     * plus FlightModeShotVideoGohome, which is a shot-video mode returning. The three that were
+     * covered are the three with a REASON attached; the ones that were silent are the ordinary
+     * ones.
+     *
+     * Also the gate for offering Cancel Return on the flight screen — the menu must not offer to
+     * cancel something that is not running.
+     */
+    fun returningHome(mode: FlyMode?): Boolean = when (mode) {
+        FlyMode.NORMAL_GO_HOME,
+        FlyMode.LOW_BATTERY_GO_HOME,
+        FlyMode.EXCEED_RANGE_GO_HOME,
+        FlyMode.RC_LOST_GO_HOME,
+        FlyMode.GO_HOME_HOVER,
+        FlyMode.MISSION_GO_HOME,
+        FlyMode.FlightModeShotVideoGohome -> true
+        else -> false
+    }
+
 }
