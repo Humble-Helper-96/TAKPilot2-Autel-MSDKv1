@@ -181,6 +181,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     private var codecView: AutelCodecView? = null
 
+    /** Watches the FPV frames arrive, so a stutter leaves a line behind. See its class note. */
+    private val frameMonitor = VideoFrameMonitor()
+
     /** Aspect ratio (w/h) of the frames the camera is currently sending; 0 until the first
      *  frame. Changes when the pilot switches photo/video/IR — see [armVideoFill].
      *
@@ -2200,7 +2203,30 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 TakBridgeHolder.setVideoAspect(aspect.toDouble())
                 runOnUiThread { applyVideoFill(view) }
             }
-            override fun onRenderFrameTimestamp(ts: Long) { /* not used */ }
+            /**
+             * ⚠ **THIS WAS DISCARDED UNTIL 2026-09-13, AND IT IS THE ONE SIGNAL A STUTTER IS
+             * MADE OF.** Three stutters were reported that afternoon and the log could not see
+             * one of them: no error, no reconnect, no stalled tick, flat CPU and GPU, and
+             * sig=100% either side of all three. A stutter is frames not arriving on time, and
+             * the callback that says when every frame arrived was being thrown away.
+             *
+             * Runs on the SDK's RENDER THREAD, once per frame, on the pipeline that must never
+             * regress — so the work is a subtraction and two comparisons, and [VideoFrameMonitor]
+             * allocates only when it has something to say. See that class for what is measured.
+             */
+            override fun onRenderFrameTimestamp(ts: Long) {
+                when (val r = frameMonitor.onFrame(SystemClock.elapsedRealtime(), ts)) {
+                    is VideoFrameMonitor.Report.Stall -> AppLog.w(TAG,
+                        "video STALL: the picture froze for ${r.gapMs}ms " +
+                            "(sdk ts step ${r.ptsDelta}" +
+                            (if (r.sinceLastStallMs >= 0) ", ${r.sinceLastStallMs}ms since the last" else ", first") +
+                            ")")
+                    is VideoFrameMonitor.Report.Summary -> AppLog.i(TAG,
+                        "video ok: %d frames in %dms (%.1f fps), worst gap %dms"
+                            .format(r.frames, r.periodMs, r.fps, r.worstGapMs))
+                    null -> Unit
+                }
+            }
         })
         view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or_, ob ->
             if (r - l != or_ - ol || b - t != ob - ot) applyVideoFill(view)
@@ -2273,6 +2299,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         codecView?.let { container.removeView(it) }
         runCatching { AutelCodecView.stopCodec() }
             .onFailure { AppLog.w(TAG, "stopCodec during resync: ${it.message}") }
+        // The gap across a rebuild is OURS, not a fault — see VideoFrameMonitor.reset.
+        frameMonitor.reset()
         codecView = AutelCodecView(this).also { container.addView(it); armVideoFill(it) }
         AppLog.i(TAG, "video resync: codec view rebuilt")
     }

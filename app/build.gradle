@@ -845,8 +845,35 @@ android {
         //        the pill was saying it twice; and a lone symbol is a stronger SILHOUETTE
         //        against REC's dot-and-word than a second word could be — which is the mode cue
         //        this pill was changed to carry in the first place.
-        versionCode 80
-        versionName "2.0.11"
+        //
+        // v2.0.12 — A STUTTER LEAVES A LINE BEHIND.
+        //
+        //        ⚠ THREE STUTTERS ON 2026-09-13 AND THE LOG COULD NOT SEE ONE OF THEM. Reported
+        //        at about 16:00, 16:03 and 16:04:45. No error, no reconnect, no stalled tick,
+        //        CPU 21-27 %, GPU 18-42 %, and sig=100% dsp=100% on every sample either side of
+        //        all three. The 2 s resource and SPI cadences never slipped. Three different
+        //        pictures for three events, which is what it looks like when the cause is below
+        //        where the instrumentation reaches.
+        //
+        //        It reached nowhere. AutelCodecView hands over a PER-FRAME callback and this
+        //        application discarded it — onRenderFrameTimestamp(ts) { /* not used */ } —
+        //        while a stutter IS frames not arriving on time. The one signal that describes
+        //        the fault was being thrown away every frame.
+        //
+        //        VideoFrameMonitor now measures the arrival gap on our own clock and carries the
+        //        SDK's timestamp step alongside it, RAW. If the two disagree the cause narrows
+        //        for free: late arrivals with evenly spaced timestamps is a link or decode
+        //        hiccup, timestamps that jump with them is the aircraft or the encoder.
+        //        ⚠ THE TIMESTAMP'S UNITS ARE NOT DOCUMENTED AND ARE NOT ASSUMED. Nothing
+        //        branches on it. Guessing a unit is how a diagnostic lies about the thing it
+        //        was added to explain.
+        //
+        //        A stall logs W with its gap; every 10 s a routine line gives frames, fps and
+        //        the worst gap, because a diagnostic that says nothing cannot be told apart from
+        //        one that is not running. Runs on the RENDER THREAD: a subtraction and two
+        //        comparisons, allocating only when it has something to say.
+        versionCode 81
+        versionName "2.0.12"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
