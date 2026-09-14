@@ -87,12 +87,33 @@ object AutelAvoidance {
                     // matches what enforcement pushed (a Pre-Flight toggle fixed it, or the
                     // aircraft settled late), clear the warning. No write, no new subscription.
                     val wanted = lastDesired
-                    if (FlightWarnings.avoidanceNotApplied && wanted != null &&
-                        systemEnabled == wanted[AvoidanceEnforcement.Switch.SYSTEM] &&
-                        avoidDuringRth == wanted[AvoidanceEnforcement.Switch.RTH] &&
-                        landingProtect == wanted[AvoidanceEnforcement.Switch.LANDING]) {
-                        FlightWarnings.avoidanceNotApplied = false
-                        AppLog.i(TAG, "avoidance now matches Pre-Flight — warning cleared")
+                    if (wanted != null) {
+                        val live = mapOf(
+                            AvoidanceEnforcement.Switch.SYSTEM to systemEnabled,
+                            AvoidanceEnforcement.Switch.RTH to avoidDuringRth,
+                            AvoidanceEnforcement.Switch.LANDING to landingProtect,
+                        )
+                        val ok = AvoidanceEnforcement.matches(wanted, live)
+                        if (FlightWarnings.avoidanceNotApplied && ok) {
+                            FlightWarnings.avoidanceNotApplied = false
+                            AppLog.i(TAG, "avoidance now matches Pre-Flight — warning cleared")
+                        } else if (!FlightWarnings.avoidanceNotApplied && !ok &&
+                            AutelTakBridge.airborne) {
+                            // ⚠ RAISING IT IS GATED ON AIRBORNE, AND THAT IS WHAT KEEPS IT OUT
+                            // OF ENFORCEMENT'S WAY. On the ground, enforcement writes and expects
+                            // a transient mismatch between a write and the next push; warning
+                            // there would cry wolf on every correction it is in the middle of
+                            // making. In the air nothing writes, so a mismatch is the aircraft
+                            // having drifted and there is nothing to wait for.
+                            //
+                            // This also covers the airborne-skip case where the live state was
+                            // not yet known at connect: the comparison simply re-runs on the
+                            // next push.
+                            AppLog.e(TAG, "avoidance drifted from Pre-Flight IN THE AIR " +
+                                "(aircraft holds sys=$systemEnabled rth=$avoidDuringRth " +
+                                "land=$landingProtect) — warning the pilot")
+                            FlightWarnings.avoidanceNotApplied = true
+                        }
                     }
                 }
                 override fun onFailure(error: AutelError?) {
@@ -252,7 +273,42 @@ object AutelAvoidance {
         // launches. Writing avoidance settings underneath an airborne aircraft changes how it
         // behaves with nobody looking at the card, which is the opposite of the point.
         if (AutelTakBridge.airborne) {
-            AppLog.w(TAG, "aircraft is airborne — SKIPPING avoidance enforcement this connect")
+            // ⚠ THE SKIP IS RIGHT AND THE SILENCE WAS NOT (2026-09-13). Never rewriting a safety
+            // switch in the air is correct — but returning without a word meant an aircraft that
+            // came back from a link loss with avoidance RESET would fly the rest of the mission
+            // unprotected while Pre-Flight still showed the pilot's selection. That is the shape
+            // of the 2026-08-13 incident this whole verify chain was built for, reached through
+            // a different door: not a failed write ignored, but a skipped write unmentioned.
+            //
+            // It is not hypothetical. On 2026-09-13 a 44-second link loss came back with
+            // "avoidance system ENABLED (rth-avoid=true landing-protect=false)" against a
+            // Pre-Flight selection of true. That aircraft happened to be on the ground, so
+            // enforcement ran and fixed it. At altitude it would have been skipped in silence.
+            //
+            // ⚠ NO WRITE HERE, AND THERE MUST NEVER BE ONE. This only compares and tells. The
+            // desired set is recorded so the standing listener can keep re-checking it, which is
+            // what covers the case where the live state is not known yet at this instant.
+            val desired = mapOf(
+                AvoidanceEnforcement.Switch.SYSTEM to savedSystem(context),
+                AvoidanceEnforcement.Switch.RTH to savedRth(context),
+                AvoidanceEnforcement.Switch.LANDING to savedLanding(context),
+            )
+            lastDesired = desired
+            val actual = mapOf(
+                AvoidanceEnforcement.Switch.SYSTEM to systemEnabled,
+                AvoidanceEnforcement.Switch.RTH to avoidDuringRth,
+                AvoidanceEnforcement.Switch.LANDING to landingProtect,
+            )
+            if (AvoidanceEnforcement.matches(desired, actual)) {
+                AppLog.w(TAG, "aircraft is airborne — SKIPPING avoidance enforcement this " +
+                    "connect (it already matches Pre-Flight)")
+            } else {
+                AppLog.e(TAG, "aircraft is airborne and its avoidance does NOT match " +
+                    "Pre-Flight (aircraft holds sys=$systemEnabled rth=$avoidDuringRth " +
+                    "land=$landingProtect, wanted $desired) — NOT writing in the air, " +
+                    "warning the pilot")
+                FlightWarnings.avoidanceNotApplied = true
+            }
             return
         }
         // Read the aircraft's live state from the cache the standing listener maintains — NOT by

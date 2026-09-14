@@ -899,8 +899,35 @@ android {
         //        ⚠ A WRITE THE PILOT DID NOT ASK FOR, once per mode change, to the CAMERA
         //        channel and never on a timer. It restores a setting the pilot chose and the
         //        camera discarded; it does not invent one.
-        versionCode 82
-        versionName "2.0.13"
+        //
+        // v2.0.14 — AN AIRBORNE RECONNECT WITH THE WRONG AVOIDANCE NOW TELLS THE PILOT.
+        //
+        //        ⚠ NOT A WRITE. applyAtConnect refuses to rewrite a safety switch on a flying
+        //        aircraft and that stays exactly as it is — enforcement is a pre-flight act and
+        //        changing how the airframe behaves with nobody reading the Enter Flight card is
+        //        the opposite of the point. What was wrong is that it returned WITHOUT A WORD.
+        //
+        //        ⚠ THE SHAPE OF THE 2026-08-13 INCIDENT, THROUGH A DIFFERENT DOOR. That one was
+        //        a failed write ignored, and it built the whole verify chain. This is a SKIPPED
+        //        write unmentioned, and it ends the same way: an aircraft flying unprotected
+        //        while Pre-Flight still shows the pilot's selection.
+        //
+        //        It is not hypothetical. A 44-second link loss on 2026-09-13 came back with
+        //        "avoidance system ENABLED (rth-avoid=true landing-protect=false)" against a
+        //        Pre-Flight selection of true. That aircraft was on the ground, so enforcement
+        //        ran, retried twice and verified. At altitude it would have been skipped in
+        //        silence.
+        //
+        //        So the skip now compares the cached live state against Pre-Flight and raises
+        //        the existing amber AVOIDANCE SETTING NOT APPLIED banner on a mismatch, and the
+        //        standing listener re-checks on every push so a drift cannot go unseen.
+        //        ⚠ RAISING IS GATED ON AIRBORNE. On the ground enforcement is mid-correction and
+        //        a transient mismatch between a write and the next push is normal; warning there
+        //        would cry wolf. In the air nothing writes, so a mismatch is real.
+        //        ⚠ A SWITCH THE AIRCRAFT HAS NOT REPORTED IS NOT A MISMATCH — unknown is its own
+        //        state, and the next push re-asks.
+        versionCode 83
+        versionName "2.0.14"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
