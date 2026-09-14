@@ -225,14 +225,17 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <!-- Location permission, under the network lines it sits with (operator, 2026-09-14).
+        <!-- App permissions, under the network lines it sits with (operator, 2026-09-14).
 
-             ⚠ IT IS HERE BECAUSE A CONTROLLER FLEW A 12.5-HOUR MISSION WITHOUT IT AND NOBODY
-             KNEW. Android denies this permission silently at setup; the application then
-             publishes the pilot marker in the "position not known" form — 0,0, how=h-g-i-g-o,
-             ce 9999999 — for the whole flight. The pilot is in the team's contact list at null
-             island, nobody can send them a marker, and the ONLY sign was a log line no one was
-             reading.
+             ⚠ IT IS HERE BECAUSE A CONTROLLER FLEW A 12.5-HOUR MISSION WITH LOCATION DENIED AND
+             NOBODY KNEW. Android denies silently at setup; the application then publishes the
+             pilot marker in the "position not known" form — 0,0, how=h-g-i-g-o, ce 9999999 —
+             for the whole flight. The pilot is in the team's contact list at null island,
+             nobody can send them a marker, and the ONLY sign was a log line no one was reading.
+
+             ⚠ WHAT IT COUNTS IS PER-DEVICE — see AppPermissions. A permission the application
+             does not need on this Android version must NOT be counted, or the line reads DENIED
+             where nothing is wrong and a pilot learns to ignore it.
 
              ⚠ IT IS A LINE THE PILOT CAN ACT ON, NOT JUST READ. Denied, it is tappable and asks
              for the permission. Android refuses to prompt twice, so when the system will no
@@ -242,7 +245,7 @@
              Two states, not three. A permission is granted or it is not; there is nothing to
              wait for and nothing to be unknown about, so §4.6's amber has no place here. -->
         <LinearLayout
-            android:id="@+id/homeLocationRow"
+            android:id="@+id/homePermissionsRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
@@ -251,16 +254,16 @@
             android:focusable="true"
             android:layout_marginTop="4dp">
             <View
-                android:id="@+id/homeLocationDot"
+                android:id="@+id/homePermissionsDot"
                 android:layout_width="10dp"
                 android:layout_height="10dp"
                 android:layout_marginEnd="6dp"
                 android:background="@drawable/tak_status_dot" />
             <TextView
-                android:id="@+id/homeLocationStatus"
+                android:id="@+id/homePermissionsStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="LOCATION: —"
+                android:text="APP PERMISSIONS: —"
                 android:textColor="@color/tp_text_secondary"
                 android:textSize="13sp" />
         </LinearLayout>

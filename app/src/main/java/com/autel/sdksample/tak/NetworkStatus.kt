@@ -79,7 +79,7 @@ object NetworkStatus {
         if (!onWifi) return Snapshot(State.OFF, null, -1)
 
         // Cosmetic only, and allowed to fail. A redacted WifiInfo gives "<unknown ssid>" and a
-        // meaningless rssi; both are filtered, and the line then reads "WIFI: connected" with
+        // meaningless rssi; both are filtered, and the line then reads "WIFI: Connected" with
         // no bars rather than claiming something untrue.
         val wifi = context.applicationContext
             .getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -91,26 +91,4 @@ object NetworkStatus {
 
         return Snapshot(if (validated) State.CONNECTED else State.NO_INTERNET, ssid, level)
     }
-
-    /**
-     * Whether this controller may publish the pilot's own position.
-     *
-     * ⚠ **A CONTROLLER FLEW A 12.5-HOUR MISSION WITHOUT THIS AND NOBODY KNEW** (operator,
-     * 2026-09-14). Android denies the permission silently at setup. [OperatorLocation] then
-     * stays quiet by design and the pilot marker goes out in the "position not known" form —
-     * 0,0, `how="h-g-i-g-o"`, ce 9999999 — for the whole flight. The pilot sits in the team's
-     * contact list at null island, nobody can send them a marker, and the only sign was a log
-     * line nobody was reading.
-     *
-     * Kept here beside the network read because they are the same question to a pilot standing
-     * at the controller: "is this thing going to work". The home screen shows both on adjacent
-     * lines.
-     */
-    fun hasLocationPermission(context: Context): Boolean =
-        androidx.core.content.ContextCompat.checkSelfPermission(
-            context, android.Manifest.permission.ACCESS_FINE_LOCATION
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 }

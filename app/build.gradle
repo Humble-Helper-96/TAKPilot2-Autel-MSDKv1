@@ -988,8 +988,30 @@ android {
         //        default network with TAK connected and video streaming. State now comes from
         //        NetworkCapabilities, which needs no permission; WifiInfo is used only for the
         //        SSID and bars, which genuinely do need it and already degrade to "connected".
-        versionCode 85
-        versionName "2.1.1"
+        //
+        // v2.1.2 — THE PERMISSION LINE BECOMES "APP PERMISSIONS", AND IT ASKS FOR ALL OF THEM.
+        //
+        //        The line added in v2.1.1 said LOCATION and carried an explanation after an
+        //        em-dash. It is now "APP PERMISSIONS: Granted" or "Denied" and nothing else
+        //        (operator, 2026-09-14), and a tap asks for EVERY permission still missing
+        //        rather than location alone.
+        //
+        //        ⚠ WHAT IT COUNTS IS COMPUTED PER DEVICE — AppPermissions. A permission the
+        //        application does not need on this Android version must NOT be counted, or the
+        //        line reads DENIED where nothing is wrong and a pilot learns to ignore it.
+        //        ⚠ STORAGE IS NOT NEEDED ON THIS FLEET, AND THE CONTROLLER PROVED IT. The
+        //        operator asked for Files to be included "so the app can write logs"; measured
+        //        on the affected Android 11 controller, both storage permissions were DENIED and
+        //        it still wrote the whole mission's log archive AND its flight records, because
+        //        AppLog and FlightPathLogger both go through MediaStore from API 29. The File
+        //        path is a pre-Q fallback. So storage is counted ONLY below API 29, where it
+        //        genuinely gates writing. The operator withdrew the request on that evidence.
+        //        Notifications likewise only count from API 33.
+        //
+        //        "WIFI: connected" is capitalised. That wording only appears when the SSID is
+        //        redacted, which is the very controller this work came from.
+        versionCode 86
+        versionName "2.1.2"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

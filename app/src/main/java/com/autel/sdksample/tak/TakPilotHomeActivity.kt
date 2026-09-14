@@ -50,8 +50,8 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var takDot: android.view.View
     private lateinit var wifiStatus: TextView
     private lateinit var wifiDot: android.view.View
-    private lateinit var locationStatus: TextView
-    private lateinit var locationDot: android.view.View
+    private lateinit var permissionsStatus: TextView
+    private lateinit var permissionsDot: android.view.View
 
     /** Camera free space for the storage line. The camera reports MEGABYTES; anything from a
      *  gigabyte up reads as GB, because "122049 MB" is a number a pilot has to stop and convert. */
@@ -96,12 +96,13 @@ class TakPilotHomeActivity : AppCompatActivity() {
         takDot = findViewById(R.id.homeTakDot)
         wifiStatus = findViewById(R.id.homeWifiStatus)
         wifiDot = findViewById(R.id.homeWifiDot)
-        locationStatus = findViewById(R.id.homeLocationStatus)
-        locationDot = findViewById(R.id.homeLocationDot)
+        permissionsStatus = findViewById(R.id.homePermissionsStatus)
+        permissionsDot = findViewById(R.id.homePermissionsDot)
         // ⚠ THE LINE IS TAPPABLE WHEN DENIED, AND THAT IS THE POINT OF IT. Telling a pilot that
         // their position is not going out, on a screen where they cannot do anything about it,
         // is half a fix. See askForLocation.
-        findViewById<android.view.View>(R.id.homeLocationRow).setOnClickListener { askForLocation() }
+        findViewById<android.view.View>(R.id.homePermissionsRow)
+            .setOnClickListener { askForPermissions() }
         // Fixed at build time, not runtime state — set once, no need to touch it in updateStatus().
         // VERSION_NAME is real semver (see build.gradle); VERSION_CODE is Android's own internal
         // update-ordering integer and has no semver meaning, so it is deliberately not shown here
@@ -373,22 +374,22 @@ class TakPilotHomeActivity : AppCompatActivity() {
         val net = NetworkStatus.read(this)
         wifiStatus.text = when (net.state) {
             NetworkStatus.State.CONNECTED ->
-                "WIFI: ${net.ssid ?: "connected"}  ${net.bars()}"
+                "WIFI: ${net.ssid ?: "Connected"}  ${net.bars()}"
             NetworkStatus.State.NO_INTERNET ->
-                "WIFI: ${net.ssid ?: "connected"} — NO INTERNET"
+                "WIFI: ${net.ssid ?: "Connected"} — NO INTERNET"
             NetworkStatus.State.OFF -> "WIFI: NOT CONNECTED"
         }
-        // Location permission, under the network lines. The pilot marker is the thing at stake:
-        // without this the aircraft still flies and streams, and the PILOT is simply absent from
-        // the team's map — see NetworkStatus.hasLocationPermission for what that cost once.
-        val located = NetworkStatus.hasLocationPermission(this)
-        locationStatus.text = if (located) "LOCATION: Allowed"
-        else "LOCATION: DENIED — your position is not sent. Touch to fix."
-        val locColor = androidx.core.content.ContextCompat.getColor(this,
-            if (located) R.color.tp_state_go else R.color.tp_state_danger)
-        locationStatus.setTextColor(locColor)
-        (locationDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(locColor)
-            ?: locationDot.background?.setTint(locColor)
+        // App permissions, under the network lines. The pilot marker is what is usually at
+        // stake: without location the aircraft still flies and streams, and the PILOT is simply
+        // absent from the team's map — see AppPermissions for what that cost once.
+        val permsOk = AppPermissions.allGranted(this)
+        permissionsStatus.text =
+            if (permsOk) "APP PERMISSIONS: Granted" else "APP PERMISSIONS: Denied"
+        val permColor = androidx.core.content.ContextCompat.getColor(this,
+            if (permsOk) R.color.tp_state_go else R.color.tp_state_danger)
+        permissionsStatus.setTextColor(permColor)
+        (permissionsDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(permColor)
+            ?: permissionsDot.background?.setTint(permColor)
 
         val wifiColor = androidx.core.content.ContextCompat.getColor(this, when (net.state) {
             NetworkStatus.State.CONNECTED -> R.color.tp_state_go
@@ -403,12 +404,12 @@ class TakPilotHomeActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "TakPilotHomeActivity"
 
-        private const val REQUEST_CODE_LOCATION = 4301
+        private const val REQUEST_CODE_PERMISSIONS = 4301
 
-        /** Whether this controller has been asked for location once. Android's
+        /** Whether this controller has been asked once. Android's
          *  shouldShowRequestPermissionRationale reads false BOTH before the first ask and after
          *  a permanent denial, so it cannot tell them apart; this is what does. */
-        private const val KEY_ASKED_LOCATION = "asked_location_permission"
+        private const val KEY_ASKED_PERMISSIONS = "asked_app_permissions"
 
         /**
          * True once Home has run in the current process. Survives config changes (same process);
@@ -423,38 +424,37 @@ class TakPilotHomeActivity : AppCompatActivity() {
     }
 
     /**
-     * Asks for the location permission, and falls back to the settings page when Android will
-     * not ask again.
+     * Asks for every permission still missing, and falls back to the settings page when Android
+     * will not ask again.
      *
      * ⚠ **ANDROID ONLY SHOWS THE DIALOG WHILE IT FEELS LIKE IT.** Once a pilot has denied twice,
      * or chosen "don't ask again", `requestPermissions` returns immediately having shown
      * nothing — so a red line that cannot be cleared by touching it would be worse than no line
-     * at all. `shouldShowRequestPermissionRationale` is false in BOTH the never-asked and the
-     * permanently-denied case, so it cannot separate them on its own; what separates them is
-     * whether we have asked before, which is remembered here.
+     * at all. `shouldShowRequestPermissionRationale` reads false in BOTH the never-asked and the
+     * permanently-denied case and cannot separate them; what separates them is whether we have
+     * asked before, which is remembered here.
      *
-     * ⚠ NOT A SETTINGS CHANGE TO THE CONTROLLER — safety rule 7. This opens the application's
-     * OWN permission page and the pilot makes the change; nothing here writes it.
+     * Asks for ALL of them in one call — the framework shows a dialog per permission, in the
+     * order [AppPermissions.missing] returns them, so location comes first.
+     *
+     * ⚠ NOT A SETTINGS CHANGE TO THE CONTROLLER — safety rule 7. The fallback opens the
+     * application's OWN permission page and the pilot makes the change; nothing here writes it.
      */
-    private fun askForLocation() {
-        if (NetworkStatus.hasLocationPermission(this)) return
-        val asked = getPreferences(MODE_PRIVATE).getBoolean(KEY_ASKED_LOCATION, false)
-        val willPrompt = !asked || androidx.core.app.ActivityCompat
-            .shouldShowRequestPermissionRationale(this, android.Manifest.permission.ACCESS_FINE_LOCATION)
+    private fun askForPermissions() {
+        val missing = AppPermissions.missing(this)
+        if (missing.isEmpty()) return
+        val asked = getPreferences(MODE_PRIVATE).getBoolean(KEY_ASKED_PERMISSIONS, false)
+        val willPrompt = !asked || missing.any {
+            androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
         if (willPrompt) {
-            AppLog.i(TAG, "location permission denied — asking the pilot")
-            getPreferences(MODE_PRIVATE).edit().putBoolean(KEY_ASKED_LOCATION, true).apply()
+            AppLog.i(TAG, "permissions denied (${missing.size}) — asking the pilot")
+            getPreferences(MODE_PRIVATE).edit().putBoolean(KEY_ASKED_PERMISSIONS, true).apply()
             androidx.core.app.ActivityCompat.requestPermissions(
-                this,
-                arrayOf(
-                    android.Manifest.permission.ACCESS_FINE_LOCATION,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                ),
-                REQUEST_CODE_LOCATION,
-            )
+                this, missing.toTypedArray(), REQUEST_CODE_PERMISSIONS)
             return
         }
-        AppLog.i(TAG, "location permission permanently denied — opening the settings page")
+        AppLog.i(TAG, "permissions permanently denied — opening the settings page")
         runCatching {
             startActivity(android.content.Intent(
                 android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -462,7 +462,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         }.onFailure {
             AppLog.w(TAG, "could not open the settings page: ${it.message}")
             android.widget.Toast.makeText(this,
-                "Open Settings, Apps, TAKPilot2, Permissions, and allow Location.",
+                "Open Settings, Apps, TAKPilot2, Permissions, and allow them.",
                 android.widget.Toast.LENGTH_LONG).show()
         }
     }
