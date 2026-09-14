@@ -150,12 +150,10 @@
 
         <View android:layout_width="0dp" android:layout_height="0dp" />
 
-        <ImageView
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:src="@drawable/takpilot2_logo"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp" />
+        <!-- ⚠ THE 72dp LOGO THAT SAT HERE IS GONE (operator, 2026-09-14). The same mark is
+             already in the top-left corner of this screen, so the card was showing it twice and
+             spending the card's best vertical space to do it. That space now carries the four
+             status lines a pilot reads before they fly. -->
 
         <TextView
             android:layout_width="wrap_content"
@@ -173,57 +171,6 @@
             android:textColor="@color/tp_accent"
             android:textSize="15sp"
             android:layout_marginTop="6dp" />
-
-        <!-- TAK connection status — moved here from under the app name (2026-08-03). This card
-             is what a pilot taps to fly, so the one thing that decides whether the team will see
-             them belongs right where they're about to act on it, not on the screen's other side. -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="10dp">
-            <View
-                android:id="@+id/homeTakDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/tak_status_dot" />
-            <TextView
-                android:id="@+id/homeTakStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="TAK: Disconnected"
-                android:textColor="@color/tp_text_secondary"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <!-- Wifi state, directly under the TAK line it explains (v1.5.9). Field reports had
-             pilots chasing "enrollment failed" when the controller simply had no network; the
-             TAK dot alone can't separate "server down" from "no wifi". Three states, same
-             colour rule as everything else: green = connected with internet CONFIRMED
-             (validated network, not just an association), amber = wifi but no internet,
-             red = no wifi. -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="4dp">
-            <View
-                android:id="@+id/homeWifiDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/tak_status_dot" />
-            <TextView
-                android:id="@+id/homeWifiStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="WIFI: —"
-                android:textColor="@color/tp_text_secondary"
-                android:textSize="13sp" />
-        </LinearLayout>
 
         <!-- App permissions, under the network lines it sits with (operator, 2026-09-14).
 
@@ -267,6 +214,91 @@
                 android:textColor="@color/tp_text_secondary"
                 android:textSize="13sp" />
         </LinearLayout>
+
+        <!-- Wifi state, directly under the TAK line it explains (v1.5.9). Field reports had
+             pilots chasing "enrollment failed" when the controller simply had no network; the
+             TAK dot alone can't separate "server down" from "no wifi". Three states, same
+             colour rule as everything else: green = connected with internet CONFIRMED
+             (validated network, not just an association), amber = wifi but no internet,
+             red = no wifi. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+            <View
+                android:id="@+id/homeWifiDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homeWifiStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WIFI: —"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- TAK connection status — moved here from under the app name (2026-08-03). This card
+             is what a pilot taps to fly, so the one thing that decides whether the team will see
+             them belongs right where they're about to act on it, not on the screen's other side. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="10dp">
+            <View
+                android:id="@+id/homeTakDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homeTakStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TAK: Disconnected"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Media server reachability, last of the four (operator, 2026-09-14).
+
+             ⚠ GREEN MEANS THE SERVER IS UP AND SPEAKING RTSP. IT DOES NOT MEAN IT WILL TAKE THE
+             STREAM. Credentials, whether the path may be published to, and whether the server
+             likes the codec are all answered during a real publish and not before — so the LIVE
+             pill on the flight screen stays the only authority on that. See MediaServerProbe.
+
+             It probes the RTSP port even when the pilot has selected SRT, because SRT is UDP and
+             has nothing to connect to, while the server always serves RTSP to the TAK clients
+             regardless. It therefore tests THE SERVER, which is the question, and not the SRT
+             ingest. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+            <View
+                android:id="@+id/homeMediaDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/tak_status_dot" />
+            <TextView
+                android:id="@+id/homeMediaStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MEDIA SERVER: —"
+                android:textColor="@color/tp_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+
 
         <!-- Aircraft info, centered under the title -->
         <LinearLayout

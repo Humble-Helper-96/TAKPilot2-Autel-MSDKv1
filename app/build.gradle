@@ -1010,8 +1010,36 @@ android {
         //
         //        "WIFI: connected" is capitalised. That wording only appears when the SSID is
         //        redacted, which is the very controller this work came from.
-        versionCode 86
-        versionName "2.1.2"
+        //
+        // v2.1.3 — THE ENTER FLIGHT CARD CARRIES THE FOUR THINGS A PILOT CHECKS BEFORE FLYING.
+        //
+        //        Order, top to bottom (operator, 2026-09-14): APP PERMISSIONS, WIFI, TAK,
+        //        MEDIA SERVER. The card's 72dp logo is gone — the same mark is already in the
+        //        screen's top-left corner, so it was drawn twice and it was spending the card's
+        //        best vertical space to do it.
+        //
+        //        ⚠ THE MEDIA SERVER LINE SAYS "REACHABLE", NOT "WILL TAKE MY STREAM", AND THE
+        //        DIFFERENCE IS NOT A DETAIL. The operator asked for both. Only the first is
+        //        knowable without publishing: credentials, whether the path may be published to,
+        //        and whether the server likes the codec are all answered during a real publish
+        //        handshake. A probe claiming otherwise would be the same lie as a camera
+        //        reporting OK for a lens it never changed. The LIVE pill stays the authority.
+        //
+        //        ⚠ IT PROBES RTSP EVEN UNDER SRT, ON PURPOSE. SRT is UDP — nothing to connect
+        //        to, and a real handshake would need the streaming library. The media server
+        //        always serves RTSP regardless, because no TAK client plays SRT, so probing the
+        //        RTSP port tests THE SERVER, which is the question. It does not test the SRT
+        //        ingest port.
+        //
+        //        ⚠ OPTIONS, NOT A BARE CONNECT: a socket can be accepted by a load balancer, a
+        //        captive portal or the wrong host. An RTSP status line proves an RTSP server
+        //        answered. No path and no credentials — this asks the server what it can do, it
+        //        does not attempt a login on every repaint.
+        //        ⚠ OFF THE UI THREAD, CACHED, AND RE-ASKED EVERY 10 s. The card repaints every
+        //        1.5 s; probing inline would stall it for the timeout on every tick, and probing
+        //        per paint would be a port scan of the operator's own server.
+        versionCode 87
+        versionName "2.1.3"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

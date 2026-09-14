@@ -52,6 +52,19 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var wifiDot: android.view.View
     private lateinit var permissionsStatus: TextView
     private lateinit var permissionsDot: android.view.View
+    private lateinit var mediaStatus: TextView
+    private lateinit var mediaDot: android.view.View
+
+    /**
+     * Last answer from [MediaServerProbe], and when it was taken.
+     *
+     * ⚠ CACHED AND PROBED OFF THE UI THREAD. The home screen repaints every 1.5 s and this is a
+     * network round trip; running it inline would stall the screen for up to the probe timeout
+     * every tick. The paint reads the cache, a background probe refreshes it on its own period.
+     */
+    @Volatile private var mediaProbe: MediaServerProbe.Result? = null
+    @Volatile private var mediaProbeAtMs = 0L
+    @Volatile private var mediaProbeRunning = false
 
     /** Camera free space for the storage line. The camera reports MEGABYTES; anything from a
      *  gigabyte up reads as GB, because "122049 MB" is a number a pilot has to stop and convert. */
@@ -98,6 +111,8 @@ class TakPilotHomeActivity : AppCompatActivity() {
         wifiDot = findViewById(R.id.homeWifiDot)
         permissionsStatus = findViewById(R.id.homePermissionsStatus)
         permissionsDot = findViewById(R.id.homePermissionsDot)
+        mediaStatus = findViewById(R.id.homeMediaStatus)
+        mediaDot = findViewById(R.id.homeMediaDot)
         // ⚠ THE LINE IS TAPPABLE WHEN DENIED, AND THAT IS THE POINT OF IT. Telling a pilot that
         // their position is not going out, on a screen where they cannot do anything about it,
         // is half a fix. See askForLocation.
@@ -391,6 +406,8 @@ class TakPilotHomeActivity : AppCompatActivity() {
         (permissionsDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(permColor)
             ?: permissionsDot.background?.setTint(permColor)
 
+        renderMediaServer()
+
         val wifiColor = androidx.core.content.ContextCompat.getColor(this, when (net.state) {
             NetworkStatus.State.CONNECTED -> R.color.tp_state_go
             NetworkStatus.State.NO_INTERNET -> R.color.tp_state_caution
@@ -405,6 +422,11 @@ class TakPilotHomeActivity : AppCompatActivity() {
         private const val TAG = "TakPilotHomeActivity"
 
         private const val REQUEST_CODE_PERMISSIONS = 4301
+
+        /** How often the media server is re-probed. The home screen repaints every 1.5 s and a
+         *  probe is a network round trip; re-asking on every paint would be a port scan of the
+         *  operator's own server. */
+        private const val MEDIA_PROBE_PERIOD_MS = 10_000L
 
         /** Whether this controller has been asked once. Android's
          *  shouldShowRequestPermissionRationale reads false BOTH before the first ask and after
@@ -465,6 +487,51 @@ class TakPilotHomeActivity : AppCompatActivity() {
                 "Open Settings, Apps, TAKPilot2, Permissions, and allow them.",
                 android.widget.Toast.LENGTH_LONG).show()
         }
+    }
+
+
+    /**
+     * Draws the media-server line, and refreshes the probe behind it when it is stale.
+     *
+     * ⚠ **GREEN MEANS THE SERVER IS UP, NOT THAT IT WILL TAKE THE STREAM.** Whether this
+     * publisher is accepted depends on credentials, on whether the path may be published to,
+     * and on the codec — all answered during a real publish. The LIVE pill on the flight screen
+     * stays the authority on that. See [MediaServerProbe].
+     */
+    private fun renderMediaServer() {
+        val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
+        val host = p.getString("video_host", "") ?: ""
+        val port = p.getInt("video_rtsp_port", VideoTransport.RTSP.defaultPort)
+
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!mediaProbeRunning && now - mediaProbeAtMs > MEDIA_PROBE_PERIOD_MS) {
+            mediaProbeRunning = true
+            Thread {
+                val r = MediaServerProbe.probe(host, port)
+                mediaProbe = r
+                mediaProbeAtMs = android.os.SystemClock.elapsedRealtime()
+                mediaProbeRunning = false
+                runOnUiThread { if (!isFinishing) renderMediaServer() }
+            }.apply { isDaemon = true; name = "media-probe" }.start()
+        }
+
+        // Amber until the first answer — unknown is its own state, and a server that has not
+        // been asked yet must not be drawn as either up or down.
+        val res = mediaProbe
+        mediaStatus.text = when (res) {
+            MediaServerProbe.Result.REACHABLE -> "MEDIA SERVER: Reachable"
+            MediaServerProbe.Result.UNREACHABLE -> "MEDIA SERVER: Not reachable"
+            MediaServerProbe.Result.NOT_CONFIGURED -> "MEDIA SERVER: Not set"
+            null -> "MEDIA SERVER: —"
+        }
+        val color = androidx.core.content.ContextCompat.getColor(this, when (res) {
+            MediaServerProbe.Result.REACHABLE -> R.color.tp_state_go
+            MediaServerProbe.Result.UNREACHABLE -> R.color.tp_state_danger
+            else -> R.color.tp_state_unknown
+        })
+        mediaStatus.setTextColor(color)
+        (mediaDot.background as? android.graphics.drawable.GradientDrawable)?.setColor(color)
+            ?: mediaDot.background?.setTint(color)
     }
 
 }
