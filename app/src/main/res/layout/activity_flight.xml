@@ -603,14 +603,20 @@
         <!-- BOTTOM HUD BLOCK, pinned above the map. Order (operator, 2026-08-04):
              RTH, HOME, FAA. Outlined text and no backing, the same as the top block — see the
              note there and OutlinedTextView. -->
+        <!-- ⚠ TIGHT ON PURPOSE (operator, 2026-09-14). These three lines carried 4dp between
+             them, 6dp of block padding and the font's own ascent/descent slack — about a line
+             and a half of empty screen over live video for three short readouts. The margins and
+             the block padding are gone and includeFontPadding is off, which leaves the lines
+             separated by the outline alone. The half-stroke padding OutlinedTextView adds in its
+             init is what still keeps the outline from being clipped at the top and the bottom;
+             do not remove it and do not put negative margins here. -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="6dp"
             android:gravity="end"
             android:orientation="vertical"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="6dp">
+            android:paddingHorizontal="8dp">
 
             <!-- RTH altitude the AIRCRAFT reports, never the value Pre-Flight requested.
                  This is a safety readout: on 2026-08-02 a pilot flew two sorties believing the RTH
@@ -622,7 +628,7 @@
             <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvRthAltitude"
                 style="@style/flightReadoutOutlined"
-                android:layout_marginBottom="4dp"
+                android:includeFontPadding="false"
                 android:gravity="end"
                 android:text="RTH --" />
 
@@ -631,7 +637,7 @@
             <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvHomeDistance"
                 style="@style/flightReadoutOutlined"
-                android:layout_marginBottom="4dp"
+                android:includeFontPadding="false"
                 android:gravity="end"
                 android:text="HOME — ft  —°T" />
 
@@ -640,6 +646,7 @@
             <com.autel.sdksample.tak.OutlinedTextView
                 android:id="@+id/fpvFaaCeiling"
                 style="@style/flightReadoutOutlined"
+                android:includeFontPadding="false"
                 android:gravity="end"
                 android:text=""
                 android:visibility="gone" />

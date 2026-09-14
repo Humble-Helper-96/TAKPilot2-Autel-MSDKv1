@@ -535,7 +535,9 @@ object TakMapMarkers {
         // Air tracks key on course alone. The symbol carries no callsign, team colour or stale
         // treatment, so every aircraft at the same course bucket IS the same bitmap — one cache
         // entry per bucket rather than one per aircraft.
-        if (isAirTrack(user.type)) {
+        // A UAS is NOT keyed here: it draws a 2525 frame with its callsign under it, so it
+        // takes the ordinary key below like every other framed contact.
+        if (isAirTrack(user.type) && !user.isUas) {
             return if (user.hasCourse()) "air|${courseBucket(user.course)}" else "air|nocourse"
         }
         val team = (user.team ?: "Cyan").lowercase()
@@ -544,6 +546,7 @@ object TakMapMarkers {
         // A live client takes a team dot, never a 2525 frame. The parser decides what is a live
         // client — see CotParser.isLiveClient. This key must agree with iconFor.
         val mil = if (user.isLiveClient) 0 else milMarkerRes(user.type) ?: 0
+        val uas = if (user.isUas) milAirMarkerRes(user.type) ?: 0 else 0
         // Air tracks bake their course into the bitmap (see makeAirIcon), so the key has to
         // include it — but BUCKETED to COURSE_BUCKET_DEG. Keying on the raw course would mint a
         // fresh bitmap on every position report, since ADS-B course jitters by fractions of a
@@ -553,7 +556,7 @@ object TakMapMarkers {
             user.hasCourse() -> "A${courseBucket(user.course)}"
             else -> "AN"
         }
-        return "$team|$stale|$drone|$mil|$air|${user.callsign}"
+        return "$team|$stale|$drone|$mil|$uas|$air|${user.callsign}"
     }
 
     /**
@@ -593,6 +596,31 @@ object TakMapMarkers {
         }
     }
 
+    /**
+     * MIL-STD-2525 affiliation → AIR frame drawable, for a UAS reported by another TAK client.
+     *
+     * ⚠ **ADS-B TRAFFIC MUST NOT COME THROUGH HERE.** The caller gates on [TakUser.isUas], which
+     * the parser sets only when the sender put a `<vehicle>` or `<_uastool>` block on its own
+     * report — see CotParser. A manned aircraft from a gateway keeps the white silhouette, which
+     * is the whole point of the split: the pilot must be able to tell the other aircraft of the
+     * flight from the airliner above it (operator, 2026-09-14).
+     *
+     * The frames are the top halves of the ground frames, open at the bottom — the 2525 air
+     * shape, and what TAK Aware and CloudTAK draw. Null for a type with no affiliation letter
+     * this application knows; the caller then falls back to the silhouette.
+     */
+    fun milAirMarkerRes(type: String?): Int? {
+        val parts = type?.split("-").orEmpty()
+        if (parts.size < 3 || parts[0] != "a" || parts[2] != "A") return null
+        return when (parts[1]) {
+            "f" -> R.drawable.marker_air_friendly
+            "h" -> R.drawable.marker_air_hostile
+            "n" -> R.drawable.marker_air_neutral
+            "u" -> R.drawable.marker_air_unknown
+            else -> null
+        }
+    }
+
     /** TAK team-name → color, identical to taklite's getTeamColor(). */
     fun teamColor(team: String?): Int {
         if (team == null) return Color.GREEN
@@ -621,6 +649,13 @@ object TakMapMarkers {
         val bmp = when {
             // Checked BEFORE milMarkerRes so an air track can never fall through to the plain
             // team dot, which is what made ADS-B traffic indistinguishable from a TAK client.
+            // A UAS FROM ANOTHER TAK CLIENT TAKES THE 2525 AIR FRAME AND ITS CALLSIGN, not the
+            // silhouette. Checked before the silhouette branch, and gated on isUas so ADS-B
+            // traffic falls through to it unchanged. The label is kept here although the
+            // silhouette drops it: there are one or two of these in a sortie, not a dozen, and
+            // WHICH aircraft it is was the pilot's actual question.
+            isAirTrack(user.type) && user.isUas && milAirMarkerRes(user.type) != null ->
+                makeMilIcon(milAirMarkerRes(user.type)!!, user.callsign ?: user.uid, user.isStale)
             isAirTrack(user.type) -> makeAirIcon(
                 if (user.hasCourse()) R.drawable.ic_air_track
                 else R.drawable.ic_air_track_nocourse,

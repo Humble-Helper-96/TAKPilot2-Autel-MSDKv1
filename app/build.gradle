@@ -1089,8 +1089,24 @@ android {
         //        first battery frame; a 0 drawn in red would send a pilot to change a full pack.
         //        The old threshold line is renamed BATTERY LIMITS — two lines that both began
         //        with BATTERY would be read as one fact.
-        versionCode 89
-        versionName "2.1.5"
+        // v2.1.6 — 2026-09-14. ANOTHER AIRCRAFT'S DRONE IS NO LONGER A WHITE AIRLINER on the
+        //        mini-map. It takes the MIL-STD-2525 air frame in its affiliation colour, cyan
+        //        for friendly, with its callsign under it — the symbol TAK Aware and CloudTAK
+        //        draw. Finding the other aircraft of the flight was the operator's first job on
+        //        the map during the 12.5-hour mission and every air contact looked the same.
+        //        ⚠ ADS-B TRAFFIC IS UNCHANGED and keeps the white silhouette. That split is the
+        //        whole value of the change, so the discriminator must not guess: the parser
+        //        gates on a <vehicle> or <_uastool> block, which a UAS client puts on its own
+        //        report and an ADS-B gateway does not. The CoT TYPE cannot do this — a gateway
+        //        may send a-f-A-M-… for a military aircraft. A UAS that sends neither block
+        //        stays a silhouette, which is the safe direction to fail.
+        //
+        //        The RTH / HOME / FAA readouts are tightened: 4dp between the lines, 6dp of
+        //        block padding and the font's ascent/descent slack, for three short lines over
+        //        live video. OutlinedTextView's half-stroke padding is what still keeps the
+        //        outline off the clip edge — see the layout comment.
+        versionCode 90
+        versionName "2.1.6"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
