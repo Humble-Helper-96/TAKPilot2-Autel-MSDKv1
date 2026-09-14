@@ -768,6 +768,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         homeVerify = null
         zoomVerify?.let { handler.removeCallbacks(it) }
         zoomVerify = null
+        zoomRestore?.let { handler.removeCallbacks(it) }
+        zoomRestore = null
     }
 
     /**
@@ -2597,8 +2599,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 AppLog.w(TAG, "ZOOM WRITE IGNORED. Asked for ${zoomLabel(requestedRaw)} " +
                     "(raw=$requestedRaw), setDigitalZoomScale reported OK, and the camera " +
                     "reports ${zoomLabel(reportedRaw)} (raw=$reportedRaw) " +
-                    "${ZOOM_VERIFY_SETTLE_MS}ms later. The published cone follows the CAMERA, " +
-                    "thus the team's geometry is right and the picture is not what was asked.")
+                    "${ZOOM_VERIFY_SETTLE_MS}ms later. The pill follows the CAMERA.")
+                // ⚠ THE CAMERA WINS, AND THIS USED TO ONLY LOG (2026-09-13). A pill left
+                // claiming a zoom the camera is not at breaks the rule the whole HUD is built
+                // on — UI state shows what the AIRCRAFT holds, never what was requested. The
+                // published cone already followed the camera; only the pill was lying.
+                pendingZoomRaw = reportedRaw
+                zoomRaw = reportedRaw
+                zoomButton.text = zoomLabel(reportedRaw)
             } else {
                 AppLog.v(TAG, "zoom check: the camera is at ${zoomLabel(reportedRaw)} as asked")
             }
@@ -3296,6 +3304,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // there would fire on every connect for something the pilot did not do. Null is its own
         // state and the readout already carries it.
         if (mode != null && announcedMediaMode != null && mode != announcedMediaMode) {
+            // The camera throws the zoom away on this change — see restoreZoomAfterModeChange.
+            restoreZoomAfterModeChange()
             showNotice(when (mode) {
                 MediaMode.VIDEO -> "The camera is now in video"
                 MediaMode.SINGLE -> "The camera is now in photo"
@@ -3308,6 +3318,53 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // than from the tap so it is right the moment the camera moves, including when the
         // HARDWARE shutter moves it and this application is never asked.
         if (::recordToggle.isInitialized) recordToggle.setPhotoMode(mode == MediaMode.SINGLE)
+    }
+
+    /** The pending zoom restore, so a second mode change replaces the first. */
+    private var zoomRestore: Runnable? = null
+
+    /**
+     * Puts the pilot's zoom back after the CAMERA has thrown it away on a mode change.
+     *
+     * ⚠ **THE CAMERA RESETS THE ZOOM TO 1x WHEN IT CHANGES MEDIA MODE** (operator, measured in
+     * flight 2026-09-13):
+     *
+     *     16:27:12.688  zoomScaleRaw=300 focal=1.42 mode=VIDEO
+     *     16:27:15.938  controller button event: TAKEN_PHOTO
+     *     16:27:16.198  zoomScaleRaw=100 focal=0.47 mode=SINGLE
+     *
+     * The focal length moves with it, so the picture really does go wide — it is not a
+     * reporting artefact. And the camera reports the reset honestly, which is what makes
+     * writing the zoom back the right answer rather than a guess.
+     *
+     * ⚠ **THE PILOT'S INTENT IS [pendingZoomRaw], AND IT MUST BE READ BEFORE ANYTHING RE-SEEDS
+     * IT.** Nothing in this application re-seeds on a mode change, which is exactly why the
+     * pill went on claiming 3X — and it is also why the pilot's choice is still there to
+     * restore. Re-seeding first would follow the camera to 1x and lose the very thing this is
+     * for.
+     *
+     * ⚠ A WRITE THE PILOT DID NOT ASK FOR, ONCE PER MODE CHANGE. It is bounded — one write per
+     * change, never a timer — and it goes to the CAMERA channel, not the fly-controller channel
+     * safety rule 3 protects. It restores a setting the pilot chose and the camera discarded;
+     * it does not invent one.
+     *
+     * Waits [MODE_SWITCH_SETTLE_MS] after the camera's own report of the new mode, for the
+     * reason that constant exists: this camera acknowledges a change before it can act on one.
+     * [applyZoomRaw]'s own check then says in the log whether it took.
+     */
+    private fun restoreZoomAfterModeChange() {
+        val intended = pendingZoomRaw
+        if (intended <= ZOOM_RAW_MIN) return          // nothing to put back
+        zoomRestore?.let { handler.removeCallbacks(it) }
+        val restore = Runnable {
+            zoomRestore = null
+            if (AutelProductHolder.xt706 == null) return@Runnable
+            AppLog.i(TAG, "restoring ${zoomLabel(intended)} — the camera resets the zoom " +
+                "when it changes media mode")
+            applyZoomRaw(intended)
+        }
+        zoomRestore = restore
+        handler.postDelayed(restore, MODE_SWITCH_SETTLE_MS)
     }
 
     private fun renderLightsButton() {

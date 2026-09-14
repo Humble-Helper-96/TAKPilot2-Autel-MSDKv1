@@ -872,8 +872,35 @@ android {
         //        the worst gap, because a diagnostic that says nothing cannot be told apart from
         //        one that is not running. Runs on the RENDER THREAD: a subtraction and two
         //        comparisons, allocating only when it has something to say.
-        versionCode 81
-        versionName "2.0.12"
+        //
+        // v2.0.13 — THE ZOOM SURVIVES A MEDIA-MODE CHANGE.
+        //
+        //        ⚠ THE CAMERA RESETS THE ZOOM TO 1x WHEN IT CHANGES MODE, and this application
+        //        went on claiming the old value. Measured in flight 2026-09-13:
+        //
+        //          16:27:12.688  zoomScaleRaw=300 focal=1.42 mode=VIDEO
+        //          16:27:15.938  controller button event: TAKEN_PHOTO
+        //          16:27:16.198  zoomScaleRaw=100 focal=0.47 mode=SINGLE
+        //
+        //        The FOCAL LENGTH moves with it, so the picture really does go wide — not a
+        //        reporting artefact. And the camera reports the reset honestly, which is what
+        //        makes writing the zoom back the right answer rather than a guess.
+        //
+        //        Two faults, and only one was the camera's:
+        //          - the camera discards the zoom (its behaviour, now worked around);
+        //          - the PILL kept saying 3X, which is ours. Nothing re-read the zoom on a
+        //            mode change, breaking the rule the whole HUD is built on — UI state shows
+        //            what the AIRCRAFT holds. The published cone was right all along, because
+        //            the bridge follows info.zoomScale on every push. Only the pill lied.
+        //
+        //        The zoom check now CORRECTS the pill when a write is ignored instead of only
+        //        logging it, which closes the second fault generally and not just for this case.
+        //
+        //        ⚠ A WRITE THE PILOT DID NOT ASK FOR, once per mode change, to the CAMERA
+        //        channel and never on a timer. It restores a setting the pilot chose and the
+        //        camera discarded; it does not invent one.
+        versionCode 82
+        versionName "2.0.13"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
