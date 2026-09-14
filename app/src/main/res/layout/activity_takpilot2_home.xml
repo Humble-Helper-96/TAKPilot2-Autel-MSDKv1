@@ -313,32 +313,43 @@
                 android:text="—" android:layout_gravity="center_horizontal" />
             <TextView android:id="@+id/homeSdk" style="@style/homeCardSub"
                 android:text="MSDK —" android:layout_gravity="center_horizontal" />
-            <!-- Obstacle avoidance. Blank until the aircraft reports, because "unknown"
-                 and "disabled" must not look the same to a pilot. -->
-            <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
+            <!-- THE ORDER OF THESE LINES IS THE OPERATOR'S (2026-09-14) and it is read top
+                 to bottom before a sortie: what the aircraft HAS (charge), then what it will DO
+                 by itself (the limits that act on that charge, and the link-loss behaviour),
+                 then how it will ANSWER THE STICKS. The 6dp gaps mark those three groups; 2dp
+                 pairs a line with the one above it. Do not reorder without asking. -->
+            <!-- LIVE charge, aircraft and controller. It is the first question before a sortie
+                 and the pilot had to enter the flight screen to answer it. The thresholds line
+                 under it is a DIFFERENT fact and says LIMITS, so the two cannot be read as one. -->
+            <TextView android:id="@+id/homeBatteryLive" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="6dp" android:textStyle="bold" />
+            <!-- The two battery levels READ BACK FROM THE AIRCRAFT, not the saved preference.
+                 Here because they decide how long this flight can last, which is a pre-flight
+                 decision, and because seeing the aircraft's own values is the only way to catch
+                 an Apply that silently did not take. Blank until the aircraft reports them. -->
+            <TextView android:id="@+id/homeBatteryLevels" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" android:textStyle="bold" />
             <!-- SIGNAL LOSS (operator, 2026-08-13). States what the airframe does when the
                  link drops, on the screen the pilot passes through before takeoff. It is not
                  a setting on this aircraft — see the note in TakPilotHomeActivity. -->
             <TextView android:id="@+id/homeSignalLoss" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="6dp" android:textStyle="bold" />
+            <!-- Obstacle avoidance. Blank until the aircraft reports, because "unknown"
+                 and "disabled" must not look the same to a pilot. -->
+            <TextView android:id="@+id/homeAvoidance" style="@style/homeCardSub"
+                android:text="" android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp" android:textStyle="bold" />
             <!-- What the sticks and the gimbal wheel will actually do. These are ENFORCED from
                  Pre-Flight at connect, so this is a statement of fact, not a hope — and it is
                  here rather than on the flight screen because the pilot needs it BEFORE they
                  start flying, not after. -->
-            <TextView android:id="@+id/homeStickMode" style="@style/homeCardSub"
-                android:text="" android:layout_gravity="center_horizontal"
-                android:layout_marginTop="6dp" android:textStyle="bold" />
             <TextView android:id="@+id/homeControlResponse" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
-                android:layout_marginTop="2dp" android:textStyle="bold" />
-            <!-- The two battery levels READ BACK FROM THE AIRCRAFT, not the saved preference.
-                 Here because they decide how long this flight can last, which is a pre-flight
-                 decision, and because seeing the aircraft's own values is the only way to catch
-                 an Apply that silently did not take. Blank until the aircraft reports them. -->
-            <TextView android:id="@+id/homeBatteryLevels" style="@style/homeCardSub"
+                android:layout_marginTop="6dp" android:textStyle="bold" />
+            <TextView android:id="@+id/homeStickMode" style="@style/homeCardSub"
                 android:text="" android:layout_gravity="center_horizontal"
                 android:layout_marginTop="2dp" android:textStyle="bold" />
             <!-- WHERE THE FOOTAGE WILL ACTUALLY GO. A card in the slot does not mean the camera

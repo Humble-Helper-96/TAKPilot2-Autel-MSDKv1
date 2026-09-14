@@ -42,6 +42,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
     private lateinit var signalLoss: TextView
     private lateinit var stickMode: TextView
     private lateinit var controlResponse: TextView
+    private lateinit var batteryLive: TextView
     private lateinit var batteryLevels: TextView
     private lateinit var storage: TextView
     private lateinit var initializing: TextView
@@ -101,6 +102,7 @@ class TakPilotHomeActivity : AppCompatActivity() {
         signalLoss = findViewById(R.id.homeSignalLoss)
         stickMode = findViewById(R.id.homeStickMode)
         controlResponse = findViewById(R.id.homeControlResponse)
+        batteryLive = findViewById(R.id.homeBatteryLive)
         batteryLevels = findViewById(R.id.homeBatteryLevels)
         storage = findViewById(R.id.homeStorage)
         initializing = findViewById(R.id.homeInitializing)
@@ -330,12 +332,14 @@ class TakPilotHomeActivity : AppCompatActivity() {
         batteryLevels.text = when {
             product == null -> ""
             warn != null && crit != null ->
-                "BATTERY: WARN ${Math.round(warn)}% · CRIT ${Math.round(crit)}%"
-            else -> "BATTERY: —"
+                "BATTERY LIMITS: WARN ${Math.round(warn)}% · CRIT ${Math.round(crit)}%"
+            else -> "BATTERY LIMITS: —"
         }
         batteryLevels.setTextColor(androidx.core.content.ContextCompat.getColor(this,
             if (warn != null && crit != null) R.color.tp_accent
             else R.color.tp_state_unknown))
+
+        renderLiveBattery(product != null, warn, crit)
 
         // Camera storage — WHERE THE FOOTAGE GOES, and whether there is room for it. Follows the
         // avoidance line's three-state rule: unknown is amber and says so, rather than being
@@ -489,6 +493,40 @@ class TakPilotHomeActivity : AppCompatActivity() {
         }
     }
 
+
+    /**
+     * The live charge of the aircraft battery and of the controller's own battery.
+     *
+     * The numbers come from the bridge's cached telemetry ([TakBridgeHolder.hud]), which runs on
+     * this screen as well as on the flight screen — [TakAutoConnect] arms it telemetry-only when
+     * there is no TAK enrollment, so the line works on a controller that has never been enrolled.
+     *
+     * ⚠ **ZERO AND NULL BOTH MEAN "NOT REPORTED YET", AND NEITHER MAY DRAW AS A LOW BATTERY.**
+     * `batteryPct` starts at 0 before the first battery frame and `rcBatteryPct` starts null. A
+     * 0 shown in red would send a pilot to change a full battery; unknown takes the amber that
+     * the avoidance and storage lines above already use for the same reason.
+     *
+     * The colour follows the aircraft only. The controller battery is shown because a pilot
+     * should see it, but it is the AIRCRAFT that decides whether this sortie can start, and two
+     * things driving one colour would leave the pilot unable to tell which one is low.
+     */
+    private fun renderLiveBattery(haveProduct: Boolean, warnPct: Float?, critPct: Float?) {
+        val hud = TakBridgeHolder.hud()
+        val air = hud?.batteryPct?.takeIf { it > 0 }
+        val rc = hud?.rcBatteryPct?.takeIf { it > 0 }
+        if (!haveProduct && air == null && rc == null) {
+            batteryLive.text = ""
+            return
+        }
+        batteryLive.text = "BATTERY: AIRCRAFT ${air?.let { "$it%" } ?: "—"}" +
+            "  ·  RC ${rc?.let { "$it%" } ?: "—"}"
+        batteryLive.setTextColor(androidx.core.content.ContextCompat.getColor(this, when {
+            air == null -> R.color.tp_state_unknown
+            critPct != null && air <= critPct -> R.color.tp_state_danger
+            warnPct != null && air <= warnPct -> R.color.tp_state_caution
+            else -> R.color.tp_state_go
+        }))
+    }
 
     /**
      * Draws the media-server line, and refreshes the probe behind it when it is stale.

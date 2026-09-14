@@ -1074,8 +1074,23 @@ android {
         //        and the §4.8 banner has been saying a return is running.
         //        ⚠ VERIFIED AGAINST THE FLY MODE, not the callback — safety rule 4 on the
         //        control that most needs it. Still returning after 1500ms and the pilot is told.
-        versionCode 88
-        versionName "2.1.4"
+        // v2.1.5 — 2026-09-14. THE ENTER FLIGHT CARD SHOWS THE LIVE CHARGE of the aircraft
+        //        battery and of the controller's own battery, and the aircraft block is in the
+        //        operator's reading order: what the aircraft HAS, then what it will DO by
+        //        itself, then how it ANSWERS THE STICKS.
+        //
+        //        The numbers come from the bridge telemetry cache, which runs on the home screen
+        //        as well — TakAutoConnect arms a telemetry-only bridge when there is no TAK
+        //        enrollment, so the line works on a controller that was never enrolled.
+        //        ⚠ BOTH NUMBERS ARRIVE OVER THE AIRCRAFT LINK. The controller's own charge comes
+        //        from RemoteControllerInfo on the connected aircraft, thus with no aircraft bound
+        //        the line reads "—" in amber and not a low battery.
+        //        ⚠ ZERO AND NULL BOTH MEAN "NOT REPORTED YET". batteryPct starts at 0 before the
+        //        first battery frame; a 0 drawn in red would send a pilot to change a full pack.
+        //        The old threshold line is renamed BATTERY LIMITS — two lines that both began
+        //        with BATTERY would be read as one fact.
+        versionCode 89
+        versionName "2.1.5"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
