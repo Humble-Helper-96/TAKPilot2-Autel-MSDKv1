@@ -59,23 +59,58 @@ object NetworkStatus {
     }
 
     fun read(context: Context): Snapshot {
-        val wifi = context.applicationContext
-            .getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val info = if (wifi.isWifiEnabled) wifi.connectionInfo else null
-        // networkId == -1 is the framework's "not associated"; BSSID null likewise.
-        val associated = info != null && info.networkId != -1 && info.bssid != null
-        if (!associated) return Snapshot(State.OFF, null, -1)
-
-        val level = WifiManager.calculateSignalLevel(info!!.rssi, 5)
-        val ssid = info.ssid?.trim('"')
-            ?.takeUnless { it.isEmpty() || it == "<unknown ssid>" || it == "0x" }
-
+        // ⚠ **ASSOCIATION COMES FROM ConnectivityManager, NOT FROM WifiManager** (field report
+        // 2026-09-14). This used to decide "associated" from `connectionInfo.networkId != -1`,
+        // and on Android 10 and later that call is REDACTED without location permission: the
+        // framework hands back networkId -1 whatever the radio is really doing. A controller
+        // set up with the permission denied therefore showed a red "WIFI: NOT CONNECTED" while
+        // it sat on a validated network with TAK connected and video streaming — measured on
+        // wlan0, SSID UrsaMajor_24, -54 dBm, VALIDATED, the active default network.
+        //
+        // NetworkCapabilities needs no permission and describes the transport the system is
+        // actually using, so the STATE is read from it. WifiInfo is used only for the SSID and
+        // the bars, which genuinely do need the permission and already degrade to "connected"
+        // with no name — see [Snapshot.ssid].
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        val onWifi = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
         val validated = caps != null &&
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        if (!onWifi) return Snapshot(State.OFF, null, -1)
+
+        // Cosmetic only, and allowed to fail. A redacted WifiInfo gives "<unknown ssid>" and a
+        // meaningless rssi; both are filtered, and the line then reads "WIFI: connected" with
+        // no bars rather than claiming something untrue.
+        val wifi = context.applicationContext
+            .getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val info = runCatching { wifi.connectionInfo }.getOrNull()
+        val ssid = info?.ssid?.trim('"')
+            ?.takeUnless { it.isEmpty() || it == "<unknown ssid>" || it == "0x" }
+        val level = if (info != null && ssid != null)
+            WifiManager.calculateSignalLevel(info.rssi, 5) else -1
 
         return Snapshot(if (validated) State.CONNECTED else State.NO_INTERNET, ssid, level)
     }
+
+    /**
+     * Whether this controller may publish the pilot's own position.
+     *
+     * ⚠ **A CONTROLLER FLEW A 12.5-HOUR MISSION WITHOUT THIS AND NOBODY KNEW** (operator,
+     * 2026-09-14). Android denies the permission silently at setup. [OperatorLocation] then
+     * stays quiet by design and the pilot marker goes out in the "position not known" form —
+     * 0,0, `how="h-g-i-g-o"`, ce 9999999 — for the whole flight. The pilot sits in the team's
+     * contact list at null island, nobody can send them a marker, and the only sign was a log
+     * line nobody was reading.
+     *
+     * Kept here beside the network read because they are the same question to a pilot standing
+     * at the controller: "is this thing going to work". The home screen shows both on adjacent
+     * lines.
+     */
+    fun hasLocationPermission(context: Context): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 }

@@ -962,8 +962,34 @@ android {
         //        ⚠ NOT EXERCISED: the airborne avoidance-mismatch banner, which needs a link
         //        loss at altitude that returns with a setting changed. Its code path ran and
         //        correctly found nothing to report.
-        versionCode 84
-        versionName "2.1.0"
+        //
+        // v2.1.1 — THE HOME SCREEN SAYS WHETHER THE PILOT'S POSITION CAN BE SENT.
+        //
+        //        ⚠ A CONTROLLER FLEW A 12.5-HOUR MISSION WITHOUT LOCATION PERMISSION AND NOBODY
+        //        KNEW (operator, 2026-09-14). Android denied it silently at setup. The pilot
+        //        marker then went out in the "position not known" form — 0,0, how=h-g-i-g-o,
+        //        ce 9999999 — for the whole mission: present in the team's contact list, sitting
+        //        at null island, unable to be sent a marker. The only sign was a log line nobody
+        //        was reading, because OperatorLocation stays quiet by design.
+        //
+        //        The home card gains a LOCATION line beside TAK and WIFI: green Allowed, red
+        //        DENIED. Two states, not three — a permission is granted or it is not, so §4.6's
+        //        amber has no place. Denied, the line is TAPPABLE and asks; when Android will no
+        //        longer show the dialog it opens the application's own settings page instead,
+        //        because a red line a pilot cannot clear is half a fix.
+        //        ⚠ It opens OUR permission page and the pilot makes the change. Nothing here
+        //        writes a controller setting — safety rule 7.
+        //
+        //        ⚠ THE "WIFI: NOT CONNECTED" REPORT WAS THE SAME FAULT WEARING A DIFFERENT HAT.
+        //        NetworkStatus.read decided association from WifiManager.connectionInfo, and on
+        //        Android 10+ that call is REDACTED without location permission — networkId comes
+        //        back -1 whatever the radio is doing. The controller showed a red "NOT CONNECTED"
+        //        while sitting on wlan0, SSID UrsaMajor_24, -54 dBm, VALIDATED, as the active
+        //        default network with TAK connected and video streaming. State now comes from
+        //        NetworkCapabilities, which needs no permission; WifiInfo is used only for the
+        //        SSID and bars, which genuinely do need it and already degrade to "connected".
+        versionCode 85
+        versionName "2.1.1"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
