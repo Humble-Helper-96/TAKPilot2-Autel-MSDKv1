@@ -1391,7 +1391,14 @@ android {
         //        fixed time: startRecordFromAnyMode waits for the camera's OWN 2 Hz push to say
         //        VIDEO, then 1200 ms more, then issues the verified start — because the fixed
         //        2000 ms was refused at 11:41:15 today and the retry at 3.2 s worked.
-        //        ⚠ NOT YET MEASURED in PIP or full thermal.
+        //        ✅ MEASURED ON THE BENCH 2026-09-15 13:02–13:12, every rule in every view:
+        //        visible, PiP and full thermal each took the still and left stills; REC from
+        //        stills reached VIDEO in 250–750 ms and RECORD_START came on the FIRST attempt
+        //        every time; the hardware button from stills likewise; a shutter press DURING a
+        //        recording takes a still and the recording runs on (picture-in-video). What the
+        //        card writes per view: visible = MAX only; PiP = MAX + MIX + IRX for stills
+        //        (JPG/JPG/TIFF) and for video; full thermal = MAX JPG + IRX TIFF for a still,
+        //        IRX MP4 alone for video. The display mode never changed across any of it.
         //
         //        ⚠ STORED FOR LATER (operator, 2026-09-15 11:41): switching between photo and
         //        video with the HARDWARE buttons gave an error on screen. The log:
