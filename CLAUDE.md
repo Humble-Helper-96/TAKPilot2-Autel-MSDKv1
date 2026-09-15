@@ -90,6 +90,9 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.3.1 IS RELEASED** — tag `v2.3.1`, versionCode 96, 2026-09-15: the log switch sets its
+three options (on checks all, off clears all) and the resource row follows the switch.
+
 **v2.3.0 IS RELEASED** — tag `v2.3.0`, versionCode 95, 2026-09-15, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK (operator). It carries
 everything below that was written under v2.2.0 (nothing shipped under 2.2.0) plus the 15th: the
