@@ -49,6 +49,13 @@ A UI change lands in all three applications, or it lands in none.
 9. **`applicationId` is `com.tak.uastoollite` and must not change** — the DJI key and the
    aircraft registration are bound to it.
 
+## Releases — a hard rule
+
+⚠ **NO BINARIES ON GITHUB. SOURCE ONLY.** No APK is ever attached to a GitHub release, a
+commit or an issue (operator, 2026-09-14). A GitHub release is the TAG and the STE notes,
+and nothing else. The signed APK goes to `../../signedReleases/Autel-MSDKv1/` beside its
+notes file, which is where the fleet takes it from.
+
 ## Verification
 
 - Unit tests: `./gradlew :app:testDebugUnitTest` — pure-logic core (warnings policy,
