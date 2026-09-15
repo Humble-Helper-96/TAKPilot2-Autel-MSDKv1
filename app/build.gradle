@@ -1314,6 +1314,11 @@ android {
         //        hundreds of feet either way, on top of the geoid. Fix 7 removes the geoid part
         //        only; the pressure part needs the local QNH and is not attempted.
         //
+        //        "DEBUG LOG ON" at the foot of the HUD top panel while file logging is on
+        //        (operator, 2026-09-15). The log costs the screen some jitter — accepted — but a
+        //        pilot must be able to see it is on and turn it off. Amber, gone when off.
+        //        Specification §4.3; the DJI trees owe it (ledger D28).
+        //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
         //        twice, cancelLand was accepted twice, and the aircraft was still LANDING 1.5 s
