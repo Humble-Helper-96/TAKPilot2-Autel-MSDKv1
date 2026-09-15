@@ -290,6 +290,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
         fpvMediaMode = findViewById(R.id.fpvMediaMode)
+        // The media-mode pill is a TOGGLE (operator, 2026-09-15): a tap on the movie camera
+        // asks for video, on the still camera for photo, taking nothing and recording nothing.
+        // The lit half follows the camera's own report, so an ignored tap shows as ignored.
+        fpvMediaMode.onModeRequested = { wanted -> onMediaModeRequested(wanted) }
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
         fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
         fpvFaaCeiling = findViewById(R.id.fpvFaaCeiling)
@@ -3392,6 +3396,27 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * mode at connect is not a change, and announcing it there would fire on every connect for
      * something the pilot did not do.
      */
+    /**
+     * The pilot tapped a half of the media-mode pill. Refused while recording — the camera
+     * will not change what it is writing, and the record path owns that state. Otherwise one
+     * write; the camera's 2 Hz push moves the highlight, and [renderMediaMode] announces the
+     * change and restores the zoom exactly as it does for a hardware-button change.
+     */
+    private fun onMediaModeRequested(wanted: MediaModeView.Mode) {
+        val cam = AutelProductHolder.camera
+        if (cam == null) { toast("The camera is not connected."); return }
+        if (AutelProductHolder.isRecording) {
+            AppLog.w(TAG, "media mode $wanted refused — the camera is recording")
+            showNotice("Stop the recording to change the camera mode", refused = true)
+            return
+        }
+        val target = if (wanted == MediaModeView.Mode.VIDEO) MediaMode.VIDEO else MediaMode.SINGLE
+        if (AutelProductHolder.mediaMode == target) return
+        AppLog.i(TAG, "tap: media mode -> $target")
+        runCatching { cam.setMediaMode(target, camCb("setMediaMode($target)") {}) }
+            .onFailure { AppLog.w(TAG, "setMediaMode($target) threw: ${it.message}") }
+    }
+
     private fun renderMediaMode() {
         if (!::fpvMediaMode.isInitialized) return
         val mode = AutelProductHolder.mediaMode

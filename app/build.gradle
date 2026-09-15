@@ -1374,6 +1374,10 @@ android {
         //        §4.2; the DJI trees owe it (D29). ⚠ OPEN: the obstacle view's left-edge label
         //        sits under the column's foot — it needs a LEFT inset like its top one.
         //        The obstacle view has the LEFT inset now (setLeftInset, the column's right edge).
+        //        THE MEDIA-MODE READOUT IS A TOGGLE (operator, 2026-09-15): movie camera left,
+        //        still camera right, the lit half is what the camera REPORTS; a tap asks for
+        //        that mode and takes nothing; refused while recording. The shutter and REC keep
+        //        moving the mode by themselves. Specification §4.3; DJI owes it under D29.
         //        The callsign is its own HUD line under the clock, the speed on the next (§4.4).
         //        Column order (operator): drop pin, lights, AR, PIP, [thermal size], zoom, LIVE,
         //        REC. RTH went to the column's head and back to the status capsule the same day.
