@@ -38,7 +38,9 @@ enum class CameraView(
     /** The pill reads PIP unlit here: it names what a tap will ADD, the way the zoom pill
      *  reads the level it is at. (operator, 2026-09-15) */
     VISIBLE("VISIBLE", "PIP", AutelTakBridge.Lens.EO),
-    IR("IR", "IR", AutelTakBridge.Lens.IR),
+    /** Full thermal keeps the PIP label, lit (operator, 2026-09-15): the pill is the PIP
+     *  switch, and the thermal-size pill under it says whether the window is maximised. */
+    IR("IR", "PIP", AutelTakBridge.Lens.IR),
     /** Thermal drawn into the centre of the visible picture, by the camera. */
     PIP("PICTURE_IN_PICTURE", "PIP", AutelTakBridge.Lens.BLEND);
 

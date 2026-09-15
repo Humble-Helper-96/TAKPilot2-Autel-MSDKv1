@@ -385,12 +385,11 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(modePill("PIP", false) to "Normal", modePill("PIP", true) to "PIP",
-                modePill("IR", true) to "Full thermal"),
+            listOf(modePill("PIP", false) to "Normal", modePill("PIP", true) to "PIP"),
             "PIP: the thermal camera",
             "A touch changes between the normal camera and PIP. PIP is the thermal image in " +
-                "the centre of the normal image. In PIP, touch the arrows at the corner of the " +
-                "thermal image to make it full screen; touch them again to go back to PIP. " +
+                "the centre of the normal image. In PIP, the pill under it makes the thermal " +
+                "image full screen; touch it again to go back to PIP. " +
                 "Zoom does not work in PIP.\n\n" +
                 "YOU CANNOT CHANGE THE CAMERA WHILE THE AIRCRAFT RECORDS. The app tells you " +
                 "to stop the recording. The aircraft records the camera you were on when the " +

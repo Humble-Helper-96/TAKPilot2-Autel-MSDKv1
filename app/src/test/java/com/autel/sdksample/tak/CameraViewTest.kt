@@ -63,10 +63,10 @@ class CameraViewTest {
     }
 
     @Test
-    fun `the pill reads PIP unlit in visible, PIP lit in PIP, IR lit in full thermal`() {
+    fun `the pill reads PIP unlit in visible and PIP lit in PIP and in full thermal`() {
         assertEquals("PIP", CameraView.VISIBLE.label); assertFalse(CameraView.VISIBLE.active)
         assertEquals("PIP", CameraView.PIP.label); assertTrue(CameraView.PIP.active)
-        assertEquals("IR", CameraView.IR.label); assertTrue(CameraView.IR.active)
+        assertEquals("PIP", CameraView.IR.label); assertTrue(CameraView.IR.active)
     }
 
     @Test
