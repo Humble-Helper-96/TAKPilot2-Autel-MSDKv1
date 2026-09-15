@@ -211,125 +211,132 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
-        <!-- ACTIONS, right. Drop-pin, AR, zoom, IR, lights, LIVE, REC.
 
-             ⚠ THE PILLS HAVE TWO WIDTHS AND ONLY TWO (operator, 2026-09-12). The four short
-             ones — AR, zoom, IR, lights — are 54dp; the two labelled ones, LIVE and REC, are
-             66dp. Before this they were 46/54/46/46/66/62, six controls at four widths, which
-             read as carelessness rather than as a hierarchy. A new pill takes one of these two
-             numbers. The 54 comes from the zoom pill's fractional labels and the 66 from the
-             widest word, "SYNC"; both are the measured minimum for their content, so neither
-             can simply be shrunk to match the other.
+    </LinearLayout>
 
-             ⚠ THE WEIGHTED SPACER ABOVE IS WHAT HOLDS THIS GROUP AGAINST THE RIGHT EDGE. Both
-             capsules are children of the one horizontal band, thus the gap between them is a
-             view and not a gravity. Making them separate children of the outer FrameLayout,
-             anchored to their own corners, would also work and is NOT what is built here. -->
-        <LinearLayout
-            android:id="@+id/flightToolbarActions"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minHeight="@dimen/hud_capsule_height"
-            android:background="@drawable/bg_hud_capsule"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="3dp">
+<!-- ACTIONS, LEFT SIDE, VERTICAL (operator, 2026-09-15): the bar across the top was hard to
+     reach, so the actions capsule leaves the band and stands as a column under the status
+     capsule, on the left where the thumb is. Same pills, same shapes, same sizes; the
+     order top to bottom is the old order left to right. It is a child of the FrameLayout,
+     anchored top|start below the band, so the band's height — the chrome inset the AR
+     and obstacle views read — now reports the STATUS capsule alone.
+     Drop-pin, AR, zoom, IR, lights, LIVE, REC.
 
-        <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
-             the most-used action on this screen and a pilot reaching for it is usually also
-             flying, so it has to be hittable without aiming. Same sizing/placement as DJI. -->
-        <ImageButton
-            android:id="@+id/flightDropPinButton"
-            android:layout_width="56dp"
-            android:layout_height="46dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Drop a TAK marker at the camera crosshair"
-            android:padding="1dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_drop_pin" />
+         ⚠ THE PILLS HAVE TWO WIDTHS AND ONLY TWO (operator, 2026-09-12). The four short
+         ones — AR, zoom, IR, lights — are 54dp; the two labelled ones, LIVE and REC, are
+         66dp. Before this they were 46/54/46/46/66/62, six controls at four widths, which
+         read as carelessness rather than as a hierarchy. A new pill takes one of these two
+         numbers. The 54 comes from the zoom pill's fractional labels and the 66 from the
+         widest word, "SYNC"; both are the measured minimum for their content, so neither
+         can simply be shrunk to match the other.
 
-        <!-- Tap toggles the AR overlay; long-press opens AR options. -->
-        <TextView
-            android:id="@+id/flightArButton"
-            android:layout_marginStart="16dp"
-            android:layout_width="54dp"
-            android:layout_height="34dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Toggle AR marker overlay"
-            android:gravity="center"
-            android:text="AR"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+         ⚠ THE WEIGHTED SPACER ABOVE IS WHAT HOLDS THIS GROUP AGAINST THE RIGHT EDGE. Both
+         capsules are children of the one horizontal band, thus the gap between them is a
+         view and not a gravity. Making them separate children of the outer FrameLayout,
+         anchored to their own corners, would also work and is NOT what is built here. -->
+    <LinearLayout
+        android:id="@+id/flightToolbarActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="68dp"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/bg_hud_capsule"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="10dp">
 
-        <!-- Zoom pill. It set the 54dp that AR, IR and the lights now share: the right zoom
-             rocker puts fractional values in here ("2.4X"), which is four glyphs where the
-             stepped labels were two. Widened rather than shrinking the text — this is read at a
-             glance in sunlight. -->
-        <TextView
-            android:id="@+id/flightZoomButton"
-            android:layout_marginStart="16dp"
-            android:layout_width="54dp"
-            android:layout_height="34dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Camera zoom — tap to step, right rocker to adjust"
-            android:gravity="center"
-            android:text="1X"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+    <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
+         the most-used action on this screen and a pilot reaching for it is usually also
+         flying, so it has to be hittable without aiming. Same sizing/placement as DJI. -->
+    <ImageButton
+        android:id="@+id/flightDropPinButton"
+        android:layout_width="56dp"
+        android:layout_height="46dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Drop a TAK marker at the camera crosshair"
+        android:padding="1dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_drop_pin" />
 
-        <!-- Thermal: switches the FPV between the visible camera and the 640T's IR sensor.
-             Sits next to the zoom pill because both change what the camera is showing rather
-             than what the app does with it. -->
-        <TextView
-            android:id="@+id/flightIrButton"
-            android:layout_marginStart="16dp"
-            android:layout_width="54dp"
-            android:layout_height="34dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Toggle thermal (IR) camera"
-            android:gravity="center"
-            android:text="IR"
-            android:textColor="@color/tp_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+    <!-- Tap toggles the AR overlay; long-press opens AR options. -->
+    <TextView
+        android:id="@+id/flightArButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="34dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Toggle AR marker overlay"
+        android:gravity="center"
+        android:text="AR"
+        android:textColor="@color/tp_text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <!-- Zoom pill. It set the 54dp that AR, IR and the lights now share: the right zoom
+         rocker puts fractional values in here ("2.4X"), which is four glyphs where the
+         stepped labels were two. Widened rather than shrinking the text — this is read at a
+         glance in sunlight. -->
+    <TextView
+        android:id="@+id/flightZoomButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="34dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Camera zoom — tap to step, right rocker to adjust"
+        android:gravity="center"
+        android:text="1X"
+        android:textColor="@color/tp_text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <!-- Thermal: switches the FPV between the visible camera and the 640T's IR sensor.
+         Sits next to the zoom pill because both change what the camera is showing rather
+         than what the app does with it. -->
+    <TextView
+        android:id="@+id/flightIrButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="34dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Toggle thermal (IR) camera"
+        android:gravity="center"
+        android:text="IR"
+        android:textColor="@color/tp_text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
 
 
-        <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
-             image controls and a bare glyph among framed ones reads as a different class of
-             control. Same 46x34 as the rest. -->
-        <ImageButton
-            android:id="@+id/flightLightsButton"
-            android:layout_marginStart="16dp"
-            android:layout_width="54dp"
-            android:layout_height="34dp"
-            android:background="@drawable/bg_zoom_pill"
-            android:contentDescription="Exterior lights"
-            android:padding="5dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_led_on" />
+    <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
+         image controls and a bare glyph among framed ones reads as a different class of
+         control. Same 46x34 as the rest. -->
+    <ImageButton
+        android:id="@+id/flightLightsButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="34dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Exterior lights"
+        android:padding="5dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_led_on" />
 
-        <com.autel.sdksample.tak.LiveToggleView
-            android:id="@+id/flightStreamButton"
-            android:layout_marginStart="16dp"
-            android:layout_width="66dp"
-            android:layout_height="34dp"
-            android:layout_marginHorizontal="6dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Start/stop the video stream to TAK" />
+    <com.autel.sdksample.tak.LiveToggleView
+        android:id="@+id/flightStreamButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="34dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Start/stop the video stream to TAK" />
 
-        <com.autel.sdksample.tak.RecordToggleView
-            android:id="@+id/flightRecordButton"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="6dp"
-            android:layout_width="66dp"
-            android:layout_height="34dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Start/stop recording to the aircraft SD card" />
-
-        </LinearLayout>
+    <com.autel.sdksample.tak.RecordToggleView
+        android:id="@+id/flightRecordButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="34dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Start/stop recording to the aircraft SD card" />
 
     </LinearLayout>
 
@@ -390,7 +397,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginTop="64dp"
-        android:layout_marginStart="16dp"
+        android:layout_marginStart="100dp"
         android:background="@drawable/bg_warning_banner"
         android:gravity="center_vertical"
         android:orientation="horizontal"
