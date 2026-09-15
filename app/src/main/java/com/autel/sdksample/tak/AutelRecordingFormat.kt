@@ -14,7 +14,7 @@ import com.autel.sdk.camera.AutelXT706
 import com.taklite.util.AppLog
 
 /**
- * What the aircraft WRITES TO THE CARD: 1920x1080 at 30 fps, in H.265.
+ * What the aircraft WRITES TO THE CARD: 1920x1080 at 30 fps, in H.264.
  *
  * ⚠ **THIS IS THE CARD, NOT THE LIVE FEED.** The TAK stream is the screen-capture encoder at
  * 960x720 H.264 ([ScreenCaptureEncoder]) and nothing here touches it. The operator's standing
@@ -24,19 +24,29 @@ import com.taklite.util.AppLog
  * ## Why
  *
  * The files from a 12.5-hour mission were huge (operator, 2026-09-14). The camera was left in
- * whatever Autel Explorer put it in, which for this airframe is up to 7680x4320. 1920x1080 is
- * about a quarter of 4K's pixels and H.265 is about half the bits of H.264 for the same
- * picture, and the two multiply.
+ * whatever Autel Explorer put it in, which for this airframe is up to 7680x4320. Dropping to
+ * 1920x1080 takes the card from 45 GB an hour to 20.
  *
  * ⚠ **THERE IS NO SD RESOLUTION ON THIS CAMERA.** The operator asked for one. The XT706
  * supported table (`ResolutionFpsSupportUtil`, read from the aar) runs from 7680x4320 down to
  * `1280*720p24` and contains no 720x480 or 640x480. 1280x720 is the floor, and 1920x1080 was
  * chosen above it so the footage stays usable as evidence and can be cropped into.
  *
- * ⚠ **THE BITRATE IS NOT SETTABLE.** `VideoEncoderConfiguration` REPORTS bitrate, quality and
- * I-frame interval, and the whole aar has no setter for any of them. Size is controlled by the
- * resolution, the frame rate and the codec, and by nothing else. Do not look for a bitrate
- * control again.
+ * ⚠ **THE BITRATE IS NOT SETTABLE, AND THIS IS SETTLED — MEASURED ON THE CAMERA ITSELF,
+ * 2026-09-14.** Its own JSON-RPC API (`http://192.168.1.11/camera`) reports the whole encoder
+ * object, `Bitrate` and `Quality` and `GovLength` and `BitrateType` included, and
+ * `SetVideoEncoderConfiguration` answers `status 0` while honouring ONLY `Resolution` and
+ * `Encoding`. Bitrate 8000, Bitrate 3000 (inside the camera's own advertised limit), Quality 80,
+ * GovLength 60 and VBR were each sent and each silently discarded, confirmed by read-back. An
+ * unknown method answers `status -1`, so that 0 is a real accept. The SDK's three-field
+ * serialiser MATCHES THE CAMERA. Do not look for a bitrate control again, in the SDK or past it.
+ *
+ * ⚠ **THE LADDER IS CBR AND PER-RESOLUTION**, read off the camera one rung at a time:
+ * 720p30 = 30,000 kbps (13.5 GB/h), 1080p30 = 45,000 (20.3), 2720x1528p30 = 80,000 (36.0),
+ * 2160p30 = 100,000 (45.0). Two consequences that read backwards: **frame rate changes nothing**,
+ * because CBR is bits per SECOND — 1080p24 writes as many bytes a minute as 1080p30 — and **720p
+ * is a bad trade**, at 32.6 Mbps per megapixel against 1080p's 22.2. It gives up half the linear
+ * resolution to save a third of the size. 1080p is the efficient rung this camera has.
  *
  * ## It is applied at EVERY connect, on purpose
  *
@@ -67,7 +77,18 @@ object AutelRecordingFormat {
      *  moves more smoothly on a pan than 24. */
     val RESOLUTION: VideoResolution = VideoResolution.Resolution_1920x1080
     val FPS: VideoFps = VideoFps.FrameRate_30ps
-    val CODEC: VideoEncodeFormat = VideoEncodeFormat.H265
+    /**
+     * H.264, BY THE OPERATOR'S DECISION (2026-09-14), AND IT COSTS NOTHING.
+     *
+     * ⚠ The codec is NOT a size lever on this camera — see the measured ladder below. The
+     * bitrate target is chosen from the RESOLUTION alone, so H.264 and H.265 write the same
+     * 45,000 kbps at 1080p30 and the same number of bytes per minute. H.265 would buy a better
+     * picture for those bytes in theory; at 45 Mbps on 1080p there is nothing left to see, and
+     * every player, every evidence system and every workstation opens H.264 without asking.
+     *
+     * This replaced H.265, which v2.1.7 selected for a reason that turned out to be false.
+     */
+    val CODEC: VideoEncodeFormat = VideoEncodeFormat.H264
 
     /** Long enough for the camera to apply both writes before anything is read back. The lens
      *  verify uses the same figure for the same reason — see [LensFramePolicy]. */

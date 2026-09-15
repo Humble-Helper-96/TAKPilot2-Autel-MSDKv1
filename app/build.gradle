@@ -1150,8 +1150,10 @@ android {
         //        2. 720p IS A BAD TRADE. It is 32.6 Mbps per megapixel against 1080p's 22.2 —
         //           half the linear resolution for a THIRD off the size. The earlier estimate
         //           of "near 20 Mbps" assumed the ladder was linear in pixels. It is not.
-        //        Since the target is per-resolution and codec-independent, H.265 is strictly
-        //        better than H.264: the same bytes, a better picture. KEEP IT.
+        //        Since the target is per-resolution and codec-independent, the codec changes
+        //        NOTHING about the size. ⚠ THE OPERATOR CHOSE H.264 (2026-09-14): at 45 Mbps on
+        //        1080p there is no visible difference left for H.265 to win, and H.264 opens
+        //        everywhere — every player, every evidence system. See v2.1.9.
         //        Incidental: StreamId 1 is the downlink at 1280x720p30 H264 3000 kbps, already
         //        at the advertised 3000 ceiling.
         //        ⚠ THE LIVE TAK STREAM IS NOT TOUCHED. That is ScreenCaptureEncoder at 960x720
@@ -1181,8 +1183,13 @@ android {
         //        A re-fire is now detected and returns early, and the recording state is READ
         //        BACK from the camera (getCurrentRecordTime, one call, not a subscription) on
         //        every arm — which also fixes a cold start into an aircraft already recording.
-        versionCode 92
-        versionName "2.1.8"
+        // v2.1.9 — 2026-09-14. THE CARD RECORDS IN H.264, not H.265 (operator). The codec is
+        //        not a size lever on this camera — the CBR target comes from the resolution
+        //        alone, so both codecs write 45,000 kbps at 1080p30 and the same bytes a minute.
+        //        H.265 was selected in v2.1.7 for a saving that does not exist. At 45 Mbps on
+        //        1080p there is nothing left for it to win, and H.264 plays everywhere.
+        versionCode 93
+        versionName "2.1.9"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

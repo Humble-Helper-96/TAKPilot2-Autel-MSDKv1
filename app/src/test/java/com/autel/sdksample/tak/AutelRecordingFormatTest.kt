@@ -18,7 +18,7 @@ class AutelRecordingFormatTest {
         assertTrue(AutelRecordingFormat.agrees(
             VideoResolution.Resolution_1920x1080,
             VideoFps.FrameRate_30ps,
-            VideoEncodeFormat.H265))
+            VideoEncodeFormat.H264))
     }
 
     @Test
@@ -28,15 +28,18 @@ class AutelRecordingFormatTest {
         assertFalse(AutelRecordingFormat.agrees(
             VideoResolution.Resolution_3840x2160,
             VideoFps.FrameRate_30ps,
-            VideoEncodeFormat.H265))
+            VideoEncodeFormat.H264))
     }
 
     @Test
     fun `the codec alone reverting does not agree`() {
+        // ⚠ H.265 is the WRONG answer here now, and deliberately so: it writes the same bytes
+        // as H.264 on this camera and is harder to play back, so a camera that quietly kept it
+        // must still read as a disagreement.
         assertFalse(AutelRecordingFormat.agrees(
             VideoResolution.Resolution_1920x1080,
             VideoFps.FrameRate_30ps,
-            VideoEncodeFormat.H264))
+            VideoEncodeFormat.H265))
     }
 
     @Test
@@ -44,7 +47,7 @@ class AutelRecordingFormatTest {
         assertFalse(AutelRecordingFormat.agrees(
             VideoResolution.Resolution_1920x1080,
             VideoFps.FrameRate_60ps,
-            VideoEncodeFormat.H265))
+            VideoEncodeFormat.H264))
     }
 
     @Test
@@ -55,6 +58,6 @@ class AutelRecordingFormatTest {
         assertFalse(AutelRecordingFormat.agrees(
             VideoResolution.UNKNOWN, VideoFps.UNKNOWN, VideoEncodeFormat.UNKNOWN))
         assertFalse(AutelRecordingFormat.agrees(
-            VideoResolution.Resolution_1920x1080, null, VideoEncodeFormat.H265))
+            VideoResolution.Resolution_1920x1080, null, VideoEncodeFormat.H264))
     }
 }
