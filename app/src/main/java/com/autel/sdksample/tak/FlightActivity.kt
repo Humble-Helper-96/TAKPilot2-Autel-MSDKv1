@@ -2532,8 +2532,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // it, where the HUD does not cover it. The icon is drawn with its small square in the
         // lower-left and is turned 180° so the square is in the upper-right, the corner it
         // marks.
-        val art = 4f / 24f
-        val inset = (2 * resources.displayMetrics.density)
+        // The icon's art reaches 3/24 of the view in from its edge once turned (the small
+        // square overhangs the frame by one unit), so the view is placed by the ART's corner,
+        // and the art touches the window's corner with no inset (operator: "tight").
+        val art = 3f / 24f
         val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()
@@ -2541,13 +2543,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val x: Float
         val y: Float
         if (cameraView == CameraView.PIP) {
-            x = (box.right.toFloat() - inset - w + art * w).coerceIn(0f, parent.width - w)
-            y = maxOf(box.top.toFloat() + inset - art * h, chromeTop + inset)
+            x = (box.right.toFloat() - w + art * w).coerceIn(0f, parent.width - w)
+            y = maxOf(box.top.toFloat() - art * h, chromeTop)
         } else {
+            // Beside the EV slider, level with it. Screen positions, because the slider is
+            // nested two layouts deep in the HUD column and its own y is relative to its row.
             val ev = findViewById<View>(R.id.evSlider)
-            val hud = findViewById<View>(R.id.flightHudColumn)
-            val evTop = hud.y + ev.y
-            x = hud.x - w - inset
+            val evPos = IntArray(2); ev.getLocationInWindow(evPos)
+            val parentPos = IntArray(2); parent.getLocationInWindow(parentPos)
+            val evLeft = (evPos[0] - parentPos[0]).toFloat()
+            val evTop = (evPos[1] - parentPos[1]).toFloat()
+            x = evLeft - w
             y = evTop + (ev.height - h) / 2f
         }
         pipSizeButton.rotation = 180f
