@@ -939,24 +939,21 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                             // worse than the button press it would have saved.
                             "START_VIDEO" -> {
                                 val camNow = AutelProductHolder.camera
-                                if (AutelProductHolder.mediaMode == MediaMode.SINGLE &&
+                                if (AutelProductHolder.mediaMode != MediaMode.VIDEO &&
                                     !AutelProductHolder.isRecording &&
                                     !hardwareRecordPending && camNow != null) {
+                                    // Since 2026-09-15 the fixed wait is gone: the start
+                                    // follows the camera's own report of VIDEO — see
+                                    // startRecordFromAnyMode. The pending flag stops a second
+                                    // press in that window queuing a second start.
                                     hardwareRecordPending = true
-                                    AppLog.i(TAG, "hardware record pressed in SINGLE — the " +
-                                        "camera takes this press as a mode change; starting " +
-                                        "the recording after ${HW_RECORD_SETTLE_MS}ms")
+                                    AppLog.i(TAG, "hardware record pressed in " +
+                                        "${AutelProductHolder.mediaMode} — starting once the " +
+                                        "camera reports VIDEO")
                                     runOnUiThread {
-                                        handler.postDelayed({
-                                            hardwareRecordPending = false
-                                            if (AutelProductHolder.isRecording) {
-                                                AppLog.i(TAG, "hardware record: already " +
-                                                    "recording — the pilot's own second press " +
-                                                    "got there first, not starting again")
-                                            } else {
-                                                startRecordVerified(camNow)
-                                            }
-                                        }, HW_RECORD_SETTLE_MS)
+                                        startRecordFromAnyMode(camNow)
+                                        handler.postDelayed({ hardwareRecordPending = false },
+                                            MODE_POLL_LIMIT_MS + MODE_READY_SETTLE_MS)
                                     }
                                 }
                             }
@@ -3084,54 +3081,57 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             cam.stopRecordVideo(camCb("stopRecordVideo"))
             return
         }
-        // ⚠ **IN STILLS MODE THIS PILL IS A SHUTTER** (operator, 2026-09-13). The pill has
-        // already changed shape and word to say so — see renderMediaMode.
-        //
-        // ⚠ NO MODE DANCE HERE, AND THAT IS THE POINT. The camera is ALREADY in stills, so the
-        // shutter is a single call with nothing to set and nothing to restore. The old
-        // on-screen shutter that was removed in v2.0.0 had to drag the camera SINGLE -> VIDEO
-        // underneath whatever it was doing; this cannot, because it only exists while the
-        // camera is in the mode it needs.
-        //
-        // ⚠ WHAT IT COSTS, RECORDED SO IT STAYS A DECISION: the pill could previously start a
-        // recording from ANY mode in one tap, by reading the mode, setting VIDEO and verifying.
-        // It no longer can while the camera is in stills. The hardware record button is the
-        // path for that, and since v2.0.7 it is one press. If that turns out to matter, put the
-        // recording back on a LONG press here rather than taking the shutter away again.
-        if (AutelProductHolder.mediaMode == MediaMode.SINGLE) {
-            AppLog.i(TAG, "tap: shutter (the camera is in SINGLE)")
-            runCatching { cam.startTakePhoto(camCb("startTakePhoto")) }
-                .onFailure {
-                    AppLog.e(TAG, "startTakePhoto threw: $it")
-                    toast("The photo could not be taken. The camera refused.")
-                }
+        // ⚠ **REC RECORDS FROM ANY MODE** (operator, 2026-09-15). From 2026-09-13 to today the
+        // pill was a SHUTTER while the camera was in stills; the operator's rule now is that
+        // the record button — pill or hardware — puts the camera in video if it is not there,
+        // starts, and leaves it in video; the hardware shutter puts it in stills and leaves it
+        // there. One rule for both buttons, and the pill always reads REC.
+        startRecordFromAnyMode(cam)
+    }
+
+    /**
+     * Starts a recording whatever mode the camera is in.
+     *
+     * ⚠ **THE CAMERA'S MODE ACK IS NOT READINESS, AND NEITHER IS A FIXED WAIT.** Measured:
+     * a start 2 ms after the `setMediaMode` ack is acked and silently ignored (2026-08-01);
+     * a start at 800 ms after the ack likewise (2026-09-13); the hardware path's fixed 2000 ms
+     * wait was still answered "Needs the recording mode" on 2026-09-15 at 11:41:15 and the
+     * retry at 3.2 s worked. So this WAITS FOR THE CAMERA'S OWN 2 Hz PUSH to say VIDEO, then
+     * gives it [MODE_READY_SETTLE_MS] more, then issues the verified start. Polled at
+     * [MODE_POLL_MS] up to [MODE_POLL_LIMIT_MS]; past that it starts anyway and lets the
+     * watchdog in [startRecordVerified] report the truth.
+     *
+     * Already in VIDEO: the start is immediate, as before.
+     */
+    private fun startRecordFromAnyMode(cam: AutelBaseCamera) {
+        if (AutelProductHolder.mediaMode == MediaMode.VIDEO) {
+            startRecordVerified(cam)
             return
         }
-        cam.getMediaMode(object : com.autel.common.CallbackWithOneParam<MediaMode> {
-            override fun onSuccess(mode: MediaMode?) {
-                AppLog.i(TAG, "media mode before record: $mode")
-                if (mode == MediaMode.VIDEO) {
-                    startRecordVerified(cam)
-                } else {
-                    cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO)") {
-                        // SETTLE DELAY — NOT superstition, measured on hardware 2026-08-01.
-                        // Firing startRecordVideo straight out of this callback (which is what
-                        // this code used to do, 2ms after the mode ack) gets StartRecording
-                        // answered with status 0 and then SILENTLY IGNORED: no RECORD_START
-                        // event, no file on the card. The camera acknowledges the mode change
-                        // before it can actually act on it. With no mode switch needed,
-                        // RECORD_START comes back in 1ms — so the delay is only needed here.
-                        handler.postDelayed({ startRecordVerified(cam) }, MODE_SWITCH_SETTLE_MS)
-                    })
+        AppLog.i(TAG, "record from ${AutelProductHolder.mediaMode}: switching the camera to VIDEO first")
+        // Idempotent if the camera is already changing on its own (the hardware button's
+        // first press); the read-back below is what is waited for, not this ack.
+        runCatching { cam.setMediaMode(MediaMode.VIDEO, camCb("setMediaMode(VIDEO)") {}) }
+            .onFailure { AppLog.w(TAG, "setMediaMode(VIDEO) threw: ${it.message}") }
+        val startedAt = SystemClock.elapsedRealtime()
+        lateinit var poll: Runnable
+        poll = Runnable {
+            if (AutelProductHolder.camera == null) return@Runnable
+            if (AutelProductHolder.isRecording) return@Runnable   // the camera got there itself
+            val waited = SystemClock.elapsedRealtime() - startedAt
+            when {
+                AutelProductHolder.mediaMode == MediaMode.VIDEO -> {
+                    AppLog.i(TAG, "camera reports VIDEO after ${waited}ms — starting in ${MODE_READY_SETTLE_MS}ms")
+                    handler.postDelayed({ startRecordVerified(cam) }, MODE_READY_SETTLE_MS)
                 }
+                waited >= MODE_POLL_LIMIT_MS -> {
+                    AppLog.w(TAG, "camera never reported VIDEO in ${waited}ms — starting anyway; the watchdog decides")
+                    startRecordVerified(cam)
+                }
+                else -> handler.postDelayed(poll, MODE_POLL_MS)
             }
-            override fun onFailure(error: AutelError?) {
-                // Cannot read the mode — try the record anyway rather than refusing; the
-                // camera's own rejection (surfaced by camCb) beats a guess about why.
-                AppLog.w(TAG, "getMediaMode failed (${error?.description}) — trying record directly")
-                cam.startRecordVideo(camCb("startRecordVideo"))
-            }
-        })
+        }
+        handler.postDelayed(poll, MODE_POLL_MS)
     }
 
     /**
@@ -3423,11 +3423,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             })
         }
         if (mode != null) announcedMediaMode = mode
-        // ⚠ THE RECORD PILL FOLLOWS THE CAMERA TOO (operator, 2026-09-13). In stills mode it is
-        // a shutter, not a record control — see onRecordToggleTapped. Driven from here rather
-        // than from the tap so it is right the moment the camera moves, including when the
-        // HARDWARE shutter moves it and this application is never asked.
-        if (::recordToggle.isInitialized) recordToggle.setPhotoMode(mode == MediaMode.SINGLE)
+        // The record pill ALWAYS reads REC (operator, 2026-09-15): it records from any mode,
+        // switching the camera to video itself — see onRecordToggleTapped. The stills-mode
+        // shutter shape of 2026-09-13 is gone.
+        if (::recordToggle.isInitialized) recordToggle.setPhotoMode(false)
     }
 
     /** The pending zoom restore, so a second mode change replaces the first. */
@@ -4141,6 +4140,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
          * one that works rather than replacing the net that proves it did.
          */
         private const val HW_RECORD_SETTLE_MS = 2000L
+
+        /** How often [startRecordFromAnyMode] looks at the camera's pushed mode, and for how
+         *  long, and how much more it waits once VIDEO is reported. The push is 2 Hz; 1200 ms
+         *  after it says VIDEO is past every failure measured so far (800 ms after the ack
+         *  failed; 2000 ms after the press failed once when the mode itself came late). */
+        private const val MODE_POLL_MS = 250L
+        private const val MODE_POLL_LIMIT_MS = 6000L
+        private const val MODE_READY_SETTLE_MS = 1200L
 
         /** How long to wait for the camera's RECORD_START before assuming the start was ignored.
          *  When the camera is ready this arrives in ~1ms, so this is ~1000x margin. */

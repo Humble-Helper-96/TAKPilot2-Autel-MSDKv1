@@ -1382,6 +1382,17 @@ android {
         //        up into the freed space, and the WARNING BANNER IS AT THE BOTTOM-LEFT AND
         //        OPENS UPWARD, ▴ collapsed, ▾ under the open list.
         //
+        //        PHOTO AND VIDEO ARE TWO BUTTONS WITH ONE RULE EACH (operator, 2026-09-15): the
+        //        hardware SHUTTER puts the camera in stills, takes the photo and leaves it in
+        //        stills (the camera does that itself; unchanged); the RECORD button — pill or
+        //        hardware — puts the camera in video if it is not, starts, stops on the next
+        //        press, and leaves it in video. The pill is no longer a shutter in stills (the
+        //        2026-09-13 shape is gone) and always reads REC. The start no longer waits a
+        //        fixed time: startRecordFromAnyMode waits for the camera's OWN 2 Hz push to say
+        //        VIDEO, then 1200 ms more, then issues the verified start — because the fixed
+        //        2000 ms was refused at 11:41:15 today and the retry at 3.2 s worked.
+        //        ⚠ NOT YET MEASURED in PIP or full thermal.
+        //
         //        ⚠ STORED FOR LATER (operator, 2026-09-15 11:41): switching between photo and
         //        video with the HARDWARE buttons gave an error on screen. The log:
         //        11:41:13 hardware record pressed in SINGLE — the app takes the press as a
