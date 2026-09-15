@@ -1289,13 +1289,30 @@ android {
         //           landed 10° wrong sideways, zero at the centre, growing outward, invisible to
         //           the crosshair self-test. The target direction is now rotated into the
         //           camera frame first (CameraProjection.kt, pinned by CameraProjectionTest).
-        //        ⚠ STILL OPEN, in order of size: (4) a pin with no stored
-        //        elevation (map tap, restored, look-point without DTED) is differenced against
-        //        a real aircraft MSL and lands at SEA LEVEL. (5) the flat-plane fallback when
-        //        no takeoff terrain reference latches — fired in every flight today although
-        //        DTED2 covers the area; check homeSet. (6) magnetometer bias 0.9–6° by heading.
-        //        (7) hae vs MSL for non-ground contacts. (8) telemetry leads video; DTED file
-        //        seeks per contact per frame on the UI thread. (9) gimbal roll unread.
+        //        4. A PIN WITH NO ELEVATION LANDED AT SEA LEVEL — FIXED. Map tap, restored from
+        //           disk, or dropped without DTED coverage all carried 0.0, and once the
+        //           aircraft's real MSL was known it was differenced anyway: 60 m deep at a 60 m
+        //           field. Unknown is NaN now; an unknown pin sits on the DTED terrain under it
+        //           like a ground contact; the CoT gets 9999999 for unknown, never 0.
+        //        5. THE FLAT PLANE WHEN NO TAKEOFF REFERENCE LATCHED — FIXED TWO WAYS. The
+        //           reference latches from the aircraft's own fix while it sits on the ground,
+        //           not only from the home point (which arrives on arming and never on the
+        //           bench); and without a reference the DTED under the aircraft stands in for
+        //           its MSL, which captures the target-to-aircraft terrain difference and loses
+        //           only launch-site-to-here. The 13 September 50 ft was exactly this.
+        //        7. A CONTACT'S hae WAS DIFFERENCED AGAINST MSL — FIXED. The aircraft's receiver
+        //           reports both hae and msl; their difference is the geoid separation N it
+        //           applies (about +12 m here), latched into TakBridgeHolder and logged once. A
+        //           non-ground contact's hae is brought into the DTED frame through it. The
+        //           aircraft's raw GPS height drifted 309 m to 188 m in the first minute of the
+        //           21:25 flight; N is untouched by that, both altitudes come from one solution.
+        //        ElevationPolicy.kt holds all three rules, pinned by ElevationPolicyTest.
+        //        ⚠ STILL OPEN: (6) magnetometer bias 0.9–6° by heading. (8) telemetry leads
+        //        video; DTED file seeks per contact per frame on the UI thread. (9) gimbal roll
+        //        unread. ⚠ ADS-B: an ADS-B gateway's hae is usually PRESSURE altitude (29.92 in
+        //        standard day), not geometric height — off by the day's altimeter setting,
+        //        hundreds of feet either way, on top of the geoid. Fix 7 removes the geoid part
+        //        only; the pressure part needs the local QNH and is not attempted.
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked

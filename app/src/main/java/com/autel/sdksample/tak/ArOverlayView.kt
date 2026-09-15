@@ -249,17 +249,28 @@ class ArOverlayView @JvmOverloads constructor(
         val logThisPass = now - lastDiagMs >= DIAG_INTERVAL_MS
         if (logThisPass) lastDiagMs = now
 
-        // Aircraft altitude in the same reference the pins carry (DTED MSL). Without a terrain
-        // reference we can't difference two real elevations, so both pins and contacts fall
-        // back to a flat-ground assumption below — degraded, not disabled.
-        val aircraftMsl = TerrainAgl.reading(context, hud).mslMeters
+        // Aircraft altitude in the same reference the pins carry (DTED MSL). Without any
+        // terrain at all we can't difference two real elevations, so both pins and contacts
+        // fall back to a flat-ground assumption below — degraded, not disabled. With DTED under
+        // the aircraft but no takeoff reference, the ground under it stands in (fault 5 of the
+        // 2026-09-14 audit) — see [estimateAircraftMsl].
+        val terrain = TerrainAgl.reading(context, hud)
+        val aircraftMsl = terrain.mslMeters
         // Loud, because without it EVERY vertical angle silently degrades: reported altitudes
         // can't be differenced against anything, and both pins and contacts fall back to a
         // flat-plane assumption that puts everything at the pilot's own takeoff level. That
         // failure looks like "AR works but heights are wrong" rather than like a missing input.
         if (logThisPass && aircraftMsl == null) {
-            AppLog.w(TAG, "no aircraft MSL (no DTED takeoff reference) — pin and contact " +
-                "elevations are flat-plane estimates; air traffic will render at your level")
+            AppLog.w(TAG, "no aircraft MSL (no DTED at the takeoff point or under the aircraft) " +
+                "— pin and contact elevations are flat-plane estimates")
+        }
+        // The geoid separation the aircraft's receiver applies — a contact's hae comes into the
+        // DTED frame through it (fault 7). Null before a fix; then the old datum mix remains
+        // and is said so once.
+        val geoidN = TakBridgeHolder.geoidSeparationM
+        if (logThisPass && geoidN == null && aircraftMsl != null) {
+            AppLog.w(TAG, "no geoid separation from the aircraft yet — reported contact " +
+                "heights carry the hae/MSL offset (about 12 m here)")
         }
 
         for (pin in pins) {
@@ -276,23 +287,13 @@ class ArOverlayView @JvmOverloads constructor(
             val dBearing = ((bearing - pose.bearingDeg + 540.0) % 360.0) - 180.0
 
             // Height of the pin relative to the aircraft; negative = below, the normal case.
-            val dz = if (aircraftMsl != null) {
-                pin.alt - aircraftMsl
-            } else {
-                // No DTED reference for the AIRCRAFT's own position — pin.alt itself is 0.0 in
-                // this state too (CameraSlantPoint's "unknown, assume sea level" fallback; see
-                // DroneTakBridge.lookPoint), so there is no real elevation on either side of
-                // this subtraction to use. Fall back to the SAME flat-ground assumption
-                // CameraSlantPoint used to place this pin's lat/lon in the first place, and that
-                // drawContacts() below already uses for inbound contacts without DTED: the pin
-                // sits at the aircraft's own takeoff-relative ground level, i.e. straight down
-                // by however far the aircraft has climbed. A hard 0.0 here (always level with
-                // the aircraft) ignored the actual look angle the moment the aircraft wasn't at
-                // ground level — the SPoI never had this gap because it always used this exact
-                // fallback for the math that placed the pin to begin with; AR just wasn't
-                // reusing it.
-                -hud.relAlt
-            }
+            // A pin with no elevation of its own (NaN: map tap, restored, dropped without
+            // coverage) sits on the terrain under it, like a ground contact; only with nothing
+            // to difference does it fall to the flat plane — see [pinHeightAboveAircraft] for
+            // the sea-level fault this replaced.
+            val terrainUnderPin = if (pin.alt.isFinite() || aircraftMsl == null) null
+                else DtedIndex.elevationAt(context, pin.lat, pin.lon)
+            val dz = pinHeightAboveAircraft(pin.alt, terrainUnderPin, aircraftMsl, hud.relAlt)
 
             // Reject on SLANT range, never on ground distance. Aiming steeply down — which is
             // exactly how a marker gets dropped on something beneath the aircraft — drives
@@ -336,6 +337,9 @@ class ArOverlayView @JvmOverloads constructor(
         aircraftMsl: Double?,
         logThisPass: Boolean,
     ) {
+        // The geoid separation the aircraft's receiver applies, read once per pass — see the
+        // note in onDraw. Null before a fix; then a reported hae is used as it came.
+        val geoidN = TakBridgeHolder.geoidSeparationM
         // Nearest first, so when the label budget runs out it's the distant contacts that lose
         // their plate rather than whichever happened to arrive first.
         val users = runCatching { TakManager.getInstance().takUsers }.getOrNull()
@@ -391,8 +395,11 @@ class ArOverlayView @JvmOverloads constructor(
                 // V5's flat-plane assumption.
                 -hud.relAlt
             }
-            val reported = u.alt
-            val dzReported = if (aircraftMsl != null && isUsableAltitude(reported)) {
+            // The contact's hae, brought into the DTED frame when the aircraft has given us
+            // the separation (fault 7). Ground contacts still prefer terrain below; this is
+            // for everything that is NOT on the ground.
+            val reported = reportedHaeToMsl(u.alt, geoidN)
+            val dzReported = if (aircraftMsl != null && isUsableAltitude(u.alt)) {
                 reported - aircraftMsl
             } else {
                 null

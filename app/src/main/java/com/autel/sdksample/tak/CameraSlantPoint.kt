@@ -29,16 +29,17 @@ object CameraSlantPoint {
 
     /**
      * @param elevationMeters terrain elevation at (lat, lon) as sampled from DTED during the
-     *   iteration that produced this point, or 0.0 when there was no coverage to sample (the
+     *   iteration that produced this point, or NaN when there was no coverage to sample (the
      *   flat-ground path has no way to know the target's absolute elevation — it only ever
-     *   knows height *relative* to the aircraft's own ground). Carries the same uncorrected
-     *   MSL-vs-WGS84 geoid offset as everything else DTED-derived here; see the class note.
+     *   knows height *relative* to the aircraft's own ground). ⚠ It was 0.0 until 2026-09-14,
+     *   and 0.0 is sea level: a pin dropped without coverage was then drawn 60 m deep once the
+     *   aircraft's real MSL was known (fault 4 of the AR audit). Unknown must look unknown.
      */
     data class GroundPoint(
         val lat: Double,
         val lon: Double,
         val rangeMeters: Double,
-        val elevationMeters: Double = 0.0,
+        val elevationMeters: Double = Double.NaN,
     )
 
     /**

@@ -150,10 +150,19 @@ object TakDropMarkers {
     }
     data class ArPin(val lat: Double, val lon: Double, val alt: Double, val iconRes: Int, val label: String)
 
+    /** What goes on the wire for a pin's height: the elevation when known, else CoT's own
+     *  "not known" value, which a receiver draws on its terrain. Never NaN and never 0.0 — the
+     *  first is not XML and the second is sea level. */
+    private fun cotAltitude(alt: Double): Double =
+        if (alt.isFinite()) alt else com.taklite.client.tak.CotBuilder.UNKNOWN.toDouble()
+
     private fun onMapTap(p: GeoPoint): Boolean {
         val aff = pendingAffiliation ?: return false
         pendingAffiliation = null
-        placeAt(aff, p.latitude, p.longitude, if (p.altitude.isFinite()) p.altitude else 0.0)
+        // A map tap knows no elevation — osmdroid hands back 0.0, which is sea level, and the
+        // overlay used to believe it (fault 4, 2026-09-14). Unknown is NaN; the overlay places
+        // an unknown pin on the terrain under it.
+        placeAt(aff, p.latitude, p.longitude, Double.NaN)
         return true
     }
 
@@ -259,7 +268,7 @@ object TakDropMarkers {
         val uid = pin.cotUid ?: TakManager.newMarkerUid()
         val feed = TakMissionManager.joinedFeed
         val sent = tak.sendMarkerWithUid(
-            uid, pin.lat, pin.lon, pin.alt, pin.affiliation.id, pin.name, "", feed)
+            uid, pin.lat, pin.lon, cotAltitude(pin.alt), pin.affiliation.id, pin.name, "", feed)
         if (sent == null) {
             AppLog.w(TAG, "pin ${pin.key} send failed")
             ui?.toast("Pin saved locally — send failed")
@@ -317,7 +326,7 @@ object TakDropMarkers {
             }
             // Same uid, current values: this is an UPDATE, not a second marker. Reads whatever
             // the pin holds NOW, so a rename or move inside the delay window is carried too.
-            tak.sendMarkerWithUid(uid, live.lat, live.lon, live.alt, live.affiliation.id,
+            tak.sendMarkerWithUid(uid, live.lat, live.lon, cotAltitude(live.alt), live.affiliation.id,
                 live.name, "", TakMissionManager.joinedFeed)
             AppLog.i(TAG, "rebroadcast \"${live.name}\" uid=$uid (catches late-joining clients)")
         }, REBROADCAST_DELAY_MS)
@@ -523,7 +532,7 @@ object TakDropMarkers {
         try {
             val bmp: Bitmap = TakMapMarkers.makeMilIcon(pin.affiliation.res, pin.name)
             val marker = Marker(m).apply {
-                position = GeoPoint(pin.lat, pin.lon, pin.alt)
+                position = GeoPoint(pin.lat, pin.lon, if (pin.alt.isFinite()) pin.alt else 0.0)
                 title = pin.name
                 icon = android.graphics.drawable.BitmapDrawable(appContext?.resources, bmp)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -545,7 +554,9 @@ object TakDropMarkers {
             val arr = JSONArray()
             for (p in pins.values) {
                 arr.put(JSONObject().apply {
-                    put("key", p.key); put("lat", p.lat); put("lon", p.lon); put("alt", p.alt)
+                    put("key", p.key); put("lat", p.lat); put("lon", p.lon)
+                    // JSONObject refuses NaN: an unknown elevation is simply absent.
+                    if (p.alt.isFinite()) put("alt", p.alt)
                     put("aff", p.affiliation.id); put("name", p.name); put("tx", p.transmitted)
                     // Persisted so a restart doesn't orphan the marker's TAK identity — without
                     // it, the next re-send/move would mint a new uid and duplicate the marker
@@ -571,7 +582,11 @@ object TakDropMarkers {
                 val o = arr.getJSONObject(i)
                 val aff = Affiliation.values().firstOrNull { it.id == o.getString("aff") } ?: Affiliation.FRIENDLY
                 val key = o.getString("key")
-                pins[key] = Pin(key, o.getDouble("lat"), o.getDouble("lon"), o.optDouble("alt", 0.0),
+                // Absent, or the 0.0 that older files wrote for "unknown", both read as unknown.
+                // A pin genuinely at 0 m MSL loses nothing: the overlay looks up the terrain
+                // under an unknown pin, which is 0 there too.
+                val alt = o.optDouble("alt", Double.NaN).takeIf { it.isFinite() && it != 0.0 } ?: Double.NaN
+                pins[key] = Pin(key, o.getDouble("lat"), o.getDouble("lon"), alt,
                     aff, o.optString("name", "Marker"), o.optBoolean("tx", false),
                     cotUid = o.optString("uid", "").takeIf { it.isNotEmpty() },
                     quick = o.optBoolean("qk", false))

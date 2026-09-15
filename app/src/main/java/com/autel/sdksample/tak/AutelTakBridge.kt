@@ -59,6 +59,7 @@ class AutelTakBridge(
     @Volatile private var lon = Double.NaN
     @Volatile private var hae = Double.NaN          // EvoGpsInfo.getAltitude() — HAE
     @Volatile private var mslAlt = Double.NaN       // EvoGpsInfo.getHeightMeanSeaLevel()
+    private var lastLoggedGeoidN = Double.NaN
     // Metres ABOVE TAKEOFF, up-positive. NOT what the SDK hands over — Autel's
     // LocalCoordinateInfo is NED (down-positive) and is negated on the way in; see the
     // assignment for the in-flight confirmation. Every consumer relies on up-positive.
@@ -224,6 +225,18 @@ class AutelTakBridge(
                     lon = gps.longitude
                     hae = gps.altitude
                     mslAlt = gps.heightMeanSeaLevel.toDouble()
+                    // THE GEOID SEPARATION, FROM THE RECEIVER'S OWN TWO ALTITUDES — fault 7 of
+                    // the 2026-09-14 AR audit. Latched into the holder so it survives a bridge
+                    // restart; transition-logged, rounded, so it is written once and not at 2 Hz.
+                    geoidSeparation(hae, mslAlt)?.let { n ->
+                        TakBridgeHolder.setGeoidSeparation(n)
+                        val rounded = Math.round(n * 10) / 10.0
+                        if (rounded != lastLoggedGeoidN) {
+                            lastLoggedGeoidN = rounded
+                            AppLog.i(TAG, "geoid separation from the aircraft GPS: N=%.1f m (hae %.1f, msl %.1f)"
+                                .format(n, hae, mslAlt))
+                        }
+                    }
                     satCount = gps.satellitesVisible
                     // Accuracy fields believed mm (standard GNSS struct) — sanity-clamped.
                     // Verify units on the bench (tracker §4.2) and adjust ACC_DIVISOR.
@@ -753,9 +766,9 @@ class AutelTakBridge(
         val gp = CameraSlantPoint.compute(
             lat, lon, agl, bearing, pitch * PITCH_SIGN + TakBridgeHolder.currentPitchOffset,
             ::elevationLookup, aircraftMsl(agl))
-        // Third element is the target's terrain elevation, which dropped markers publish as
-        // their CoT hae. 0.0 when there's no DTED coverage — same "unknown, assume sea level"
-        // fallback the SPI push has always used.
+        // Third element is the target's terrain elevation. NaN when there's no DTED coverage
+        // (2026-09-14): it used to be 0.0, and 0.0 is sea level — see pinHeightAboveAircraft
+        // for what that did to the overlay. The CoT side substitutes its own "unknown".
         return Triple(gp.lat, gp.lon, gp.elevationMeters)
     }
 
@@ -1173,6 +1186,16 @@ object TakBridgeHolder {
     }
 
     val isCameraPointEnabled: Boolean get() = cameraPointEnabled
+
+    /**
+     * The geoid separation N (`hae − msl`, metres) as the aircraft's receiver applies it, or
+     * null before a fix. Held here so the AR overlay can bring a contact's `hae` into the DTED
+     * frame — [reportedHaeToMsl] — and so it survives a bridge restart. About +12 m in
+     * Anchorage.
+     */
+    @Volatile var geoidSeparationM: Double? = null
+        private set
+    fun setGeoidSeparation(n: Double) { geoidSeparationM = n }
     val isRunning: Boolean get() = bridge != null
 
     fun lookPoint(): Triple<Double, Double, Double>? = bridge?.lookPoint()

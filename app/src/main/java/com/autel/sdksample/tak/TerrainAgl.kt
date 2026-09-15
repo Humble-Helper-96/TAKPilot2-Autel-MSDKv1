@@ -66,6 +66,9 @@ object TerrainAgl {
          * terrain.
          */
         val mslMeters: Double?,
+        /** Where [mslMeters] came from — see [MslSource]. A reader that prints a number should
+         *  know whether it is the takeoff reference or the stand-in. */
+        val mslSource: MslSource = MslSource.NONE,
     )
 
     @Volatile private var takeoffTerrainElevM: Double? = null
@@ -81,6 +84,7 @@ object TerrainAgl {
         cachedForLat = Double.NaN
         cachedForLon = Double.NaN
         cachedTerrainElevM = null
+        lastMslSource = null
         AppLog.v(TAG, "reset (new bridge session)")
     }
 
@@ -104,36 +108,57 @@ object TerrainAgl {
 
         latchTakeoffReference(context, hud)
         val takeoffElev = takeoffTerrainElevM
-            ?: return Reading(hud.relAlt, terrainCorrected = false, mslMeters = null)
+        val underAircraft = terrainUnderAircraft(context, hud.lat, hud.lon)
 
         // Sea level = the takeoff point's own elevation plus how far above it we've climbed.
-        // DTED is already MSL-referenced, so no datum conversion enters here — and unlike the
-        // AGL correction below, this needs nothing about the ground the aircraft is currently
-        // over, so it survives flying past the edge of the imported terrain.
-        val msl = takeoffElev + hud.relAlt
+        // DTED is already MSL-referenced, so no datum conversion enters here. Without a takeoff
+        // reference the ground under the aircraft stands in (fault 5 of the 2026-09-14 AR
+        // audit) — see [estimateAircraftMsl] for what that assumes and what it recovers.
+        val (msl, source) = estimateAircraftMsl(takeoffElev, underAircraft, hud.relAlt)
+        if (source != lastMslSource) {
+            lastMslSource = source
+            AppLog.i(TAG, "aircraft MSL source: $source")
+        }
 
-        val underAircraft = terrainUnderAircraft(context, hud.lat, hud.lon)
-            ?: return Reading(hud.relAlt, terrainCorrected = false, mslMeters = msl)
-
+        if (takeoffElev == null || underAircraft == null) {
+            return Reading(hud.relAlt, terrainCorrected = false, mslMeters = msl, mslSource = source)
+        }
         return Reading(
             meters = hud.relAlt + (takeoffElev - underAircraft),
             terrainCorrected = true,
             mslMeters = msl,
+            mslSource = source,
         )
     }
+
+    /** Transition-only log of the MSL source; this runs on every HUD tick. */
+    private var lastMslSource: MslSource? = null
 
     /** Captures the terrain elevation at the takeoff point, once, from the first home location
      *  we see. Retries on later ticks if DTED had no coverage yet (nothing is latched on a
      *  failed lookup), so importing terrain mid-session still starts working. */
     private fun latchTakeoffReference(context: Context, hud: AutelTakBridge.Hud) {
         if (takeoffTerrainElevM != null) return
-        if (!hud.homeSet) return
-        if (!hud.homeLat.isFinite() || !hud.homeLon.isFinite()) return
-        val elev = DtedIndex.elevationAt(context, hud.homeLat, hud.homeLon) ?: return
+        // ⚠ THE AIRCRAFT ON THE GROUND IS AT THE TAKEOFF POINT, home set or not (2026-09-14).
+        // The home point arrives when the aircraft arms; on the bench it never does, and the
+        // whole evening's AR work ran on the flat plane with DTED covering the yard. Below
+        // [ON_GROUND_M] of height the aircraft's own fix is the takeoff point. Not after a
+        // restart mid-flight — that is what the home path is for.
+        val onGround = hud.hasFix && kotlin.math.abs(hud.relAlt) < ON_GROUND_M
+        val (refLat, refLon, why) = when {
+            hud.homeSet && hud.homeLat.isFinite() && hud.homeLon.isFinite() ->
+                Triple(hud.homeLat, hud.homeLon, "home point")
+            onGround -> Triple(hud.lat, hud.lon, "aircraft on the ground")
+            else -> return
+        }
+        val elev = DtedIndex.elevationAt(context, refLat, refLon) ?: return
         takeoffTerrainElevM = elev
-        AppLog.i(TAG, "takeoff terrain reference latched: %.1f m MSL at %.5f, %.5f"
-            .format(elev, hud.homeLat, hud.homeLon))
+        AppLog.i(TAG, "takeoff terrain reference latched: %.1f m MSL at %.5f, %.5f (%s)"
+            .format(elev, refLat, refLon, why))
     }
+
+    /** Below this height above takeoff the aircraft is taken to be sitting on it. */
+    private const val ON_GROUND_M = 2.0
 
     private fun terrainUnderAircraft(context: Context, lat: Double, lon: Double): Double? {
         if (cachedForLat.isFinite() && cachedForLon.isFinite()) {
