@@ -23,7 +23,7 @@ class PipWindowGeometryTest {
         val frame = PipWindowGeometry.Box(0.0, 0.0, 1280.0, 720.0)
         val w = PipWindowGeometry.window(frame)
         val cx = (w.left + w.right) / 2; val cy = (w.top + w.bottom) / 2
-        assertEquals(640.0 - 0.016 * 1280, cx, 1e-9)
-        assertEquals(360.0 - 0.047 * 720, cy, 1e-9)
+        assertEquals(640.0 - 0.006 * 1280, cx, 1e-9)
+        assertEquals(360.0 - 0.036 * 720, cy, 1e-9)
     }
 }

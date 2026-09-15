@@ -2528,7 +2528,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         }
         // LOWER-LEFT corner (operator, 2026-09-15): the top-right put the ⤡ under the EV
         // slider in full thermal. Clamped inside the view and above the resource row.
-        val inset = (8 * resources.displayMetrics.density)
+        val inset = (6 * resources.displayMetrics.density)
         val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()

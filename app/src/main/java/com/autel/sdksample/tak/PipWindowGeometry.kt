@@ -16,8 +16,10 @@ package com.autel.sdksample.tak
 object PipWindowGeometry {
     const val WIDTH_FRACTION = 0.40
     const val HEIGHT_FRACTION = 0.607
-    const val CENTRE_DX_FRACTION = -0.016
-    const val CENTRE_DY_FRACTION = -0.047
+    // Re-measured 2026-09-15 on the controller with the control in the corner: the window's
+    // centre sits 0.6 % of the width left and 3.6 % of the height above the frame centre.
+    const val CENTRE_DX_FRACTION = -0.006
+    const val CENTRE_DY_FRACTION = -0.036
 
     /** A rectangle as left, top, right, bottom in the same units as the frame rect. */
     data class Box(val left: Double, val top: Double, val right: Double, val bottom: Double)
