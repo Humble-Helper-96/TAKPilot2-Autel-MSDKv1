@@ -361,6 +361,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // under the toolbar. A proximity warning the pilot cannot see is worse than none,
             // because the display implies it would have told them.
             obstacleEdges.setTopInset(toolbarView.height.toFloat())
+            // And the LEFT inset for the actions column (2026-09-15): its right edge, so the
+            // left-face label lands beside the column rather than under it.
+            val column = findViewById<View>(R.id.flightToolbarActions)
+            obstacleEdges.setLeftInset(column.x + column.width)
+            renderPipSizeButton()
         }
         streamToggle = findViewById(R.id.flightStreamButton)
         recordToggle = findViewById(R.id.flightRecordButton)
@@ -2538,14 +2543,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()
-        // ONE PLACE FOR BOTH (operator, 2026-09-15, after four tries at the window's
-        // corner): just left of the EV slider, level with it, in PIP and in full thermal
-        // alike. The icon says which way it goes; the position never moves.
-        val ev = findViewById<View>(R.id.evSlider)
-        val evPos = IntArray(2); ev.getLocationInWindow(evPos)
-        val parentPos = IntArray(2); parent.getLocationInWindow(parentPos)
-        val x = (evPos[0] - parentPos[0]).toFloat() - w
-        val y = (evPos[1] - parentPos[1]).toFloat() + (ev.height - h) / 2f
+        // ONE PLACE FOR BOTH (operator, 2026-09-15): centred under the foot of the actions
+        // column, in PIP and in full thermal alike — with the thumb's other controls. Beside
+        // the EV slider was tried the same day. The icon says which way it goes; the position
+        // never moves.
+        val column = findViewById<View>(R.id.flightToolbarActions)
+        val x = column.x + (column.width - w) / 2f
+        val y = column.y + column.height + 6 * resources.displayMetrics.density
         pipSizeButton.x = x
         pipSizeButton.y = y
         pipSizeButton.setImageResource(

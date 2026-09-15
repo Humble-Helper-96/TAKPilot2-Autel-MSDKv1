@@ -46,7 +46,7 @@
         android:layout_height="match_parent" />
 
     <!-- The PIP size control (operator, 2026-09-15): ⤢ makes thermal full screen, ⤡ puts the
-         window back, both in ONE place just left of the EV slider — see
+         window back, both in ONE place under the actions column — see
          FlightActivity.renderPipSizeButton. A bare icon at 60 %, no backing. Gone in visible. -->
     <ImageButton
         android:id="@+id/flightPipSizeButton"

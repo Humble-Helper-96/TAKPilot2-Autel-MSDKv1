@@ -1351,7 +1351,7 @@ android {
         //        visible, PIP lit, IR lit. The window's corner is MEASURED, not derived from
         //        the FOV ratio (PipWindowGeometry: 0.40 x 0.607 of the frame, 0.6 % left and
         //        3.6 % up — the thermal lens's boresight). The control is a 30dp glyph on a
-        //        bare icon at 60 % in ONE place, just left of the EV slider, in PIP and in full
+        //        bare icon at 60 % in ONE place, centred under the actions column, in PIP and in full
         //        thermal alike — four placements on the window's corner were tried and
         //        rejected the same day. Checked on the controller, not yet flown.
         //
@@ -1373,6 +1373,7 @@ android {
         //        reports the status capsule's height alone as the chrome inset. Specification
         //        §4.2; the DJI trees owe it (D29). ⚠ OPEN: the obstacle view's left-edge label
         //        sits under the column's foot — it needs a LEFT inset like its top one.
+        //        The obstacle view has the LEFT inset now (setLeftInset, the column's right edge).
         //        Then (same day): the column's pills are 42dp high (a quarter more), the HUD
         //        column's top padding is 10dp so the EV slider through the gimbal readout move
         //        up into the freed space, and the WARNING BANNER IS AT THE BOTTOM-LEFT AND

@@ -185,6 +185,17 @@ class ObstacleEdgeView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** The actions column on the left (2026-09-15) covers the left face's label at mid-height,
+     *  so the LEFT label starts right of the column, the way the top one starts below the
+     *  band. The arc itself still draws from the edge: the wash is a warning, not a readout. */
+    private var leftInset = 0f
+
+    fun setLeftInset(px: Float) {
+        if (leftInset == px) return
+        leftInset = px
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
@@ -275,7 +286,7 @@ class ObstacleEdgeView @JvmOverloads constructor(
         when (side) {
             Side.LEFT -> {
                 canvas.drawRect(0f, 0f, depth, h, washPaint)
-                labelX = dp(LABEL_INSET); labelY = h / 2f
+                labelX = leftInset + dp(LABEL_INSET); labelY = h / 2f
             }
             Side.RIGHT -> {
                 canvas.drawRect(w - depth, 0f, w, h, washPaint)
