@@ -1429,8 +1429,16 @@ android {
         //        DURING the stream's change of shape — and the stream never came back until
         //        the next mode change. Suspect: the zoom write during the visible stills
         //        reconfiguration. Candidate fix: on a change INTO stills, restore the zoom only
-        //        after the new frame size has arrived (or ~4 s), not at 800 ms. NOT CONFIRMED —
-        //        the visible + 2X + shutter reproduction was not run. Stored (operator).
+        //        after the new frame size has arrived (or ~4 s), not at 800 ms.
+        //        ⚠ THE REPRODUCTION FAILED, 13:52 THE SAME DAY: visible at 2X, shutter pressed —
+        //        the zoom restore landed at +1.1 s exactly as in the morning, the picture froze
+        //        1.7 s and ran at 25–30 fps in stills; the switch back to video cost 1.8 + 1.3 s
+        //        and ran. So the zoom-restore theory does NOT hold on its own. What differed at
+        //        11:41 is not in the log: the aircraft was just landed after a 36-minute flight,
+        //        the camera warm, and the freezes ENDED only on the next mode change. Left
+        //        open as "seen twice, cause unknown, not reproduced"; if it returns, the
+        //        VideoFrameMonitor line names the moment, and resyncVideo (a codec rebuild) is
+        //        the recovery to try first, since the next mode change is what freed it.
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
