@@ -35,7 +35,9 @@ enum class CameraView(
     /** The bridge's lens: what the published camera-point cone is based on. */
     val lens: AutelTakBridge.Lens,
 ) {
-    VISIBLE("VISIBLE", "IR", AutelTakBridge.Lens.EO),
+    /** The pill reads PIP unlit here: it names what a tap will ADD, the way the zoom pill
+     *  reads the level it is at. (operator, 2026-09-15) */
+    VISIBLE("VISIBLE", "PIP", AutelTakBridge.Lens.EO),
     IR("IR", "IR", AutelTakBridge.Lens.IR),
     /** Thermal drawn into the centre of the visible picture, by the camera. */
     PIP("PICTURE_IN_PICTURE", "PIP", AutelTakBridge.Lens.BLEND);
@@ -55,12 +57,25 @@ enum class CameraView(
     /** The pill is lit (green) when the view is anything but the plain visible camera. */
     val active: Boolean get() = this != VISIBLE
 
-    /** The next view on a tap of the IR pill or the C1 key: visible → PIP → thermal → visible
-     *  (operator, 2026-09-14). PIP sits between the two plain cameras. */
+    /**
+     * The next view on a tap of the IR pill or the C1 key: a TWO-WAY toggle, visible ↔ PIP
+     * (operator, 2026-09-15 — the three-step cycle of the 14th was "a chore"). Full thermal is
+     * reached from the maximise control on the PIP window ([maximised]) and a tap from full
+     * thermal goes back to PIP, not to visible.
+     */
     val next: CameraView get() = when (this) {
         VISIBLE -> PIP
+        PIP -> VISIBLE
+        IR -> PIP
+    }
+
+    /** The view the PIP window's corner control goes to: ⤢ on the window makes it full
+     *  thermal, ⤡ on full thermal puts the window back. Null in visible, where there is no
+     *  control. */
+    val maximised: CameraView? get() = when (this) {
         PIP -> IR
-        IR -> VISIBLE
+        IR -> PIP
+        VISIBLE -> null
     }
 
     companion object {

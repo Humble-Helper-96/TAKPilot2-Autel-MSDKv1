@@ -49,10 +49,24 @@ class CameraViewTest {
     }
 
     @Test
-    fun `a tap cycles visible, PIP, thermal, visible`() {
+    fun `a tap toggles visible and PIP, and from full thermal goes back to PIP`() {
         assertEquals(CameraView.PIP, CameraView.VISIBLE.next)
-        assertEquals(CameraView.IR, CameraView.PIP.next)
-        assertEquals(CameraView.VISIBLE, CameraView.IR.next)
+        assertEquals(CameraView.VISIBLE, CameraView.PIP.next)
+        assertEquals(CameraView.PIP, CameraView.IR.next)
+    }
+
+    @Test
+    fun `the window's corner control maximises and minimises, and is absent in visible`() {
+        assertEquals(CameraView.IR, CameraView.PIP.maximised)
+        assertEquals(CameraView.PIP, CameraView.IR.maximised)
+        assertEquals(null, CameraView.VISIBLE.maximised)
+    }
+
+    @Test
+    fun `the pill reads PIP unlit in visible, PIP lit in PIP, IR lit in full thermal`() {
+        assertEquals("PIP", CameraView.VISIBLE.label); assertFalse(CameraView.VISIBLE.active)
+        assertEquals("PIP", CameraView.PIP.label); assertTrue(CameraView.PIP.active)
+        assertEquals("IR", CameraView.IR.label); assertTrue(CameraView.IR.active)
     }
 
     @Test

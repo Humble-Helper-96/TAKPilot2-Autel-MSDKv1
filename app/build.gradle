@@ -1344,10 +1344,13 @@ android {
         //          Matching formats does not help; 1080p stays. Do not try again.
         //        - The banner: AT ALTITUDE LIMIT closed by the pilot at 10:53:41, DEBUG LOG ON
         //          stayed with no ✕. 15 video stalls, no crash, no cancel used, no recording.
-        //        ⚠ OPEN (operator, not yet decided): make the IR tap a TWO-way visible↔PiP
-        //        toggle with full thermal reached from a maximise/minimise control on the PiP
-        //        window's corner, the phone idiom. The corner is computable from the FOV
-        //        ratio. Proposed 2026-09-15, not built.
+        //        THE TAP IS A TWO-WAY VISIBLE↔PIP TOGGLE (operator, 2026-09-15, after the
+        //        flight: three steps were "a chore"). Full thermal is reached from ⤢ on the PIP
+        //        window's top-right corner, the phone idiom; ⤡ on the full picture goes back;
+        //        a pill tap from full thermal goes back to PIP. The pill reads PIP unlit in
+        //        visible, PIP lit, IR lit. The window's corner is MEASURED, not derived from
+        //        the FOV ratio (PipWindowGeometry: 0.40 x 0.607 of the frame, 1.6 % left and
+        //        4.7 % up — the thermal lens's boresight). Built the same day, not yet flown.
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked

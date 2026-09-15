@@ -222,8 +222,8 @@ class FieldGuideActivity : AppCompatActivity() {
 
         keyEntry(
             "C1",
-            "Changes the image: the normal camera, then PIP, then the thermal camera, then " +
-                "the normal camera again. The same as the IR button.",
+            "Changes between the normal camera and PIP, the same as the PIP button. From " +
+                "full thermal it goes back to PIP.",
             "Changes the thermal colours.",
         )
 
@@ -385,12 +385,13 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(modePill("IR", false) to "Normal", modePill("IR", true) to "Thermal",
-                modePill("PIP", true) to "PIP"),
-            "IR: the thermal camera",
-            "Each touch changes the image: the normal camera, then PIP, then the thermal " +
-                "camera, then the normal camera again. PIP is the thermal image in the centre " +
-                "of the normal image. Zoom does not work in PIP.\n\n" +
+            listOf(modePill("PIP", false) to "Normal", modePill("PIP", true) to "PIP",
+                modePill("IR", true) to "Full thermal"),
+            "PIP: the thermal camera",
+            "A touch changes between the normal camera and PIP. PIP is the thermal image in " +
+                "the centre of the normal image. In PIP, touch the arrows at the corner of the " +
+                "thermal image to make it full screen; touch them again to go back to PIP. " +
+                "Zoom does not work in PIP.\n\n" +
                 "YOU CANNOT CHANGE THE CAMERA WHILE THE AIRCRAFT RECORDS. The app tells you " +
                 "to stop the recording. The aircraft records the camera you were on when the " +
                 "recording started. In PIP it records three files: normal, thermal and PIP. " +

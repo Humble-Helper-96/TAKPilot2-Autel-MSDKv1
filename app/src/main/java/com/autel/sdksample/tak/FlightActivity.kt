@@ -91,6 +91,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var zoomButton: TextView
     private lateinit var irButton: TextView
     private lateinit var irPaletteButton: TextView
+    /** The ⤢ / ⤡ on the thermal window's corner — see [renderPipSizeButton]. */
+    private lateinit var pipSizeButton: android.widget.ImageButton
+    /** The whole video frame's rect in view space, as last handed to the AR overlay. */
+    private var lastVideoRect: android.graphics.RectF? = null
 
     /** Thermal state. Both are re-read from the camera on connect rather than assumed — see
      *  syncIrStateFromCamera(). The buttons must never claim a mode the camera is not in. */
@@ -364,6 +368,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         irPaletteButton = findViewById(R.id.flightIrPaletteButton)
         irButton.setOnClickListener { onIrTapped() }
         irPaletteButton.setOnClickListener { onIrPaletteTapped() }
+        pipSizeButton = findViewById(R.id.flightPipSizeButton)
+        pipSizeButton.setOnClickListener {
+            val target = cameraView.maximised ?: return@setOnClickListener
+            AppLog.v(TAG, "tap: PIP size control -> $target")
+            selectCameraView(target)
+        }
         map = findViewById(R.id.flightMap)
         mapContainer = findViewById(R.id.flightMapContainer)
         // ROUND THE MAP ITSELF, not just its frame (operator, 2026-09-12).
@@ -2315,9 +2325,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         else { fitH = vh; fitW = vh * videoAspect }
         val fullW = fitW * scale
         val fullH = fitH * scale
-        arOverlay.setVideoRect(android.graphics.RectF(
+        val rect = android.graphics.RectF(
             vw / 2f - fullW / 2f, vh / 2f - fullH / 2f,
-            vw / 2f + fullW / 2f, vh / 2f + fullH / 2f))
+            vw / 2f + fullW / 2f, vh / 2f + fullH / 2f)
+        arOverlay.setVideoRect(rect)
+        lastVideoRect = rect
+        renderPipSizeButton()
         AppLog.i(TAG, "AR video rect: ${fullW.toInt()}x${fullH.toInt()} in view ${vw.toInt()}x${vh.toInt()}")
         AppLog.i(TAG, "video ${if (cameraView.fitsWhole) "FIT (thermal)" else "FILL"} ($cameraView): " +
             "view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
@@ -2338,12 +2351,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     /**
      * Switches the FPV between the visible camera and the 640T's thermal sensor.
      *
-     * A tap CYCLES the views — visible, PIP, thermal, visible — on the pill and on the C1 key
-     * alike (operator, 2026-09-14). A long-press menu was tried first and rejected: three
-     * views are a cycle, not a menu, and a pilot who has learned "tap IR" keeps tapping. The
-     * order puts PIP between the two plain cameras, so from either the next tap adds or
-     * removes the other picture rather than swapping it outright. [selectCameraView] owns the
-     * write, the belief and the verify.
+     * A tap TOGGLES visible and PIP, on the pill and on the C1 key alike, and from full
+     * thermal goes back to PIP (operator, 2026-09-15). Two earlier shapes were tried and
+     * rejected the same week: a long-press menu (14th), then a three-step cycle, "a chore"
+     * (15th). Full thermal is reached from the ⤢ on the window's corner, the phone idiom —
+     * see [renderPipSizeButton]. [selectCameraView] owns the write, the belief and the verify.
      *
      * ⚠ **THE CAMERA WILL NOT CHANGE LENS WHILE IT IS RECORDING, AND IT SAYS `OK` ANYWAY**
      * (measured in flight 2026-09-12). This is safety rule 4 in the flesh, and the comment that
@@ -2496,9 +2508,41 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
+    /**
+     * The ⤢ / ⤡ control on the thermal picture (operator, 2026-09-15): on the PIP window's
+     * top-right corner it makes thermal full screen; on the full thermal picture it puts the
+     * window back. Gone in visible. The window's corner comes from [PipWindowGeometry] and the
+     * AR video rect; in full thermal the picture is the whole FIT rect. Kept under the toolbar
+     * band and inside the view, so it can never hide behind the chrome or off the edge.
+     */
+    private fun renderPipSizeButton() {
+        if (!::pipSizeButton.isInitialized) return
+        val target = cameraView.maximised
+        val rect = lastVideoRect
+        if (target == null || rect == null) { pipSizeButton.visibility = View.GONE; return }
+        val box = if (cameraView == CameraView.PIP) {
+            PipWindowGeometry.window(PipWindowGeometry.Box(
+                rect.left.toDouble(), rect.top.toDouble(), rect.right.toDouble(), rect.bottom.toDouble()))
+        } else {
+            PipWindowGeometry.Box(rect.left.toDouble(), rect.top.toDouble(), rect.right.toDouble(), rect.bottom.toDouble())
+        }
+        val inset = (8 * resources.displayMetrics.density)
+        val chromeTop = findViewById<View>(R.id.flightToolbar).height.toFloat()
+        val parentW = (pipSizeButton.parent as View).width.toFloat()
+        val w = pipSizeButton.layoutParams.width.toFloat()
+        val x = (box.right.toFloat() - inset - w).coerceIn(0f, parentW - w)
+        val y = maxOf(box.top.toFloat(), chromeTop) + inset
+        pipSizeButton.x = x
+        pipSizeButton.y = y
+        pipSizeButton.setImageResource(
+            if (cameraView == CameraView.PIP) R.drawable.ic_pip_expand else R.drawable.ic_pip_collapse)
+        pipSizeButton.visibility = View.VISIBLE
+    }
+
     /** IR pill lit when the thermal sensor is on screen (thermal or PIP), labelled with the
      *  view like the zoom pill is labelled with its level; palette button shown only then. */
     private fun refreshIrButtons() {
+        renderPipSizeButton()
         irButton.text = cameraView.label
         irButton.setBackgroundResource(
             if (cameraView.active) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill

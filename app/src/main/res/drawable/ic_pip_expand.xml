@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Maximise: the two-headed diagonal arrow every phone puts on a floating video window.
+         Sits on the top-right corner of the PIP thermal window; a tap makes thermal full
+         screen (2026-09-15). White; the pill behind it carries the state colour. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M21,11V3h-8l3.29,3.29l-10,10L3,13v8h8l-3.29,-3.29l10,-10z" />
+</vector>
