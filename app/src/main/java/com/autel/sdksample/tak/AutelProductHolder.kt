@@ -455,6 +455,16 @@ object AutelProductHolder {
                 AutelExposureController.applyDefaults(ctx, cam as? AutelXT706)
             }
 
+            // WHAT GOES ON THE CARD: 1080p30 H.265, written on EVERY camera session.
+            //
+            // The camera keeps its recording format across power cycles and Autel Explorer is
+            // free to change it, so writing once is not enough to hold it — the operator's
+            // requirement is that it survives a reboot and a swap between the two applications
+            // (2026-09-14). Here, because this is the one point where a real camera is known to
+            // be answering. See [AutelRecordingFormat] for the sizes, and for why there is no
+            // SD resolution and no bitrate control on this camera.
+            AutelRecordingFormat.applyAtConnect(cam as? AutelXT706)
+
             // TELL THE SCREENS THE CAMERA IS REAL NOW.
             //
             // A screen that wants to know what mode the camera is IN cannot ask at onResume: on

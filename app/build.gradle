@@ -1105,8 +1105,25 @@ android {
         //        block padding and the font's ascent/descent slack, for three short lines over
         //        live video. OutlinedTextView's half-stroke padding is what still keeps the
         //        outline off the clip edge — see the layout comment.
-        versionCode 90
-        versionName "2.1.6"
+        // v2.1.7 — 2026-09-14. THE CARD RECORDINGS ARE 1080p30 H.265. A 12.5-hour mission left
+        //        huge files, because the camera kept whatever Autel Explorer put it in and this
+        //        airframe goes to 7680x4320. 1080p is about a quarter of 4K's pixels and H.265
+        //        about half the bits of H.264, and the two multiply.
+        //        ⚠ THE LIVE TAK STREAM IS NOT TOUCHED. That is ScreenCaptureEncoder at 960x720
+        //        H.264, and the standing decision to keep H.265 off the WIRE until every client
+        //        can decode it is about that stream. A recording is played back later.
+        //        ⚠ THERE IS NO SD RESOLUTION ON THIS CAMERA. The operator asked for one. The
+        //        XT706 supported table runs down to 1280*720p24 and has no 720x480. 1080 was
+        //        taken above the 720 floor so the footage stays usable as evidence.
+        //        ⚠ THE BITRATE IS NOT SETTABLE. VideoEncoderConfiguration reports bitrate,
+        //        quality and I-frame interval and the whole aar has no setter for any of them.
+        //        Do not look for a bitrate control again.
+        //        Written at EVERY camera session, by the operator's requirement, so it survives
+        //        a reboot and a swap with Explorer. Refused while recording, and verified by
+        //        read-back — getVideoEncoderConfiguration returns codec and resolution together,
+        //        and it is a single http request, not a 2 Hz subscription (safety rule 1).
+        versionCode 91
+        versionName "2.1.7"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
