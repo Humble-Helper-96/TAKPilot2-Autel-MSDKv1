@@ -1294,6 +1294,13 @@ android {
         //        DTED2 covers the area; check homeSet. (6) magnetometer bias 0.9–6° by heading.
         //        (7) hae vs MSL for non-ground contacts. (8) telemetry leads video; DTED file
         //        seeks per contact per frame on the UI thread. (9) gimbal roll unread.
+        //
+        //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
+        //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
+        //        twice, cancelLand was accepted twice, and the aircraft was still LANDING 1.5 s
+        //        later both times. CANCEL RETURN WORKED on the same flight (21:27, NORMAL_GO_HOME,
+        //        accepted, out of the return within 1.5 s) and stays. Both v2.1.4 items are now
+        //        flown.
         versionCode 94
         versionName "2.2.0"
         multiDexEnabled true

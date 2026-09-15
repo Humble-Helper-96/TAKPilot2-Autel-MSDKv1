@@ -4242,7 +4242,14 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * ⚠ **CANCEL IS ALSO HOW THE PILOT GETS THE STICKS BACK.** The same mission reported that
      * fine adjustments were refused during a return but worked once the aircraft was descending
      * on its own. That is the airframe ignoring stick on the return leg and it is not ours to
-     * change — but ending the return ends that, and `cancelLand` does the same for the landing.
+     * change — but ending the return ends that.
+     *
+     * ⚠ **CANCEL LANDING IS REMOVED (operator, 2026-09-14).** It was offered beside Cancel Return
+     * in v2.1.4 and flown once, on 2026-09-14: requested twice during a landing, `cancelLand`
+     * was accepted both times and the fly mode was still LANDING 1.5 s later both times. A
+     * control that the aircraft does not obey is worse than none on the screen a pilot fights
+     * from, so the item is gone and only the return can be cancelled. The SDK call stays on the
+     * interface; do not put it back without a flight that shows it working.
      *
      * ⚠ **NO CONFIRMATION, BY THE OPERATOR'S DECISION (2026-09-14).** `goHome` has one and this
      * deliberately does not: this is the UNDO of something the aircraft started by itself, the
@@ -4258,18 +4265,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val fc = AutelProductHolder.evo2?.flyController
         val mode = FlightWarnings.flyMode
         val returning = FlightWarnings.returningHome(mode)
-        val landing = mode == com.autel.common.flycontroller.FlyMode.LANDING
 
         val b = AlertDialog.Builder(this, R.style.TakDialogTheme).setTitle("Return to Home")
-        b.setMessage(when {
-            returning -> "The aircraft is returning home."
-            landing -> "The aircraft is landing."
-            else -> null
-        })
+        b.setMessage(if (returning) "The aircraft is returning home." else null)
         if (fc != null && returning) {
             b.setPositiveButton("Cancel Return") { _, _ -> cancelReturn(fc) }
-        } else if (fc != null && landing) {
-            b.setPositiveButton("Cancel Landing") { _, _ -> cancelLanding(fc) }
         }
         b.setNeutralButton("Reset Home Point…") { _, _ -> confirmResetHome() }
         b.setNegativeButton("Close", null)
@@ -4306,30 +4306,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             } else {
                 AppLog.i(TAG, "return cancelled — the aircraft is in ${FlightWarnings.flyMode}")
                 showNotice("Return cancelled. You have the aircraft.")
-            }
-        }, RTH_CANCEL_CONFIRM_MS)
-    }
-
-    /** As [cancelReturn], for the landing phase. Verified the same way. */
-    private fun cancelLanding(fc: com.autel.sdk.flycontroller.AutelFlyController) {
-        AppLog.w(TAG, "CANCEL LANDING requested by the pilot")
-        showNotice("Cancelling the landing")
-        runCatching {
-            fc.cancelLand(object : com.autel.common.CallbackWithNoParam {
-                override fun onSuccess() { AppLog.i(TAG, "cancelLand: accepted") }
-                override fun onFailure(error: AutelError?) {
-                    AppLog.e(TAG, "cancelLand FAILED: ${error?.description}")
-                    runOnUiThread { showNotice("The aircraft refused to stop the landing", refused = true) }
-                }
-            })
-        }.onFailure { AppLog.e(TAG, "cancelLand threw: ${it.message}") }
-        handler.postDelayed({
-            val still = FlightWarnings.flyMode == com.autel.common.flycontroller.FlyMode.LANDING
-            if (still) {
-                AppLog.e(TAG, "LANDING DID NOT STOP ${RTH_CANCEL_CONFIRM_MS}ms after cancelLand")
-                showNotice("The landing did not stop", refused = true)
-            } else {
-                showNotice("Landing cancelled. You have the aircraft.")
             }
         }, RTH_CANCEL_CONFIRM_MS)
     }
