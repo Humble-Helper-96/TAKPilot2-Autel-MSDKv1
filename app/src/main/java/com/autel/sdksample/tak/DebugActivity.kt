@@ -120,10 +120,6 @@ class DebugActivity : AppCompatActivity() {
         setupExplorerControls()
         setupSrtLatencyControl()
 
-        findViewById<android.widget.Button>(R.id.debugRfPowerProbe).setOnClickListener {
-            AppLog.i(TAG, "RF power probe tapped")
-            runRfPowerProbe()
-        }
         findViewById<android.widget.Button>(R.id.debugClearButton).setOnClickListener {
             AppLog.clearActive()
             lastRenderedLength = -1
@@ -211,96 +207,10 @@ class DebugActivity : AppCompatActivity() {
         return bottom >= logText.height - slop
     }
 
-    /**
-     * RF transmit-power probe (2026-08-07). Autel support asked for logs that show whether
-     * this SDK can change the RC transmit power.
-     *
-     * What the SDK offers, found by a sweep of the FULL aar surface (RC, DSP,
-     * fly-controller, legacy sdk10), not one subsystem: one power control exists,
-     * `setRFPower(FCC | CE)` on the remote controller. It selects a regulatory REGION, not
-     * a dBm value. The DSP's RFData get/set is the frequency-CHANNEL table (Dsp20 bytecode
-     * drops its second parameter). SignalInfo's meanPower and gain are telemetry readouts.
-     * This SDK has no API that sets a dBm value.
-     *
-     * The probe operates that one control with read-backs and logs each step under this
-     * activity's tag. If the read-back follows the set, the region control works, and any
-     * dBm limit lives in the radio's own region tables. If the value does not change, the
-     * log shows the refusal from the firmware. In both cases the log file is the evidence
-     * that Autel asked for. The sequence ends at FCC, the region the fleet configuration
-     * pushes at each connect.
-     *
-     * The probe uses only the request/response packet path. It touches no single-client
-     * listener slots, so the bridge's channels are safe (standing rule 2).
-     */
-    private fun runRfPowerProbe() {
-        val rc = AutelProductHolder.evo2?.remoteController
-        if (rc == null) {
-            AppLog.w(TAG, "RF probe: no aircraft/RC — connect and retry")
-            android.widget.Toast.makeText(this, "No aircraft connected.",
-                android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        val h = android.os.Handler(mainLooper)
-        AppLog.i(TAG, "RF probe START — sdk=${runCatching {
-            com.autel.sdk.Autel.getSdkVersion() }.getOrNull()} " +
-            "product=${AutelProductHolder.product?.type}")
+    // The RF power probe (2026-08-07, for Autel support) was here until 2026-09-14. Every path
+    // it exercised was refused; the region is pinned on this controller and it is an Autel
+    // limit (operator). Removed with the connect-time write. Do not put it back.
 
-        fun get(step: String, then: (() -> Unit)? = null) {
-            rc.getRFPower(object :
-                com.autel.common.CallbackWithOneParam<com.autel.common.remotecontroller.RFPower> {
-                override fun onSuccess(p: com.autel.common.remotecontroller.RFPower?) {
-                    AppLog.i(TAG, "RF probe $step: getRFPower = $p (value=${p?.value})")
-                    then?.let { h.postDelayed(it, STEP_DELAY_MS) }
-                }
-                override fun onFailure(e: com.autel.common.error.AutelError?) {
-                    AppLog.w(TAG, "RF probe $step: getRFPower FAILED: ${e?.description}")
-                    then?.let { h.postDelayed(it, STEP_DELAY_MS) }
-                }
-            })
-        }
-        fun set(step: String, want: com.autel.common.remotecontroller.RFPower, then: () -> Unit) {
-            rc.setRFPower(want, object : com.autel.common.CallbackWithNoParam {
-                override fun onSuccess() {
-                    AppLog.i(TAG, "RF probe $step: setRFPower($want) ACCEPTED")
-                    h.postDelayed(then, STEP_DELAY_MS)
-                }
-                override fun onFailure(e: com.autel.common.error.AutelError?) {
-                    AppLog.w(TAG, "RF probe $step: setRFPower($want) REFUSED: ${e?.description}")
-                    h.postDelayed(then, STEP_DELAY_MS)
-                }
-            })
-        }
-
-        // Phase 2 (2026-08-07, operator approved): the RC refused each public setRFPower,
-        // including CE to CE. Autel Explorer's own binary uses a DIFFERENT path:
-        // DspRFManager2.enableFCCMode sends FCCModePacket to the AIRCRAFT fly-controller
-        // channel (AU_PHONE_CTRL_FCC_MODE_REQ). We found this path when we decompiled
-        // Explorer. The internal API has no callback, so the read-backs are the only
-        // confirmation. If the region changes, the sequence keeps it at FCC — the region
-        // that the fleet configuration pushes, and that applyRfPower could not reach.
-        get("1/6 baseline") {
-            AppLog.i(TAG, "RF probe 2/6: enableFCCMode(1) via DspRFManager2 (Explorer's path) — sent")
-            runCatching {
-                com.autel.AutelNet2.dsp.controller.DspRFManager2.getInstance().enableFCCMode(1)
-            }.onFailure { AppLog.w(TAG, "RF probe 2/6: enableFCCMode threw: $it") }
-            h.postDelayed({
-                get("3/6 3s-after-fccMode") {
-                    h.postDelayed({
-                        get("4/6 10s-after-fccMode") {
-                            set("5/6 setRFPower(FCC) retry", com.autel.common.remotecontroller.RFPower.FCC) {
-                                get("6/6 final") {
-                                    AppLog.i(TAG, "RF probe DONE — the log is in Downloads/TAKPilot2 Logs")
-                                    android.widget.Toast.makeText(this,
-                                        "RF probe done. The log is in Downloads/TAKPilot2 Logs.",
-                                        android.widget.Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        }
-                    }, 7000L)
-                }
-            }, 3000L)
-        }
-    }
 
     private val STEP_DELAY_MS = 2000L
 

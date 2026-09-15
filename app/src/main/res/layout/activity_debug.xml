@@ -166,17 +166,8 @@
                 android:text="How long SRT has to recover a lost packet, and the delay it adds. Use three to four times the round-trip time to your video server. RTSP does not use this value."
                 android:textColor="@color/tp_text_caption" android:textSize="12sp" />
 
-            <!-- RF power probe (2026-08-07, for Autel support): exercises the ONLY transmit
-                 power control the SDK exposes (setRFPower FCC/CE) with read-backs, and logs
-                 every step — evidence for whether the RC accepts or ignores the change.
-                 Bench tool; ends by restoring FCC, the fleet's configured region. -->
-            <Button
-            style="@style/TakButton.Neutral"
-                android:id="@+id/debugRfPowerProbe"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="RF Power Probe (bench)" />
+            <!-- The RF power probe was here until 2026-09-14. The region is an Autel limit
+                 (operator); the probe and the connect-time write went together. -->
             <!-- "Export Log" was here until 2026-08-16. Every log is already written to
                  Downloads/TAKPilot2 Logs as it is produced, so the button offered a second
                  route to a file the pilot already has (operator). -->
