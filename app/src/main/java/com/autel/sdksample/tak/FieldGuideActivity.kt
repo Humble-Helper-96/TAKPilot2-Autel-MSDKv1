@@ -272,10 +272,10 @@ class FieldGuideActivity : AppCompatActivity() {
 
     private fun sectionThree() {
         section("4. The Flight Screen")
-        body("The live camera image fills the screen. The toolbar is across the top. The " +
-            "status icons are on the left and the function buttons are on the right.")
+        body("The live camera image fills the screen. The status icons are in the bar at the " +
+            "top left. The buttons are in the column down the left side, under your thumb.")
 
-        sub("Toolbar: left side (status)")
+        sub("Status bar (top left)")
 
         entry(
             listOf(icon(R.drawable.ic_menu) to "Menu"),
@@ -345,7 +345,7 @@ class FieldGuideActivity : AppCompatActivity() {
                 "The house is green when the home point is set.",
         )
 
-        sub("Toolbar: right side (buttons)")
+        sub("Buttons (left column, top to bottom)")
 
         entry(
             listOf(image(R.drawable.ic_drop_pin) to "Marker"),
@@ -358,6 +358,19 @@ class FieldGuideActivity : AppCompatActivity() {
                 "your markers.\n\n" +
                 "DELETE REMOVES A MARKER FROM THIS AIRCRAFT ONLY. It stays on the screens of " +
                 "your team for about 3 days.",
+        )
+
+        entry(
+            listOf(
+                lightsPill(false) to "Lights on",
+                lightsPill(true) to "Lights off",
+                lightsPill(null) to "Not known",
+            ),
+            "Exterior lights",
+            "This turns the navigation lights of the aircraft on and off. Turn them off to " +
+                "make the aircraft difficult to see at night. The button shows what the " +
+                "AIRCRAFT reports, not what you last asked for. Amber means the aircraft has " +
+                "not answered yet: do not read it as off.",
         )
 
         entry(
@@ -376,13 +389,6 @@ class FieldGuideActivity : AppCompatActivity() {
             anchor = ANCHOR_AR,
         )
 
-        entry(
-            listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
-            "Zoom",
-            "Touch: changes between 1X and 2X. Touch and hold: 4X. From 4X, a touch or a " +
-                "touch and hold goes back to 1X, so one touch always gets you to the widest " +
-                "view.",
-        )
 
         entry(
             listOf(modePill("PIP", false) to "Normal", modePill("PIP", true) to "PIP"),
@@ -397,17 +403,13 @@ class FieldGuideActivity : AppCompatActivity() {
                 "Select the camera you want BEFORE you start to record.",
         )
 
+
         entry(
-            listOf(
-                lightsPill(false) to "Lights on",
-                lightsPill(true) to "Lights off",
-                lightsPill(null) to "Not known",
-            ),
-            "Exterior lights",
-            "This turns the navigation lights of the aircraft on and off. Turn them off to " +
-                "make the aircraft difficult to see at night. The button shows what the " +
-                "AIRCRAFT reports, not what you last asked for. Amber means the aircraft has " +
-                "not answered yet: do not read it as off.",
+            listOf(zoomPill("1X") to "Normal", zoomPill("2X") to "2X view"),
+            "Zoom",
+            "Touch: changes between 1X and 2X. Touch and hold: 4X. From 4X, a touch or a " +
+                "touch and hold goes back to 1X, so one touch always gets you to the widest " +
+                "view.",
         )
 
         entry(
@@ -432,7 +434,9 @@ class FieldGuideActivity : AppCompatActivity() {
             "REC: record to the aircraft",
             "This button records video to the card in the aircraft. It is independent of the " +
                 "live video. You can use one function, both functions, or no function. The " +
-                "card keeps the full quality video without the HUD.",
+                "card keeps the full quality video without the HUD.\n\n" +
+                "REC works from photo mode too: it changes the camera to video and records. " +
+                "The camera stays in video after you stop.",
         )
 
         sub("On the video image")
@@ -453,14 +457,26 @@ class FieldGuideActivity : AppCompatActivity() {
 
         entry(
             emptyList(),
-            "Warnings (top left)",
-            "A box below the toolbar shows a warning. RED means act now. AMBER means know " +
-                "it. IF THE MOTORS DO NOT START, READ THIS BOX FIRST.\n\n" +
+            "Video / photo switch (under the EV slider)",
+            "The switch shows which mode the camera is in: the movie camera for video, the " +
+                "still camera for photo. Touch the other side to change the mode. This takes " +
+                "no photo and records nothing. The shutter button changes the camera to " +
+                "photo; REC changes it to video. It does not work while the aircraft records.",
+        )
+
+        entry(
+            emptyList(),
+            "Warnings (bottom left)",
+            "A box in the bottom left corner shows a warning. RED means act now. AMBER means " +
+                "know it. IF THE MOTORS DO NOT START, READ THIS BOX FIRST.\n\n" +
                 "The warnings are for the compass, the GPS, the battery, the flight limits, " +
                 "the wind, a missing home point, and an automatic return home. The box shows " +
                 "the most important one, with a count if there are more.\n\n" +
-                "Touch the box to read all of them. Touch it again to close the list.\n\n" +
-                "Touch the ✕ to remove the box. The box comes back when the warnings change.",
+                "Touch the box to read all of them; the list opens upward. Touch it again to " +
+                "close the list.\n\n" +
+                "Touch the ✕ to remove the box. The box comes back when the warnings change.\n\n" +
+                "DEBUG LOG ON means the debug log is on and the picture can stutter. The ✕ " +
+                "does not remove it. Turn the log off in Debug Log from the menu.",
         )
 
         entry(
