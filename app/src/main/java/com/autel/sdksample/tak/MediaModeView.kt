@@ -84,7 +84,7 @@ class MediaModeView @JvmOverloads constructor(
     private val glyphSize: Float get() = textSize * 1.15f
     /** The track is two thumbs wide plus a little travel; its height is a thumb. */
     private val cellH: Float get() = glyphSize * 1.7f
-    private val cell: Float get() = cellH * 1.15f
+    private val cell: Float get() = cellH * 1.6f
 
     fun setMode(m: Mode?, unhandledName: String? = null) {
         if (m == mode && unhandledName == otherLabel) return
