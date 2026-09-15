@@ -2529,13 +2529,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // UPPER-RIGHT corner (operator, 2026-09-15, after lower-left and top-right-under-
         // the-slider were both tried). In PIP the icon's frame corner sits on the window's
         // upper-right corner; in full thermal it sits just LEFT of the EV slider, level with
-        // it, where the HUD does not cover it. The icon is drawn with its small square in the
-        // lower-left and is turned 180° so the square is in the upper-right, the corner it
-        // marks.
-        // The icon's art reaches 3/24 of the view in from its edge once turned (the small
-        // square overhangs the frame by one unit), so the view is placed by the ART's corner,
-        // and the art touches the window's corner with no inset (operator: "tight").
-        val art = 3f / 24f
+        // it, where the HUD does not cover it.
+        // The icon is drawn as the operator specified — solid square in the frame's lower-
+        // left, arrow up and to the right — and is NOT turned. Its frame's right and top
+        // edges sit 4/24 of the view in, so the view is placed by the frame's corner and the
+        // frame touches the window's corner with no inset (operator: "tight").
+        val art = 4f / 24f
         val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()
@@ -2556,7 +2555,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             x = evLeft - w
             y = evTop + (ev.height - h) / 2f
         }
-        pipSizeButton.rotation = 180f
         pipSizeButton.x = x
         pipSizeButton.y = y
         pipSizeButton.setImageResource(
