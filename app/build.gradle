@@ -1119,6 +1119,41 @@ android {
         //        but it is NOT a size lever. The ladder is near enough linear in pixel count, so
         //        1280x720 would land near 20 Mbps. Do not repeat the general claim about H.265
         //        for this airframe without re-measuring.
+        //
+        //        ⚠ THE BITRATE CANNOT BE SET. MEASURED ON THE CAMERA ITSELF, 2026-09-14, AND
+        //        THIS IS SETTLED — do not spend another session on it. The camera's own JSON-RPC
+        //        API is at http://192.168.1.11/camera and it REPORTS the whole encoder object:
+        //          {"Encoding":"H265","Resolution":"1920x1080p30","Quality":50,"GovLength":30,
+        //           "Profile":"High","BitrateType":"CBR","Bitrate":45000,"Slow":0}
+        //        SetVideoEncoderConfiguration answers status 0 and honours ONLY Resolution and
+        //        Encoding. Tried and silently discarded, each confirmed by read-back: Bitrate
+        //        8000 (outside the advertised limit), Bitrate 3000 (INSIDE it), Quality 80,
+        //        GovLength 60, BitrateType VBR. An unknown method answers status -1, so status 0
+        //        is a real accept — the camera takes the call and drops the fields.
+        //        Thus the SDK's three-field serialiser was MATCHING THE CAMERA, not being lazy,
+        //        and reaching past the SDK gains nothing. GetVideoEncoderConfigurationOptions is
+        //        a stub: all three streams return one boilerplate block that contradicts their
+        //        own live values. GetRecordingSettings and GetVideoSourceConfiguration hold no
+        //        rate control either.
+        //
+        //        ⚠ THE LADDER IS CBR AND PER-RESOLUTION. Read off the camera by setting each
+        //        resolution and reading what it chose:
+        //          1280x720p30    30000 kbps    13.5 GB/h
+        //          1920x1080p30   45000 kbps    20.3 GB/h   <- what we ship
+        //          2720x1528p30   80000 kbps    36.0 GB/h
+        //          3840x2160p30  100000 kbps    45.0 GB/h
+        //          3840x2160p60  100000 kbps
+        //        Two consequences, both against the intuition:
+        //        1. FRAME RATE IS NOT A LEVER. CBR means bits per second, thus 1080p24 writes
+        //           exactly as many bytes per minute as 1080p30. Confirmed: asking for
+        //           1920x1080p24 changed the resolution string and left Bitrate at 45000.
+        //        2. 720p IS A BAD TRADE. It is 32.6 Mbps per megapixel against 1080p's 22.2 —
+        //           half the linear resolution for a THIRD off the size. The earlier estimate
+        //           of "near 20 Mbps" assumed the ladder was linear in pixels. It is not.
+        //        Since the target is per-resolution and codec-independent, H.265 is strictly
+        //        better than H.264: the same bytes, a better picture. KEEP IT.
+        //        Incidental: StreamId 1 is the downlink at 1280x720p30 H264 3000 kbps, already
+        //        at the advertised 3000 ceiling.
         //        ⚠ THE LIVE TAK STREAM IS NOT TOUCHED. That is ScreenCaptureEncoder at 960x720
         //        H.264, and the standing decision to keep H.265 off the WIRE until every client
         //        can decode it is about that stream. A recording is played back later.
