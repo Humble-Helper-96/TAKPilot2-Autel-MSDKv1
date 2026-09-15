@@ -381,7 +381,9 @@
     <!-- Aircraft warning banner — BOTTOM-LEFT, above the resource row, and it opens UPWARD
          (operator, 2026-09-15; it was top-left below the toolbar from 2026-08-13, and the
          actions column now owns that corner). Anchored bottom|start, so the bottom edge stays
-         put and the open list grows up over the picture. Red or amber per severity
+         put and the open list grows up over the picture. It sits in the very corner: the
+         debug-only resource row is drawn OVER it when the monitor is on (operator, 2026-09-15
+         — that row is temporary, the banner is not), see FlightActivity's bringToFront. Red or amber per severity
          (FlightActivity tints the background); shows the single worst active warning plus
          a +N count.
 
@@ -397,7 +399,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
-        android:layout_marginBottom="44dp"
+        android:layout_marginBottom="8dp"
         android:layout_marginStart="8dp"
         android:background="@drawable/bg_warning_banner"
         android:gravity="center_vertical"

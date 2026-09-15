@@ -319,6 +319,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // set rebuilds from live telemetry within one frame.
         FlightWarnings.reset()
         resourceMonitorRow = findViewById(R.id.flightResourceMonitorRow)
+        // The debug resource row draws OVER the warning banner in the bottom-left corner
+        // (operator, 2026-09-15): the row is temporary and the banner is not, so the banner
+        // takes the corner and the row may cover its foot while the monitor is on.
+        resourceMonitorRow.bringToFront()
         resourceMonitorCells = listOf(
             R.id.flightResSys, R.id.flightResApp, R.id.flightResCpu, R.id.flightResGpu, R.id.flightResTak,
         ).map { findViewById(it) }
