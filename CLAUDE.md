@@ -77,6 +77,12 @@ notes file, which is where the fleet takes it from.
   way: the v1.6.0 and v1.6.1 notes both had to be cut back after they grew into prose that
   stated a fact, then restated it as its own consequence (operator, 2026-08-16). A change gets
   a line or a bullet, not a paragraph and a follow-up paragraph.
+  ⚠ **THE v2.1.9 RELEASE IS THE MODEL — the operator rewrote mine to make the point
+  (2026-09-14).** Read it before writing notes. What was CUT is the lesson: every ⚠ paragraph,
+  every "before, it did X" comparison, the reason behind a change, the test status, the
+  internal behaviour, and a whole section covering things the pilot cannot see. What SURVIVED
+  is one line for each PILOT-VISIBLE change, stated once. The notes say what the application
+  now does. They do not argue for it, justify it, or say what it used to do.
 - Colours come from the tokens in `res/values/takpilot_colors.xml`. Do not add a
   `Color.parseColor` call site — specification §6.1. `res/values/colors.xml` belongs to the
   vendor sample; leave it alone, and see the recorded exception in §6.1 before you change
