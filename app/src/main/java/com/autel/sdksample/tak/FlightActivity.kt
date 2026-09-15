@@ -1047,12 +1047,16 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 return
             }
             fpvWarningBanner.text = debugLine
+            // Nothing left to close, so no ✕ — a control that does nothing teaches the pilot
+            // that the banner does not mean what it says.
+            findViewById<View>(R.id.fpvWarningBannerClose).visibility = View.GONE
             fpvWarningBannerRow.background?.setTint(androidx.core.content.ContextCompat.getColor(
                 this, R.color.tp_warn_banner_amber))
             fpvWarningBannerRow.visibility = View.VISIBLE
             return
         }
         warningDismissedSignature = null
+        findViewById<View>(R.id.fpvWarningBannerClose).visibility = View.VISIBLE
         // The arrow is the only sign that the banner opens, so it shows only when there is
         // something behind the count.
         val more = d.all.size > 1
