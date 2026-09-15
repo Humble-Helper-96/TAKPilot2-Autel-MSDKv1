@@ -245,8 +245,9 @@ class TakPilotHomeActivity : AppCompatActivity() {
         AppLog.v(TAG, "initialise hold released")
     }
 
-    /** Long enough for the connect-time pushes AND for the pilot to read the card. */
-    private val INITIALIZING_MS = 5000L
+    /** Long enough for the connect-time pushes AND for the pilot to read the card. 10 s since
+     *  2026-09-15 (operator); it was 5 s. */
+    private val INITIALIZING_MS = 10_000L
 
     private var initializingUntilMs = 0L
     private var sawProduct = false
