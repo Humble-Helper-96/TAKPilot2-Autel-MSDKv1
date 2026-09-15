@@ -1374,7 +1374,8 @@ android {
         //        §4.2; the DJI trees owe it (D29). ⚠ OPEN: the obstacle view's left-edge label
         //        sits under the column's foot — it needs a LEFT inset like its top one.
         //        The obstacle view has the LEFT inset now (setLeftInset, the column's right edge).
-        //        RTH heads the column as a pill (operator: it is a tool, not a status).
+        //        Column order (operator): drop pin, lights, AR, PIP, [thermal size], zoom, LIVE,
+        //        REC. RTH went to the column's head and back to the status capsule the same day.
         //        Then (same day): the column's pills are 42dp high (a quarter more), the HUD
         //        column's top padding is 10dp so the EV slider through the gimbal readout move
         //        up into the freed space, and the WARNING BANNER IS AT THE BOTTOM-LEFT AND

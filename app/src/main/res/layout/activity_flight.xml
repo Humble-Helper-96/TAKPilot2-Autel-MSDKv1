@@ -158,6 +158,17 @@
             android:textSize="13sp"
             android:textStyle="bold" />
 
+        <ImageButton
+            android:id="@+id/flightRthButton"
+            android:layout_width="40dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="12dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Return to home"
+            android:padding="1dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_rth" />
+
         <ImageView
             android:id="@+id/toolbarGpsIcon"
             android:layout_width="34dp"
@@ -221,26 +232,11 @@
         android:orientation="vertical"
         android:paddingHorizontal="6dp"
         android:paddingVertical="10dp">
-
-    <!-- RTH heads the column (operator, 2026-09-15): it is a tool, not a status. It left the
-         status capsule the same day and takes the column's pill shape; touch sends the
-         aircraft home, touch-and-hold opens the RTH menu (Cancel Return, Reset Home Point). -->
-    <ImageButton
-        android:id="@+id/flightRthButton"
-        android:layout_width="66dp"
-        android:layout_height="42dp"
-        android:background="@drawable/bg_zoom_pill"
-        android:contentDescription="Return to home"
-        android:padding="6dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_rth" />
-
     <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
          the most-used action on this screen and a pilot reaching for it is usually also
          flying, so it has to be hittable without aiming. Same sizing/placement as DJI. -->
     <ImageButton
         android:id="@+id/flightDropPinButton"
-        android:layout_marginTop="18dp"
         android:layout_width="56dp"
         android:layout_height="46dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
@@ -248,7 +244,19 @@
         android:padding="1dp"
         android:scaleType="fitCenter"
         android:src="@drawable/ic_drop_pin" />
-
+    <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
+         image controls and a bare glyph among framed ones reads as a different class of
+         control. Same 46x34 as the rest. -->
+    <ImageButton
+        android:id="@+id/flightLightsButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="42dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Exterior lights"
+        android:padding="5dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_led_on" />
     <!-- Tap toggles the AR overlay; long-press opens AR options. -->
     <TextView
         android:id="@+id/flightArButton"
@@ -262,24 +270,6 @@
         android:textColor="@color/tp_text_primary"
         android:textSize="14sp"
         android:textStyle="bold" />
-
-    <!-- Zoom pill. It set the 54dp that AR, IR and the lights now share: the right zoom
-         rocker puts fractional values in here ("2.4X"), which is four glyphs where the
-         stepped labels were two. Widened rather than shrinking the text — this is read at a
-         glance in sunlight. -->
-    <TextView
-        android:id="@+id/flightZoomButton"
-        android:layout_marginTop="18dp"
-        android:layout_width="66dp"
-        android:layout_height="42dp"
-        android:background="@drawable/bg_zoom_pill"
-        android:contentDescription="Camera zoom — tap to step, right rocker to adjust"
-        android:gravity="center"
-        android:text="1X"
-        android:textColor="@color/tp_text_primary"
-        android:textSize="14sp"
-        android:textStyle="bold" />
-
     <!-- Thermal: switches the FPV between the visible camera and the 640T's IR sensor.
          Sits next to the zoom pill because both change what the camera is showing rather
          than what the app does with it. -->
@@ -295,7 +285,6 @@
         android:textColor="@color/tp_text_primary"
         android:textSize="14sp"
         android:textStyle="bold" />
-
     <!-- The thermal expand / contract PILL (operator, 2026-09-15): under the PIP pill, only
          while thermal is on screen. In PIP its icon makes thermal full screen; in full thermal
          it puts the window back. Same 66x42 pill as the rest; the icon is the operator's —
@@ -312,22 +301,22 @@
         android:scaleType="fitCenter"
         android:src="@drawable/ic_pip_expand"
         android:visibility="gone" />
-
-
-    <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
-         image controls and a bare glyph among framed ones reads as a different class of
-         control. Same 46x34 as the rest. -->
-    <ImageButton
-        android:id="@+id/flightLightsButton"
+    <!-- Zoom pill. It set the 54dp that AR, IR and the lights now share: the right zoom
+         rocker puts fractional values in here ("2.4X"), which is four glyphs where the
+         stepped labels were two. Widened rather than shrinking the text — this is read at a
+         glance in sunlight. -->
+    <TextView
+        android:id="@+id/flightZoomButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
         android:layout_height="42dp"
         android:background="@drawable/bg_zoom_pill"
-        android:contentDescription="Exterior lights"
-        android:padding="5dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_led_on" />
-
+        android:contentDescription="Camera zoom — tap to step, right rocker to adjust"
+        android:gravity="center"
+        android:text="1X"
+        android:textColor="@color/tp_text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
     <com.autel.sdksample.tak.LiveToggleView
         android:id="@+id/flightStreamButton"
         android:layout_marginTop="18dp"
@@ -335,7 +324,6 @@
         android:layout_height="42dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="Start/stop the video stream to TAK" />
-
     <com.autel.sdksample.tak.RecordToggleView
         android:id="@+id/flightRecordButton"
         android:layout_marginTop="18dp"
