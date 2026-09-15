@@ -1156,6 +1156,29 @@ android {
         //        everywhere — every player, every evidence system. See v2.1.9.
         //        Incidental: StreamId 1 is the downlink at 1280x720p30 H264 3000 kbps, already
         //        at the advertised 3000 ceiling.
+        //
+        //        ⚠ THE CAMERA CANNOT SEGMENT A RECORDING, measured 2026-09-14 while looking for
+        //        a way to cap the file size. RecordingSettings.LoopRecordSettings.MaxRecordTime
+        //        reads 3600 and REFUSES to change. That is not a syntax problem: EnableSubtitle
+        //        was flipped 0 -> 1 in the SAME SetRecordingSettings request that MaxRecordTime
+        //        ignored, so the method works and that one field is locked. The only way to cut
+        //        a recording into pieces would be for the APPLICATION to stop and start it.
+        //        Measured boundary for a stop+start: about 330 ms on a 21-second file. NOT
+        //        measured on a large one, where finalising the file is the real cost.
+        //        ⚠ THE WORK WAS DROPPED (operator, 2026-09-14): the 4 GB ceiling it was meant to
+        //        stay under was a misreading of an uploader. The real limit is 1.5 TB and a
+        //        13 GB sortie file is fine. Do not revive this without a NEW reason. If one ever
+        //        comes up, the honest reason is blast radius — an MP4 is playable only once its
+        //        index is written, so a power loss can cost the whole file rather than the last
+        //        few seconds.
+        //
+        //        ⚠ THE CAMERA ANSWERS StartRecording WITH "status 0" WHEN NO CARD IS FITTED.
+        //        Seen while testing with the card in a laptop. The application is already safe
+        //        here — FlightActivity.startRecordVerified waits for the camera's own
+        //        RECORD_START rather than the acknowledgement, retries once, and names the cause
+        //        through recordFailureReason(), which covers "the SD card is not ready". NOT
+        //        established: whether the camera pushes RECORD_START with no card. If it does,
+        //        the REC pill would go red falsely. Test it on a day the card is already out.
         //        ⚠ THE LIVE TAK STREAM IS NOT TOUCHED. That is ScreenCaptureEncoder at 960x720
         //        H.264, and the standing decision to keep H.265 off the WIRE until every client
         //        can decode it is about that stream. A recording is played back later.
