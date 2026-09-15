@@ -2510,7 +2510,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /**
      * The ⤢ / ⤡ control on the thermal picture (operator, 2026-09-15): on the PIP window's
-     * lower-left corner it makes thermal full screen; on the full thermal picture it puts the
+     * upper-right corner it makes thermal full screen; on the full thermal picture it puts the
      * window back. Gone in visible. The window's corner comes from [PipWindowGeometry] and the
      * AR video rect; in full thermal the picture is the whole FIT rect. Kept under the toolbar
      * band and inside the view, so it can never hide behind the chrome or off the edge.
@@ -2526,21 +2526,31 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         } else {
             PipWindowGeometry.Box(rect.left.toDouble(), rect.top.toDouble(), rect.right.toDouble(), rect.bottom.toDouble())
         }
-        // LOWER-LEFT corner (operator, 2026-09-15): the top-right put the ⤡ under the EV
-        // slider in full thermal. Clamped inside the view and above the resource row.
-        // Nestled INTO the corner (operator): the icon's own frame corner lands on the
-        // window's corner, so the inset is just the view's padding.
+        // UPPER-RIGHT corner (operator, 2026-09-15, after lower-left and top-right-under-
+        // the-slider were both tried). In PIP the icon's frame corner sits on the window's
+        // upper-right corner; in full thermal it sits just LEFT of the EV slider, level with
+        // it, where the HUD does not cover it. The icon is drawn with its small square in the
+        // lower-left and is turned 180° so the square is in the upper-right, the corner it
+        // marks.
+        val art = 4f / 24f
         val inset = (2 * resources.displayMetrics.density)
         val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()
-        val bottomChrome = if (resourceMonitorRow.visibility == View.VISIBLE) resourceMonitorRow.height.toFloat() else 0f
-        // The icon's FRAME starts 4/24 of the view in from its edge (see ic_pip_expand), so
-        // the view is placed by the frame's corner, not its own, and the frame sits on the
-        // window's corner.
-        val art = 4f / 24f
-        val x = (box.left.toFloat() + inset - art * w).coerceIn(0f, parent.width - w)
-        val y = (box.bottom.toFloat() - inset - h + art * h).coerceAtMost(parent.height - bottomChrome - inset - h)
+        val chromeTop = findViewById<View>(R.id.flightToolbar).height.toFloat()
+        val x: Float
+        val y: Float
+        if (cameraView == CameraView.PIP) {
+            x = (box.right.toFloat() - inset - w + art * w).coerceIn(0f, parent.width - w)
+            y = maxOf(box.top.toFloat() + inset - art * h, chromeTop + inset)
+        } else {
+            val ev = findViewById<View>(R.id.evSlider)
+            val hud = findViewById<View>(R.id.flightHudColumn)
+            val evTop = hud.y + ev.y
+            x = hud.x - w - inset
+            y = evTop + (ev.height - h) / 2f
+        }
+        pipSizeButton.rotation = 180f
         pipSizeButton.x = x
         pipSizeButton.y = y
         pipSizeButton.setImageResource(
