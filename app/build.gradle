@@ -1301,6 +1301,9 @@ android {
         //        later both times. CANCEL RETURN WORKED on the same flight (21:27, NORMAL_GO_HOME,
         //        accepted, out of the return within 1.5 s) and stays. Both v2.1.4 items are now
         //        flown.
+        //        ⚠ THE RF POWER WRITE IS REMOVED (operator, 2026-09-14): "it's an Autel limit".
+        //        Every path was refused since August; the connect-time write only put a failure
+        //        in the log. Do not open it again.
         versionCode 94
         versionName "2.2.0"
         multiDexEnabled true

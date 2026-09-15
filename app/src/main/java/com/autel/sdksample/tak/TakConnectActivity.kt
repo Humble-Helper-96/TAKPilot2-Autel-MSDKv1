@@ -1005,7 +1005,7 @@ class TakConnectActivity : AppCompatActivity() {
         val cycle = FlightLimitsController.beginApply()
 
         FlightLimitsController.pushLimitsNow(this)
-        FlightLimitsController.pushBatteryAndRfNow(this)
+        FlightLimitsController.pushBatteryNow(this)
 
         // Verify AFTER the writes have had time to land. The wait used to be 11s because the
         // signal-loss write took a 10s timeout to fail; that write is gone (see

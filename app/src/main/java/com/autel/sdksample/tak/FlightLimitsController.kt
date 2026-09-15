@@ -220,11 +220,10 @@ object FlightLimitsController {
         return true
     }
 
-    /** As [pushLimitsNow], for the battery thresholds and RF power. */
-    fun pushBatteryAndRfNow(context: Context): Boolean {
+    /** As [pushLimitsNow], for the battery thresholds. */
+    fun pushBatteryNow(context: Context): Boolean {
         AutelProductHolder.evo2 ?: return false
         applyBatteryThresholds(context)
-        applyRfPower(context)
         return true
     }
 
@@ -549,7 +548,6 @@ object FlightLimitsController {
 
         applyNumericLimits(context, fc)
         applyBatteryThresholds(context)
-        applyRfPower(context)
     }
 
     /**
@@ -681,37 +679,11 @@ object FlightLimitsController {
         })
     }
 
-    /**
-     * Pushes the controller's RF power region.
-     *
-     * ⚠ THIS IS A REGULATORY SETTING, not a performance one. FCC permits higher transmit power
-     * than CE and gives more range; which is LAWFUL depends on where the aircraft is flown, and
-     * that is the operator's responsibility, not the app's.
-     *
-     * Default is FCC because this airframe operates in Alaska (operator, 2026-08-02) and the
-     * controller was found set to CE, which was costing link margin for no reason. Anyone flying
-     * this build elsewhere must revisit it.
-     */
-    private fun applyRfPower(context: Context) {
-        // Read ONE time into a local — see the note on [refusedThisApply].
-        val refused = refusedThisApply
-        val rc = AutelProductHolder.evo2?.remoteController ?: return
-        val want = savedRfPower(context)
-        rc.setRFPower(want, object : com.autel.common.CallbackWithNoParam {
-            override fun onSuccess() { AppLog.i(TAG, "RF power set to $want: OK") }
-            override fun onFailure(error: AutelError?) {
-                AppLog.w(TAG, "RF power $want failed: ${error?.description}")
-                // Not a reported refusal: the region is pinned on this controller and every
-                // SDK write path refuses it, so there is nothing the pilot can do about it.
-                // It stays in the log, which is where a regulatory fact belongs.
-            }
-        })
-    }
-
-    private const val KEY_RF_POWER = "limit_rf_power"
-
-    fun savedRfPower(context: Context): com.autel.common.remotecontroller.RFPower =
-        if (pref(context, KEY_RF_POWER, "FCC") == "CE")
-            com.autel.common.remotecontroller.RFPower.CE
-        else com.autel.common.remotecontroller.RFPower.FCC
+    // ⚠ THE RF POWER REGION IS NOT WRITTEN, BY THE OPERATOR'S DECISION (2026-09-14). This file
+    // pushed `setRFPower(FCC)` at every connect and on every apply from 2026-08-02, and every
+    // path to it was refused: the public setter, the retry, and the internal
+    // `DspRFManager2.enableFCCMode` route that Autel Explorer uses (the Debug screen's probe,
+    // 2026-08-07). The region is pinned on this controller and it is an Autel limit. Hours went
+    // into it. The write is gone so the log stops carrying a failure nobody can act on; do not
+    // put it back and do not open it again.
 }
