@@ -1449,8 +1449,13 @@ android {
         //        ⚠ THE RF POWER WRITE IS REMOVED (operator, 2026-09-14): "it's an Autel limit".
         //        Every path was refused since August; the connect-time write only put a failure
         //        in the log. Do not open it again.
-        versionCode 94
-        versionName "2.2.0"
+        // v2.3.0 — 2026-09-15. RELEASED. Everything above under v2.2.0 plus the same day's
+        //        work: the left actions column, the video/photo switch, REC from any mode, the
+        //        DEBUG LOG ON warning, the Debug screen, PiP with its size pill, and the seven
+        //        AR fixes flown on the 15th. The v2.2.0 entry stays as the record; nothing
+        //        shipped under 2.2.0.
+        versionCode 95
+        versionName "2.3.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
