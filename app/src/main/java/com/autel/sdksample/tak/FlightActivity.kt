@@ -1070,9 +1070,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // The arrow is the only sign that the banner opens, so it shows only when there is
         // something behind the count.
         val more = d.all.size > 1
+        // The banner sits at the bottom-left and opens UPWARD (2026-09-15): collapsed, the
+        // arrow points up to say "more above"; open, the list stands above the arrow that
+        // closes it, worst first from the top.
         fpvWarningBanner.text = when {
-            warningExpanded -> d.all.joinToString("\n") + "\n▴"
-            more -> "${d.text}  ▾"
+            warningExpanded -> d.all.joinToString("\n") + "\n▾"
+            more -> "${d.text}  ▴"
             else -> d.text
         }
         // Severity goes on the BACKGROUND and the text stays white — specification §4.8.

@@ -265,7 +265,7 @@
         android:id="@+id/flightArButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
-        android:layout_height="34dp"
+        android:layout_height="42dp"
         android:background="@drawable/bg_zoom_pill"
         android:contentDescription="Toggle AR marker overlay"
         android:gravity="center"
@@ -282,7 +282,7 @@
         android:id="@+id/flightZoomButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
-        android:layout_height="34dp"
+        android:layout_height="42dp"
         android:background="@drawable/bg_zoom_pill"
         android:contentDescription="Camera zoom — tap to step, right rocker to adjust"
         android:gravity="center"
@@ -298,7 +298,7 @@
         android:id="@+id/flightIrButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
-        android:layout_height="34dp"
+        android:layout_height="42dp"
         android:background="@drawable/bg_zoom_pill"
         android:contentDescription="Toggle thermal (IR) camera"
         android:gravity="center"
@@ -315,7 +315,7 @@
         android:id="@+id/flightLightsButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
-        android:layout_height="34dp"
+        android:layout_height="42dp"
         android:background="@drawable/bg_zoom_pill"
         android:contentDescription="Exterior lights"
         android:padding="5dp"
@@ -326,7 +326,7 @@
         android:id="@+id/flightStreamButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
-        android:layout_height="34dp"
+        android:layout_height="42dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="Start/stop the video stream to TAK" />
 
@@ -334,7 +334,7 @@
         android:id="@+id/flightRecordButton"
         android:layout_marginTop="18dp"
         android:layout_width="66dp"
-        android:layout_height="34dp"
+        android:layout_height="42dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="Start/stop recording to the aircraft SD card" />
 
@@ -378,9 +378,10 @@
 
     </LinearLayout>
 
-    <!-- Aircraft warning banner — top-LEFT, below the toolbar, over the video (operator,
-         2026-08-13: top-center sat on the part of the picture the pilot works with; the
-         banner colour still interrupts from the corner). Red or amber per severity
+    <!-- Aircraft warning banner — BOTTOM-LEFT, above the resource row, and it opens UPWARD
+         (operator, 2026-09-15; it was top-left below the toolbar from 2026-08-13, and the
+         actions column now owns that corner). Anchored bottom|start, so the bottom edge stays
+         put and the open list grows up over the picture. Red or amber per severity
          (FlightActivity tints the background); shows the single worst active warning plus
          a +N count.
 
@@ -395,9 +396,9 @@
         android:id="@+id/fpvWarningBannerRow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginTop="64dp"
-        android:layout_marginStart="100dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginBottom="44dp"
+        android:layout_marginStart="8dp"
         android:background="@drawable/bg_warning_banner"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -476,7 +477,7 @@
         android:layout_gravity="end"
         android:gravity="end"
         android:orientation="vertical"
-        android:paddingTop="60dp"
+        android:paddingTop="10dp"
         android:paddingBottom="12dp"
         android:paddingEnd="14dp">
 

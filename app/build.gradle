@@ -1373,6 +1373,10 @@ android {
         //        reports the status capsule's height alone as the chrome inset. Specification
         //        §4.2; the DJI trees owe it (D29). ⚠ OPEN: the obstacle view's left-edge label
         //        sits under the column's foot — it needs a LEFT inset like its top one.
+        //        Then (same day): the column's pills are 42dp high (a quarter more), the HUD
+        //        column's top padding is 10dp so the EV slider through the gimbal readout move
+        //        up into the freed space, and the WARNING BANNER IS AT THE BOTTOM-LEFT AND
+        //        OPENS UPWARD, ▴ collapsed, ▾ under the open list.
         //
         //        ⚠ STORED FOR LATER (operator, 2026-09-15 11:41): switching between photo and
         //        video with the HARDWARE buttons gave an error on screen. The log:
