@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The PIP size control's backing: a faint dark disc, 40 % black, no stroke. The control
-     sits ON the picture and must not read as a pill in the toolbar's family — it is a
-     corner affordance like a phone's, and "less intrusive" was the operator's word
-     (2026-09-15). -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#66000000" />
-</shape>
