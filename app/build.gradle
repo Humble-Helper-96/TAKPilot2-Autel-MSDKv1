@@ -1107,8 +1107,18 @@ android {
         //        outline off the clip edge — see the layout comment.
         // v2.1.7 — 2026-09-14. THE CARD RECORDINGS ARE 1080p30 H.265. A 12.5-hour mission left
         //        huge files, because the camera kept whatever Autel Explorer put it in and this
-        //        airframe goes to 7680x4320. 1080p is about a quarter of 4K's pixels and H.265
-        //        about half the bits of H.264, and the two multiply.
+        //        airframe goes to 7680x4320. 1080p is about a quarter of 4K's pixels.
+        //        ⚠ CORRECTED 2026-09-14, BY MEASUREMENT: THE CODEC SAVES NOTHING ON THIS CAMERA.
+        //        This entry first said H.265 was "about half the bits of H.264, and the two
+        //        multiply". Two files off the card say otherwise:
+        //          MAX_0117  H.264 High  2720x1528p30  82 Mbps  = 19.7 Mbps per megapixel
+        //          MAX_0139  H.265 Main  1920x1080p30  46 Mbps  = 22.2 Mbps per megapixel
+        //        The camera picks its bitrate from the RESOLUTION and ignores the codec — H.265
+        //        even costs slightly more per pixel here. The whole 82 -> 46 drop came from the
+        //        resolution. H.265 is a better picture at the same size, which is worth having,
+        //        but it is NOT a size lever. The ladder is near enough linear in pixel count, so
+        //        1280x720 would land near 20 Mbps. Do not repeat the general claim about H.265
+        //        for this airframe without re-measuring.
         //        ⚠ THE LIVE TAK STREAM IS NOT TOUCHED. That is ScreenCaptureEncoder at 960x720
         //        H.264, and the standing decision to keep H.265 off the WIRE until every client
         //        can decode it is about that stream. A recording is played back later.
@@ -1122,8 +1132,22 @@ android {
         //        a reboot and a swap with Explorer. Refused while recording, and verified by
         //        read-back — getVideoEncoderConfiguration returns codec and resolution together,
         //        and it is a single http request, not a 2 Hz subscription (safety rule 1).
-        versionCode 91
-        versionName "2.1.7"
+        // v2.1.8 — 2026-09-14. THE APPLICATION FORGOT THE AIRCRAFT WAS RECORDING whenever the
+        //        pilot left the flight screen. install() runs from every onResume to reclaim the
+        //        SDK's single global listener slot, which makes the SDK re-deliver the current
+        //        camera — and the camera-change handler treated every delivery as a NEW camera.
+        //        It cleared isRecording, so the REC pill came back dark and a tap on it was
+        //        refused because the camera was already recording (operator, in flight).
+        //        ⚠ THE WORSE HALF: that handler also re-ran the whole connect sequence INTO A
+        //        LIVE RECORDING — media mode, exposure, and the v2.1.7 recording format. Four
+        //        times in the first sixty seconds of the flight, on every Home/Flight change.
+        //        The v2.1.7 "refused while recording" guard was useless because the flag it
+        //        reads had been cleared 9 ms earlier in the same callback.
+        //        A re-fire is now detected and returns early, and the recording state is READ
+        //        BACK from the camera (getCurrentRecordTime, one call, not a subscription) on
+        //        every arm — which also fixes a cold start into an aircraft already recording.
+        versionCode 92
+        versionName "2.1.8"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

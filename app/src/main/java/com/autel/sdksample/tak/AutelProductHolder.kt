@@ -179,6 +179,41 @@ object AutelProductHolder {
         }.onFailure { AppLog.w(TAG, "getAlbumLocation threw: ${it.message}") }
     }
 
+    /**
+     * Ask the camera whether it is recording, instead of believing a flag.
+     *
+     * `getCurrentRecordTime` returns the seconds the camera has been recording, thus anything
+     * above zero IS a recording in progress. It is an independent signal from the MediaStatus
+     * pushes this object normally learns from, which is the point: a push can be missed, and
+     * after a process restart there were never any pushes to miss.
+     *
+     * ⚠ One call, not a subscription — confirmed in the bytecode before use (safety rule 1).
+     *
+     * Called when a camera is armed or re-armed, never on a timer. The REC pill repaints from
+     * [isRecording] on every HUD tick, so a correction that arrives late still reaches the pilot
+     * within a tick and needs no other plumbing.
+     */
+    private fun syncRecordingStateFromCamera(cam: AutelXT706?) {
+        cam ?: return
+        runCatching {
+            cam.getCurrentRecordTime(object : com.autel.common.CallbackWithOneParam<Int> {
+                override fun onSuccess(seconds: Int?) {
+                    val recording = (seconds ?: 0) > 0
+                    if (recording != isRecording) {
+                        AppLog.i(TAG, "recording state corrected from the camera: " +
+                            "was $isRecording, camera reports ${seconds}s -> $recording")
+                    }
+                    isRecording = recording
+                }
+                override fun onFailure(error: AutelError?) {
+                    // The flag is left alone. An unanswered question is not an answer, and
+                    // guessing "not recording" here would put the pill back where it was.
+                    AppLog.w(TAG, "getCurrentRecordTime failed: ${error?.description}")
+                }
+            })
+        }.onFailure { AppLog.w(TAG, "getCurrentRecordTime threw: ${it.message}") }
+    }
+
     private val mediaStateListener = object : CallbackWithTwoParams<MediaStatus, String> {
         override fun onSuccess(status: MediaStatus?, detail: String?) {
             status ?: return
@@ -382,10 +417,51 @@ object AutelProductHolder {
         }
     }
 
+    /** The camera this object has already armed, and its product type. ⚠ NOT a cache — it is
+     *  what tells a REAL camera change from the listener re-firing for the same one. Cleared on
+     *  productDisconnected and in release(), which are the only two events that end a camera
+     *  session. See the re-fire guard in [cameraChangeListener]. */
+    private var armedCamera: AutelBaseCamera? = null
+    private var armedCameraType: CameraProduct? = null
+
     private val cameraChangeListener = object : CallbackWithTwoParams<CameraProduct, AutelBaseCamera> {
         override fun onSuccess(type: CameraProduct?, cam: AutelBaseCamera?) {
             AppLog.i(TAG, "camera changed: $type (${cam?.javaClass?.simpleName ?: "null"})")
             camera = cam
+            // ⚠ THE LISTENER RE-FIRES FOR THE SAME CAMERA ON EVERY SCREEN CHANGE, AND THE APP
+            // USED TO TREAT THAT AS A NEW CAMERA.
+            //
+            // install() runs from onResume to reclaim the SDK's single global listener slot, and
+            // installCameraListener() makes the SDK deliver the current camera at once. So a
+            // pilot who taps Back re-enters this callback although nothing about the camera
+            // changed. Measured in flight 2026-09-14, 18:46:55: Back tapped, "already armed" for
+            // the product, then THIS callback — which cleared isRecording while the aircraft was
+            // recording, and re-ran the whole connect sequence on top of a live recording.
+            //
+            // What the pilot saw: the REC pill came back dark, and a tap on it was refused
+            // because the camera was already recording. What the log also shows is the app
+            // writing the media mode, the exposure and the recording format into a camera that
+            // was mid-recording — exactly what this application refuses to do deliberately
+            // (safety rule 4, and the lens case of 12 September).
+            //
+            // A camera session ends at productDisconnected or release(), and BOTH already clear
+            // the recording flag. Nothing else may.
+            val reFire = armedCamera != null && type == armedCameraType
+            armedCamera = cam
+            if (reFire) {
+                AppLog.i(TAG, "camera re-fired for the same camera — already armed")
+                // The media-state slot holds ONE client and this replaces itself, so re-setting
+                // is safe and keeps the channel ours if anything else took it (safety rule 2).
+                cam?.setMediaStateListener(mediaStateListener)
+                // ⚠ ASK THE CAMERA whether it is recording rather than assume the flag survived.
+                // This is the read-back that makes the pill true again.
+                syncRecordingStateFromCamera(cam as? AutelXT706)
+                // The screens still need telling: a flight screen created after this point reads
+                // the camera at this event and nowhere else.
+                (cam as? AutelXT706)?.let { notifyCameraReady() }
+                return
+            }
+            armedCameraType = type
             isRecording = false   // new camera session — state re-learned from its events
             mediaMode = null      // and so is the mode — unknown until the new camera says
             zoomBaseRaw = null
@@ -393,6 +469,9 @@ object AutelProductHolder {
             storageTarget = null; sdCardState = null; mmcState = null
             sdFreeMb = null; mmcFreeMb = null; mmcTotalMb = null
             cam?.setMediaStateListener(mediaStateListener)
+            // A cold start into an aircraft that is ALREADY recording has no push to learn from,
+            // thus the camera is asked directly here too.
+            syncRecordingStateFromCamera(cam as? AutelXT706)
             // Storage FIRST among the XT706 calls: until this has run, a REC press against
             // internal flash throws inside the SDK rather than reporting anything. See
             // [armCameraStorage].
@@ -640,6 +719,8 @@ object AutelProductHolder {
                 product = null
                 armedForProduct = null
                 camera = null
+                armedCamera = null
+                armedCameraType = null
                 isRecording = false
                 // Unknown rather than stale: the mode belongs to a camera that has gone.
                 mediaMode = null
@@ -679,6 +760,8 @@ object AutelProductHolder {
         runCatching { Autel.destroy() }
         camera = null
         product = null
+        armedCamera = null
+        armedCameraType = null
         zoomBaseRaw = null
         isRecording = false
         synchronized(listeners) { listeners.clear() }
