@@ -90,7 +90,14 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.2.0 IS ON THE BENCH, NOT RELEASED** — versionCode 94, 2026-09-14. PIP: the thermal image in
+**v2.3.0 IS RELEASED** — tag `v2.3.0`, versionCode 95, 2026-09-15, signed APK and notes in
+`../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK (operator). It carries
+everything below that was written under v2.2.0 (nothing shipped under 2.2.0) plus the 15th: the
+left actions column, the video/photo switch, REC from any mode, the DEBUG LOG ON warning, the
+Debug screen, and the AR fixes flown that day. Bench-tested and one test flight; not flown by
+the test pilots.
+
+**v2.2.0 was the development line (versionCode 94, 2026-09-14).** PIP: the thermal image in
 the centre of the visible image, drawn by the CAMERA. A tap on the IR pill or the C1 key CYCLES visible → PIP → thermal; the
 long-press menu was tried and rejected (operator).
 The measurements are in `app/build.gradle` under v2.2.0 and every one came off the camera's own
