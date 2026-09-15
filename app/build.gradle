@@ -1318,7 +1318,8 @@ android {
         //        2026-09-15). The log costs the screen some jitter — accepted — but a pilot must
         //        be MADE to look and go and turn it off; a quiet HUD line was tried first the
         //        same day and was not a stimulus. Amber, behind every aircraft warning, shown
-        //        with no aircraft, gone when off. Specification §4.8; the DJI trees owe it (D28).
+        //        with no aircraft, gone when off, AND THE ONE LINE THE ✕ DOES NOT CLOSE — the
+        //        aircraft's lines close around it. Specification §4.8; the DJI trees owe it (D28).
         //        Also: the Explorer watchdog is no longer a toggle (always on), and the Debug
         //        screen's three log options sit under the log switch, greyed while it is off.
         //

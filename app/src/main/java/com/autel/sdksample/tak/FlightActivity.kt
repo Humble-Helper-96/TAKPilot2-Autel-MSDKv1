@@ -304,7 +304,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // The ✕ closes the set of warnings now on the banner. A separate view, not a second
         // gesture on the text: the text's tap already means "open".
         fpvWarningBannerClose.setOnClickListener {
-            warningDismissedSignature = FlightWarnings.display()?.all?.joinToString("\n")
+            // Only the aircraft's lines can be closed — DEBUG LOG ON stays. See renderWarning.
+            warningDismissedSignature = FlightWarnings.display()?.all
+                ?.let { FlightWarnings.dismissable(it).joinToString("\n") }
             warningExpanded = false
             AppLog.i(TAG, "warning banner closed by pilot: $warningDismissedSignature")
             renderWarning()
@@ -1033,9 +1035,21 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             warningDismissedSignature = null
             return
         }
-        val signature = d.all.joinToString("\n")
-        if (signature == warningDismissedSignature) {
-            fpvWarningBannerRow.visibility = View.GONE
+        // The closable part of the banner is the aircraft's lines. DEBUG LOG ON is never
+        // closed (operator, 2026-09-15): with the rest dismissed it stands alone, amber, until
+        // the log is turned off; a banner that is ONLY that line has nothing for the ✕ to do.
+        val closable = FlightWarnings.dismissable(d.all)
+        val signature = closable.joinToString("\n")
+        val debugLine = d.all.firstOrNull { it !in closable }
+        if (closable.isEmpty() || signature == warningDismissedSignature) {
+            if (debugLine == null) {
+                fpvWarningBannerRow.visibility = View.GONE
+                return
+            }
+            fpvWarningBanner.text = debugLine
+            fpvWarningBannerRow.background?.setTint(androidx.core.content.ContextCompat.getColor(
+                this, R.color.tp_warn_banner_amber))
+            fpvWarningBannerRow.visibility = View.VISIBLE
             return
         }
         warningDismissedSignature = null

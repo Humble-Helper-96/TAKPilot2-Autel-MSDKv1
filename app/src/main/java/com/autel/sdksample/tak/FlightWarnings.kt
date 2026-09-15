@@ -204,6 +204,14 @@ object FlightWarnings {
         return out
     }
 
+    /**
+     * The lines of a banner the pilot's ✕ may hide. `DEBUG LOG ON` is not one of them
+     * (operator, 2026-09-15): the whole point of that warning is to be looked at until the log
+     * is turned off, so a ✕ on a banner that carries it hides the aircraft's warnings and
+     * leaves that one line standing. Pure, so the rule is pinned by [FlightWarningsTest].
+     */
+    fun dismissable(all: List<String>): List<String> = all.filter { it != Warning.DEBUG_LOG.label }
+
     /** Polled from the flight screen's 500 ms HUD tick. */
     fun display(): Display? = displayAt(System.currentTimeMillis())
 

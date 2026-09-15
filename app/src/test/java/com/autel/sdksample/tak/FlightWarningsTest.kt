@@ -86,6 +86,12 @@ class FlightWarningsTest {
     }
 
     @Test
+    fun `the debug log line is the one line the pilot cannot close`() {
+        assertEquals(listOf("BATTERY LOW"), FlightWarnings.dismissable(listOf("BATTERY LOW", "DEBUG LOG ON")))
+        assertEquals(emptyList<String>(), FlightWarnings.dismissable(listOf("DEBUG LOG ON")))
+    }
+
+    @Test
     fun healthyStatusShowsNothing() {
         FlightWarnings.onStatus(status(), batteryPct = 80, airborne = true)
         assertNull(FlightWarnings.displayAt(t0))
