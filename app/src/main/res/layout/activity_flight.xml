@@ -176,16 +176,6 @@
             android:textSize="13sp"
             android:textStyle="bold" />
 
-        <ImageButton
-            android:id="@+id/flightRthButton"
-            android:layout_width="40dp"
-            android:layout_height="34dp"
-            android:layout_marginEnd="12dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Return to home"
-            android:padding="1dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_rth" />
 
         </LinearLayout>
 
@@ -232,11 +222,25 @@
         android:paddingHorizontal="6dp"
         android:paddingVertical="10dp">
 
+    <!-- RTH heads the column (operator, 2026-09-15): it is a tool, not a status. It left the
+         status capsule the same day and takes the column's pill shape; touch sends the
+         aircraft home, touch-and-hold opens the RTH menu (Cancel Return, Reset Home Point). -->
+    <ImageButton
+        android:id="@+id/flightRthButton"
+        android:layout_width="66dp"
+        android:layout_height="42dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Return to home"
+        android:padding="6dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_rth" />
+
     <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
          the most-used action on this screen and a pilot reaching for it is usually also
          flying, so it has to be hittable without aiming. Same sizing/placement as DJI. -->
     <ImageButton
         android:id="@+id/flightDropPinButton"
+        android:layout_marginTop="18dp"
         android:layout_width="56dp"
         android:layout_height="46dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
