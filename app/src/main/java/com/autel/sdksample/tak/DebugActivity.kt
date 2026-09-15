@@ -104,12 +104,24 @@ class DebugActivity : AppCompatActivity() {
             resourceMonitorToggle.isEnabled = on
             subRows.forEach { it.alpha = if (on) 1f else 0.35f }
         }
+        // THE SWITCH SETS THE OPTIONS (operator, 2026-09-15, v2.3.1): on checks all three and
+        // the pilot then clears what they do not want; off clears all three. A checked box under
+        // an off switch was still showing the resource row on the flight screen.
+        fun setAllOptions(on: Boolean) {
+            AppLog.takLogging = on
+            AppLog.radarLogging = on
+            AppLog.resourceMonitor = on
+            takToggle.isChecked = on
+            radarToggle.isChecked = on
+            resourceMonitorToggle.isChecked = on
+        }
 
         val toggle = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.debugLoggingToggle)
         toggle.isChecked = AppLog.enabled
         renderSubOptions(AppLog.enabled)
         toggle.setOnCheckedChangeListener { _, on ->
             AppLog.enabled = on
+            setAllOptions(on)
             renderSubOptions(on)
             // Log.i as well as the file: this line must reach logcat when the file is OFF.
             android.util.Log.i(TAG, "logging ${if (on) "enabled" else "disabled"}")
