@@ -1415,11 +1415,17 @@ android {
         //        at 11:41:17, and a 41,209 ms freeze from 11:41:35 until record mode came back
         //        at 11:42:16. Every shutter press in between was taken blind. It is the CAMERA
         //        holding the live stream while in SINGLE; the picture returns the moment the
-        //        camera is back in RECORD. Candidate fix: after a confirmed PHOTO_TAKEN_DONE
-        //        put the camera back to VIDEO (the spec's "no application drives the media
-        //        mode" note is about not GUESSING the mode; returning to video after a still is
-        //        a different thing), or at least a §4.8 notice that the picture is held. Not
-        //        built; stored (operator, 2026-09-15).
+        //        camera is back in RECORD.
+        //        ⚠ NARROWED 13:02–13:15 THE SAME DAY: it is NOT stills mode alone. In visible
+        //        at 1X the shutter switched the downlink to a 4:3 1280x960 frame with two
+        //        short stalls (1.8 + 1.3 s) and the picture came back; in full thermal at 2X
+        //        the picture stayed live in stills. Both long freezes this morning were VISIBLE
+        //        at 2X, where restoreZoomAfterModeChange wrote 2X ~1 s after the mode change —
+        //        DURING the stream's change of shape — and the stream never came back until
+        //        the next mode change. Suspect: the zoom write during the visible stills
+        //        reconfiguration. Candidate fix: on a change INTO stills, restore the zoom only
+        //        after the new frame size has arrived (or ~4 s), not at 800 ms. NOT CONFIRMED —
+        //        the visible + 2X + shutter reproduction was not run. Stored (operator).
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
