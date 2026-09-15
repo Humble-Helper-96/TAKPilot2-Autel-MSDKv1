@@ -2509,23 +2509,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
-     * The ⤢ / ⤡ control on the thermal picture (operator, 2026-09-15): on the PIP window's
-     * upper-right corner it makes thermal full screen; on the full thermal picture it puts the
-     * window back. Gone in visible. The window's corner comes from [PipWindowGeometry] and the
-     * AR video rect; in full thermal the picture is the whole FIT rect. Kept under the toolbar
-     * band and inside the view, so it can never hide behind the chrome or off the edge.
+     * The ⤢ / ⤡ control (operator, 2026-09-15): in PIP it makes thermal full screen, in full
+     * thermal it puts the window back, and it sits in ONE place in both — just left of the EV
+     * slider, level with it. Gone in visible. Four placements on the window's corner were
+     * tried and rejected the same day; the icon says which way it goes, the position never
+     * moves. [PipWindowGeometry] still records where the camera draws the window.
      */
     private fun renderPipSizeButton() {
         if (!::pipSizeButton.isInitialized) return
         val target = cameraView.maximised
         val rect = lastVideoRect
         if (target == null || rect == null) { pipSizeButton.visibility = View.GONE; return }
-        val box = if (cameraView == CameraView.PIP) {
-            PipWindowGeometry.window(PipWindowGeometry.Box(
-                rect.left.toDouble(), rect.top.toDouble(), rect.right.toDouble(), rect.bottom.toDouble()))
-        } else {
-            PipWindowGeometry.Box(rect.left.toDouble(), rect.top.toDouble(), rect.right.toDouble(), rect.bottom.toDouble())
-        }
         // UPPER-RIGHT corner (operator, 2026-09-15, after lower-left and top-right-under-
         // the-slider were both tried). In PIP the icon's frame corner sits on the window's
         // upper-right corner; in full thermal it sits just LEFT of the EV slider, level with
@@ -2534,27 +2528,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // left, arrow up and to the right — and is NOT turned. Its frame's right and top
         // edges sit 4/24 of the view in, so the view is placed by the frame's corner and the
         // frame touches the window's corner with no inset (operator: "tight").
-        val art = 4f / 24f
         val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()
-        val chromeTop = findViewById<View>(R.id.flightToolbar).height.toFloat()
-        val x: Float
-        val y: Float
-        if (cameraView == CameraView.PIP) {
-            x = (box.right.toFloat() - w + art * w).coerceIn(0f, parent.width - w)
-            y = maxOf(box.top.toFloat() - art * h, chromeTop)
-        } else {
-            // Beside the EV slider, level with it. Screen positions, because the slider is
-            // nested two layouts deep in the HUD column and its own y is relative to its row.
-            val ev = findViewById<View>(R.id.evSlider)
-            val evPos = IntArray(2); ev.getLocationInWindow(evPos)
-            val parentPos = IntArray(2); parent.getLocationInWindow(parentPos)
-            val evLeft = (evPos[0] - parentPos[0]).toFloat()
-            val evTop = (evPos[1] - parentPos[1]).toFloat()
-            x = evLeft - w
-            y = evTop + (ev.height - h) / 2f
-        }
+        // ONE PLACE FOR BOTH (operator, 2026-09-15, after four tries at the window's
+        // corner): just left of the EV slider, level with it, in PIP and in full thermal
+        // alike. The icon says which way it goes; the position never moves.
+        val ev = findViewById<View>(R.id.evSlider)
+        val evPos = IntArray(2); ev.getLocationInWindow(evPos)
+        val parentPos = IntArray(2); parent.getLocationInWindow(parentPos)
+        val x = (evPos[0] - parentPos[0]).toFloat() - w
+        val y = (evPos[1] - parentPos[1]).toFloat() + (ev.height - h) / 2f
         pipSizeButton.x = x
         pipSizeButton.y = y
         pipSizeButton.setImageResource(
