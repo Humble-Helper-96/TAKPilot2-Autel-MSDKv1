@@ -99,3 +99,15 @@ internal fun geoidSeparation(haeM: Double, mslM: Double): Double? {
  *  figure is returned as it came, which is the old behaviour and still carries N. */
 internal fun reportedHaeToMsl(haeM: Double, geoidN: Double?): Double =
     if (geoidN != null) haeM - geoidN else haeM
+
+/**
+ * Smooths the geoid separation across samples. Flown 2026-09-15: the aircraft reports both
+ * altitudes in whole metres and they do not come from the same instant, so the raw N walked
+ * from 10 to 16 m over one flight around a true 12.5 — up to 3.5 m, half a degree at 30 m,
+ * flickering at 2 Hz. A slow exponential average holds it near the truth; the first sample
+ * seeds it so there is never a period of "no separation" once one has been seen.
+ */
+internal const val GEOID_SMOOTHING = 0.05
+
+internal fun smoothGeoid(previous: Double?, sample: Double): Double =
+    if (previous == null) sample else previous + GEOID_SMOOTHING * (sample - previous)

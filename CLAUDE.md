@@ -110,6 +110,21 @@ JSON-RPC API with a read-back. The five that must not be re-derived:
 the v2.1.7/v2.1.9 notes carry — that ladder was read under H.265. Confirm from a file before
 correcting those notes.
 
+**THE AR OVERLAY WAS AUDITED ON 2026-09-14 AND SEVEN OF TEN FAULTS ARE FIXED AND FLOWN
+(2026-09-15).** The ranked list and the measurements are in `app/build.gradle` under v2.2.0.
+Fixed: the FOV pairing in thermal and PIP, the pitched-camera projection (`CameraProjection.kt`),
+the sea-level pin, the flat-plane fallback, and the geoid (`ElevationPolicy.kt`). Open, in order:
+magnetometer bias by heading, telemetry-to-video latency with DTED seeks on the UI thread, and
+gimbal roll. ADS-B heights are PRESSURE altitude from the gateway and draw high or low by the
+day's altimeter setting; not attempted. The switch time between views is the camera's 1.8 s and
+matching the record format does not change it — measured, do not retry.
+
+Also on 2026-09-15: `DEBUG LOG ON` is a banner warning the ✕ does not close; the Debug screen's
+log control is a switch with its three options under it; the Explorer watchdog is always on and
+has no control; the RF power write and probe are gone (Autel limit, operator); Cancel Landing is
+removed (flown, the aircraft did not obey). The PiP tap-cycle may become a two-way toggle with a
+maximise control on the window — proposed, not decided.
+
 v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master and waits for flight-test
 feedback from the test users. The v1.6.0 finding list is in `REVIEW_2026-08-07_AUDIT.md`
 section 4.

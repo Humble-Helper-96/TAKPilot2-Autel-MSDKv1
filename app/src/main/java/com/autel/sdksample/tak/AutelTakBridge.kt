@@ -228,13 +228,15 @@ class AutelTakBridge(
                     // THE GEOID SEPARATION, FROM THE RECEIVER'S OWN TWO ALTITUDES — fault 7 of
                     // the 2026-09-14 AR audit. Latched into the holder so it survives a bridge
                     // restart; transition-logged, rounded, so it is written once and not at 2 Hz.
-                    geoidSeparation(hae, mslAlt)?.let { n ->
+                    geoidSeparation(hae, mslAlt)?.let { sample ->
+                        // Smoothed: the raw pair walked 10 to 16 m in one flight — see smoothGeoid.
+                        val n = smoothGeoid(TakBridgeHolder.geoidSeparationM, sample)
                         TakBridgeHolder.setGeoidSeparation(n)
-                        val rounded = Math.round(n * 10) / 10.0
+                        val rounded = Math.round(n).toDouble()
                         if (rounded != lastLoggedGeoidN) {
                             lastLoggedGeoidN = rounded
-                            AppLog.i(TAG, "geoid separation from the aircraft GPS: N=%.1f m (hae %.1f, msl %.1f)"
-                                .format(n, hae, mslAlt))
+                            AppLog.i(TAG, "geoid separation from the aircraft GPS: N=%.1f m (sample %.0f, hae %.0f, msl %.0f)"
+                                .format(n, sample, hae, mslAlt))
                         }
                     }
                     satCount = gps.satellitesVisible

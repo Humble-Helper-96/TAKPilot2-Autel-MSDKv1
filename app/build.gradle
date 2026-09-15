@@ -1323,6 +1323,32 @@ android {
         //        Also: the Explorer watchdog is no longer a toggle (always on), and the Debug
         //        screen's three log options sit under the log switch, greyed while it is off.
         //
+        //        ✅ FLOWN 2026-09-15, 10:19 to 10:55, one aircraft, pin D042 on a utility box.
+        //        Every AR fix of the 14th held in the air:
+        //        - Fault 3, the projection: the pin stayed on the box at −12°, −16° with a 27°
+        //          slew, −29°, −44°, and −58° with the pin 21° off the heading, never worse
+        //          than about 2°. The old mapping would have put the last case OFF THE FRAME.
+        //        - Faults 4/5/7: takeoff reference latched from "aircraft on the ground"
+        //          (180.2 m MSL, the aircraft's own msl read 178–181), source TAKEOFF_REFERENCE,
+        //          geoid 12–13 m against August's 12.2. The raw pair walked 10–16 m over the
+        //          flight (whole metres, not the same instant) — smoothGeoid holds it.
+        //        - Faults 1/2: thermal derived 26.7° vertical; PIP published 66.8°.
+        //        - PiP registration held at 150 ft and at 400 ft, 58–66° down: road edges run
+        //          straight across the window boundary, the pin sits on the thermal image of
+        //          the box. The thermal window sits about 1° left and 2° above the visible
+        //          axis — that is the thermal lens's boresight, and the crosshair is correctly
+        //          the VISIBLE axis. In full thermal the crosshair is therefore 1–2° off the
+        //          visible aim; a per-lens aim offset can take it, once measured at range.
+        //        - The switch time is the CAMERA'S: 1.8 s visible↔PiP, 0.6 + 1.1 s to thermal,
+        //          IDENTICAL with the record format matched at 720p25 (bench, same morning).
+        //          Matching formats does not help; 1080p stays. Do not try again.
+        //        - The banner: AT ALTITUDE LIMIT closed by the pilot at 10:53:41, DEBUG LOG ON
+        //          stayed with no ✕. 15 video stalls, no crash, no cancel used, no recording.
+        //        ⚠ OPEN (operator, not yet decided): make the IR tap a TWO-way visible↔PiP
+        //        toggle with full thermal reached from a maximise/minimise control on the PiP
+        //        window's corner, the phone idiom. The corner is computable from the FOV
+        //        ratio. Proposed 2026-09-15, not built.
+        //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
         //        twice, cancelLand was accepted twice, and the aircraft was still LANDING 1.5 s

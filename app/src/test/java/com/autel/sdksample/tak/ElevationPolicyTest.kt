@@ -66,6 +66,16 @@ class ElevationPolicyTest {
     }
 
     @Test
+    fun `the separation is seeded by the first sample and then moves slowly`() {
+        // Flown 2026-09-15: raw samples walked 10 to 16 m around a true 12.5.
+        assertEquals(12.0, smoothGeoid(null, 12.0), 1e-9)
+        var n: Double? = 12.0
+        for (s in listOf(16.0, 10.0, 16.0, 10.0)) n = smoothGeoid(n, s)
+        // Four extreme samples move it by less than half a metre.
+        assertEquals(12.0, n!!, 0.5)
+    }
+
+    @Test
     fun `a reported hae comes into the DTED frame when N is known and is left alone when not`() {
         assertEquals(194.0, reportedHaeToMsl(206.2, 12.2), 1e-9)
         assertEquals(206.2, reportedHaeToMsl(206.2, null), 1e-9)
