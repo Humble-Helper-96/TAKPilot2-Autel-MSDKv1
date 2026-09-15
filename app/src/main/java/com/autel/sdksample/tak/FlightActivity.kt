@@ -2535,8 +2535,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         val w = pipSizeButton.layoutParams.width.toFloat()
         val h = pipSizeButton.layoutParams.height.toFloat()
         val bottomChrome = if (resourceMonitorRow.visibility == View.VISIBLE) resourceMonitorRow.height.toFloat() else 0f
-        val x = (box.left.toFloat() + inset).coerceIn(0f, parent.width - w)
-        val y = (box.bottom.toFloat() - inset - h).coerceAtMost(parent.height - bottomChrome - inset - h)
+        // The icon's FRAME starts 4/24 of the view in from its edge (see ic_pip_expand), so
+        // the view is placed by the frame's corner, not its own, and the frame sits on the
+        // window's corner.
+        val art = 4f / 24f
+        val x = (box.left.toFloat() + inset - art * w).coerceIn(0f, parent.width - w)
+        val y = (box.bottom.toFloat() - inset - h + art * h).coerceAtMost(parent.height - bottomChrome - inset - h)
         pipSizeButton.x = x
         pipSizeButton.y = y
         pipSizeButton.setImageResource(
