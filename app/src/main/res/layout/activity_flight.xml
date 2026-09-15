@@ -586,19 +586,6 @@
                 style="@style/flightReadoutOutlined"
                 android:gravity="end"
                 android:text="" />
-
-            <!-- The debug log is ON (operator, 2026-09-15). File logging costs the screen some
-                 jitter; that is an accepted cost of building a log, but a pilot must be able to
-                 see that it is on and go and turn it off. Amber, because it is a state the
-                 pilot may not have chosen, not a fault. Gone when logging is off — §4.3. -->
-            <com.autel.sdksample.tak.OutlinedTextView
-                android:id="@+id/fpvLogNotice"
-                style="@style/flightReadoutOutlined"
-                android:layout_marginTop="4dp"
-                android:gravity="end"
-                android:textColor="@color/tp_state_caution"
-                android:text="DEBUG LOG ON"
-                android:visibility="gone" />
         </LinearLayout>
 
         <!-- Absorbs leftover height so the TOP group (clock, telemetry) and the BOTTOM group

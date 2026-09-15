@@ -50,7 +50,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var fpvClock: TextView
     private lateinit var fpvOverlayText: TextView
     private lateinit var fpvGimbalPitch: TextView
-    private lateinit var fpvLogNotice: TextView
     /** Camera media mode readout. See [renderMediaMode]. */
     private lateinit var fpvMediaMode: MediaModeView
     private lateinit var fpvHomeDistance: TextView
@@ -286,7 +285,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         fpvClock = findViewById(R.id.fpvClock)
         fpvOverlayText = findViewById(R.id.fpvOverlayText)
         fpvGimbalPitch = findViewById(R.id.fpvGimbalPitch)
-        fpvLogNotice = findViewById(R.id.fpvLogNotice)
         fpvMediaMode = findViewById(R.id.fpvMediaMode)
         fpvHomeDistance = findViewById(R.id.fpvHomeDistance)
         fpvAntennaArc = findViewById(R.id.fpvAntennaArc)
@@ -1063,10 +1061,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // delay needs it to read the same way on every device.
         fpvClock.text = clockFormat.format(java.util.Date())
 
-        // "DEBUG LOG ON": the file log costs the screen some jitter, and a pilot who did not
-        // turn it on must be able to see that it is (operator, 2026-09-15). Read on the tick
-        // so a change on the Debug screen shows within half a second of coming back.
-        fpvLogNotice.visibility = if (AppLog.enabled) View.VISIBLE else View.GONE
+        // "DEBUG LOG ON" goes through the WARNING BANNER (operator, 2026-09-15): the file log
+        // costs the screen some jitter, and a pilot who did not turn it on must be made to
+        // look and go and turn it off. A quiet HUD line was tried first and was not enough of
+        // a stimulus. Read on the tick so a change on the Debug screen shows within half a
+        // second of coming back; renderWarning() below draws it.
+        FlightWarnings.debugLogOn = AppLog.enabled
 
         // Obstacle arcs. Fed here, on the 500 ms HUD tick, NOT from the radar callback — the
         // sensor pushes several times a second per face and a full-screen invalidate at that

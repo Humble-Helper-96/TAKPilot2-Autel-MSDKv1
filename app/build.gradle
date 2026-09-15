@@ -1314,10 +1314,13 @@ android {
         //        hundreds of feet either way, on top of the geoid. Fix 7 removes the geoid part
         //        only; the pressure part needs the local QNH and is not attempted.
         //
-        //        "DEBUG LOG ON" at the foot of the HUD top panel while file logging is on
-        //        (operator, 2026-09-15). The log costs the screen some jitter — accepted — but a
-        //        pilot must be able to see it is on and turn it off. Amber, gone when off.
-        //        Specification §4.3; the DJI trees owe it (ledger D28).
+        //        "DEBUG LOG ON" IS A WARNING IN THE BANNER while file logging is on (operator,
+        //        2026-09-15). The log costs the screen some jitter — accepted — but a pilot must
+        //        be MADE to look and go and turn it off; a quiet HUD line was tried first the
+        //        same day and was not a stimulus. Amber, behind every aircraft warning, shown
+        //        with no aircraft, gone when off. Specification §4.8; the DJI trees owe it (D28).
+        //        Also: the Explorer watchdog is no longer a toggle (always on), and the Debug
+        //        screen's three log options sit under the log switch, greyed while it is off.
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked

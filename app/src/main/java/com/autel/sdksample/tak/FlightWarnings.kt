@@ -72,6 +72,11 @@ object FlightWarnings {
         AT_MAX_RANGE(false, "AT DISTANCE LIMIT"),
         NO_HOME_POINT(false, "NO HOME POINT"),
         NEAR_AIRPORT(false, "NEAR AIRPORT"),
+        /** The file log is on (operator, 2026-09-15). Not an aircraft state — it is merged in
+         *  at display time from [debugLogOn], so it shows with no aircraft too. Last, because
+         *  every aircraft warning outranks it; amber, because the log costs the screen some
+         *  jitter and a pilot who did not turn it on must be made to look. */
+        DEBUG_LOG(false, "DEBUG LOG ON"),
     }
 
     /**
@@ -94,6 +99,9 @@ object FlightWarnings {
      *  Volatile: written from SDK callback threads, read on the fly-controller frame. */
     @Volatile var avoidanceNotApplied: Boolean = false
     @Volatile var gimbalErratic: Boolean = false
+    /** Set from the flight screen's HUD tick from `AppLog.enabled`. Read in [displayAt], not in
+     *  [compute]: compute runs only on aircraft telemetry, and this must show on the bench. */
+    @Volatile var debugLogOn: Boolean = false
 
     private val lock = Any()
     private var active: Set<Warning> = emptySet()
@@ -202,6 +210,8 @@ object FlightWarnings {
     /** [display] with an injectable clock, so unit tests can step time. Same logic, one body. */
     internal fun displayAt(now: Long): Display? {
         synchronized(lock) {
+            // The app-side warning joins the aircraft's here — see [debugLogOn].
+            val active = if (debugLogOn) this.active + Warning.DEBUG_LOG else this.active
             val worst = active.filter { it.banner }.minOrNull()
             val cur = shown
             val held = cur != null && now - shownAtMs < HOLD_MS

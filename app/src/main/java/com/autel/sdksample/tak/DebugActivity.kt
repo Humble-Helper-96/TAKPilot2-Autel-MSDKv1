@@ -85,14 +85,26 @@ class DebugActivity : AppCompatActivity() {
             false   // do not consume — ScrollView still needs this to handle the drag/fling
         }
 
+        val takToggle = findViewById<CheckBox>(R.id.debugTakToggle)
+        val radarToggle = findViewById<CheckBox>(R.id.debugRadarToggle)
+        val resourceMonitorToggle = findViewById<CheckBox>(R.id.debugResourceMonitorToggle)
+        // The three are options OF the log (operator, 2026-09-15): greyed while it is off,
+        // because none of them does anything without it. Their values are kept, not cleared.
+        fun renderSubOptions(on: Boolean) {
+            takToggle.isEnabled = on
+            radarToggle.isEnabled = on
+            resourceMonitorToggle.isEnabled = on
+        }
+
         val toggle = findViewById<CheckBox>(R.id.debugLoggingToggle)
         toggle.isChecked = AppLog.enabled
+        renderSubOptions(AppLog.enabled)
         toggle.setOnCheckedChangeListener { _, on ->
             AppLog.enabled = on
+            renderSubOptions(on)
             AppLog.v(TAG, "logging ${if (on) "enabled" else "disabled"}")
         }
 
-        val takToggle = findViewById<CheckBox>(R.id.debugTakToggle)
         takToggle.isChecked = AppLog.takLogging
         takToggle.setOnCheckedChangeListener { _, on ->
             AppLog.takLogging = on
@@ -101,7 +113,6 @@ class DebugActivity : AppCompatActivity() {
             AppLog.i(TAG, "TAK/CoT logs ${if (on) "INCLUDED" else "HIDDEN"}")
         }
 
-        val radarToggle = findViewById<CheckBox>(R.id.debugRadarToggle)
         radarToggle.isChecked = AppLog.radarLogging
         radarToggle.setOnCheckedChangeListener { _, on ->
             AppLog.radarLogging = on
@@ -110,14 +121,12 @@ class DebugActivity : AppCompatActivity() {
             AppLog.i(TAG, "obstacle radar logs ${if (on) "INCLUDED" else "HIDDEN"}")
         }
 
-        val resourceMonitorToggle = findViewById<CheckBox>(R.id.debugResourceMonitorToggle)
         resourceMonitorToggle.isChecked = AppLog.resourceMonitor
         resourceMonitorToggle.setOnCheckedChangeListener { _, on ->
             AppLog.resourceMonitor = on
             AppLog.i(TAG, "flight-screen resource monitor ${if (on) "ENABLED" else "DISABLED"}")
         }
 
-        setupExplorerControls()
         setupSrtLatencyControl()
 
         findViewById<android.widget.Button>(R.id.debugClearButton).setOnClickListener {
@@ -220,21 +229,8 @@ class DebugActivity : AppCompatActivity() {
      * background process when it tries to take the aircraft link (no permanent change to the
      * controller; Explorer opens normally when the pilot opens it). See [ExplorerWatchdog].
      */
-    private fun setupExplorerControls() {
-        val status = findViewById<TextView>(R.id.debugExplorerStatus)
-        val toggle = findViewById<CheckBox>(R.id.debugExplorerToggle)
-
-        fun render() {
-            status.text = ExplorerWatchdog.statusLine(this)
-            toggle.setOnCheckedChangeListener(null)
-            toggle.isChecked = ExplorerWatchdog.isEnabled(this)
-            toggle.setOnCheckedChangeListener { _, on ->
-                ExplorerWatchdog.setEnabled(this, on)
-                render()
-            }
-        }
-        render()
-    }
+    // The Explorer watchdog's toggle was here until 2026-09-15 (operator): it is a fixed part
+    // of the application now — see ExplorerWatchdog. The Debug screen states it; nothing to set.
 
     /**
      * The SRT latency override, in MILLISECONDS.

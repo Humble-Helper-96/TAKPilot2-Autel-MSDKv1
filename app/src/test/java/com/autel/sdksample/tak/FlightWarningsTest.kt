@@ -62,8 +62,27 @@ class FlightWarningsTest {
         FlightWarnings.reset()
         FlightWarnings.avoidanceNotApplied = false
         FlightWarnings.gimbalErratic = false
+        FlightWarnings.debugLogOn = false
         FlightLimitsController.aircraftWarningPct = null
         FlightLimitsController.aircraftCriticalPct = null
+    }
+
+    @Test
+    fun `the debug log shows in the banner with no aircraft and behind every aircraft warning`() {
+        // No aircraft status at all: the app-side warning still shows (the bench case).
+        FlightWarnings.debugLogOn = true
+        val alone = FlightWarnings.displayAt(t0)!!
+        assertEquals("DEBUG LOG ON", alone.text)
+        assertFalse(alone.red)
+        // With an aircraft warning it is the one behind, listed last.
+        FlightLimitsController.aircraftWarningPct = 30f
+        FlightWarnings.onStatus(status(), batteryPct = 25, airborne = true)
+        val both = FlightWarnings.displayAt(t0 + 1)!!
+        assertEquals("BATTERY LOW  +1", both.text)
+        assertEquals(listOf("BATTERY LOW", "DEBUG LOG ON"), both.all)
+        // Off: gone at once.
+        FlightWarnings.debugLogOn = false
+        assertEquals(listOf("BATTERY LOW"), FlightWarnings.displayAt(t0 + 2)!!.all)
     }
 
     @Test

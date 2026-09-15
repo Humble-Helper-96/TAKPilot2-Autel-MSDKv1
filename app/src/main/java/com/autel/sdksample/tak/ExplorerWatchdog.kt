@@ -53,30 +53,23 @@ object ExplorerWatchdog {
 
     const val EXPLORER_PKG = "com.autelrobotics.explorer"
     private const val TAG = "TP2Explorer"
-    private const val PREFS = "takpilot2_explorer"
-    private const val KEY_ENABLED = "watchdog_enabled"
     private const val POLL_MS = 8_000L
 
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var started = false
     private var appContext: Context? = null
 
-    fun isEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
-
-    fun setEnabled(context: Context, on: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_ENABLED, on).apply()
-        AppLog.i(TAG, "Explorer watchdog ${if (on) "ENABLED" else "DISABLED"} by operator")
-        if (on) killExplorer(context)
-    }
+    // ⚠ ALWAYS ON (operator, 2026-09-15). It was a Debug-screen toggle from 2026-08-02, default
+    // on, and nobody ever had a reason to turn it off: Explorer taking the link mid-flight
+    // stops the video with no warning, on a public-safety aircraft. The preference and the
+    // setter are gone; the Debug screen states what happens. Safety rule 7 still holds —
+    // this kills a background process and changes nothing on the controller.
 
     /**
      * Kills Explorer's BACKGROUND process. No-op if Explorer is foreground (the pilot is using it)
      * or not running. No permanent change — Explorer can start again on its next wake.
      */
     fun killExplorer(context: Context) {
-        if (!isEnabled(context)) return
         runCatching {
             (context.applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
                 .killBackgroundProcesses(EXPLORER_PKG)
@@ -116,11 +109,4 @@ object ExplorerWatchdog {
         AppLog.i(TAG, "Explorer watchdog started — kill-on-wake, no controller change")
     }
 
-    /** One line for the Debug screen. */
-    fun statusLine(context: Context): String =
-        if (isEnabled(context))
-            "On. The app closes Autel Explorer when it takes the aircraft link. You open " +
-                "Explorer as usual."
-        else
-            "Off. Autel Explorer can take the aircraft link and stop the video."
 }
