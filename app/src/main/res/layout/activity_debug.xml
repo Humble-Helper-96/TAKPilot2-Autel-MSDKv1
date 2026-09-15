@@ -33,20 +33,26 @@
         <LinearLayout style="@style/homeCard">
             <TextView style="@style/homeCardTitle" android:text="Options" />
 
+            <!-- The WHOLE ROW is the target (2026-09-15): a switch invites a tap on its words,
+                 and a tap on the label did nothing. Same for the three option rows below. -->
             <LinearLayout
+                android:id="@+id/debugLoggingRow"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
                 android:paddingTop="6dp">
                 <!-- A SWITCH, not a check box (operator, 2026-09-15): this is the one control
                      on the screen that starts and stops something — the file sink refuses every
                      line the moment it is off, and the setter flushes and closes the file. The
                      three options below are greyed while it is off. -->
                 <androidx.appcompat.widget.SwitchCompat android:id="@+id/debugLoggingToggle"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginEnd="10dp"
+                    android:layout_width="wrap_content" android:layout_height="48dp"
+                    android:layout_marginEnd="10dp" android:clickable="false" android:focusable="false"
                     app:thumbTint="@color/tp_btn_info" app:trackTint="@color/tp_pill_idle_stroke" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Logging enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
+                <TextView android:id="@+id/debugLoggingLabel"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Logging Enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
             <!-- The three rows below are OPTIONS OF the log (operator, 2026-09-15): indented
@@ -54,68 +60,46 @@
                  anything without it. -->
 
             <LinearLayout
+                android:id="@+id/debugTakRow"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
                 android:paddingTop="4dp" android:paddingStart="28dp">
                 <CheckBox android:id="@+id/debugTakToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="Include TAK / CoT logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="36dp" android:paddingTop="2dp"
-                android:text="Clear this box to hide the TAK messages and show only the app."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
             <LinearLayout
+                android:id="@+id/debugRadarRow"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
                 android:paddingTop="4dp" android:paddingStart="28dp">
                 <CheckBox android:id="@+id/debugRadarToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="Include obstacle radar logs" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="36dp" android:paddingTop="2dp"
-                android:text="The radar fills the log. Select this box only to examine obstacle avoidance. Avoidance changes and warnings stay in the log."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
             <LinearLayout
+                android:id="@+id/debugResourceMonitorRow"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?android:attr/selectableItemBackground"
                 android:paddingTop="4dp" android:paddingStart="28dp">
                 <CheckBox android:id="@+id/debugResourceMonitorToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
+                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info"
+                    android:clickable="false" android:focusable="false" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="Show system resources on flight screen" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>
 
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="36dp" android:paddingTop="2dp"
-                android:text="Adds a small panel on the flight screen with memory and contact-count numbers. Use it to watch the system before a crash."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
-
-            <!-- Autel Explorer watchdog — ALWAYS ON (operator, 2026-09-15; it was a toggle
-                 from 2026-08-02). Kills Explorer's background process when it tries to take
-                 the aircraft link. No permanent change to the controller; Explorer opens
-                 normally when the pilot opens it. Stated here so a pilot knows it happens. -->
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingTop="16dp"
-                android:text="Autel Explorer" android:textColor="@color/tp_text_primary"
-                android:textSize="16sp" android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingStart="8dp" android:paddingTop="4dp"
-                android:text="Autel Explorer can start on its own and stop the video with no warning. This app closes Explorer when it takes the aircraft link. You open Explorer as usual. It does not change Explorer."
-                android:textColor="@color/tp_text_caption" android:textSize="12sp" />
+            <!-- The Autel Explorer watchdog has no control and no text here (operator,
+                 2026-09-15). It is always on — see ExplorerWatchdog. -->
 
             <!-- SRT LATENCY. Deliberately here and not on Pre-Flight (operator, 2026-08-29):
                  the right value is a property of the NETWORK a pilot is on, not a flight

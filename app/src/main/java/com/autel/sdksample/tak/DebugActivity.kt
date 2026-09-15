@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
+import android.view.View
 import android.widget.CheckBox
 import android.widget.ScrollView
 import android.widget.TextView
@@ -88,12 +89,20 @@ class DebugActivity : AppCompatActivity() {
         val takToggle = findViewById<CheckBox>(R.id.debugTakToggle)
         val radarToggle = findViewById<CheckBox>(R.id.debugRadarToggle)
         val resourceMonitorToggle = findViewById<CheckBox>(R.id.debugResourceMonitorToggle)
+        val loggingLabel = findViewById<TextView>(R.id.debugLoggingLabel)
+        val subRows = listOf(R.id.debugTakRow, R.id.debugRadarRow, R.id.debugResourceMonitorRow)
+            .map { findViewById<View>(it) }
         // The three are options OF the log (operator, 2026-09-15): greyed while it is off,
         // because none of them does anything without it. Their values are kept, not cleared.
+        // Greyed by the ROW's alpha: a tinted check box and a separate label do not dim on
+        // their own when disabled, so the first build showed three bright boxes that did not
+        // respond. The label says the state in words too.
         fun renderSubOptions(on: Boolean) {
+            loggingLabel.text = if (on) "Logging Enabled" else "Logging Disabled"
             takToggle.isEnabled = on
             radarToggle.isEnabled = on
             resourceMonitorToggle.isEnabled = on
+            subRows.forEach { it.alpha = if (on) 1f else 0.35f }
         }
 
         val toggle = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.debugLoggingToggle)
@@ -102,7 +111,18 @@ class DebugActivity : AppCompatActivity() {
         toggle.setOnCheckedChangeListener { _, on ->
             AppLog.enabled = on
             renderSubOptions(on)
+            // Log.i as well as the file: this line must reach logcat when the file is OFF.
+            android.util.Log.i(TAG, "logging ${if (on) "enabled" else "disabled"}")
             AppLog.v(TAG, "logging ${if (on) "enabled" else "disabled"}")
+        }
+        // THE ROW IS THE TARGET, the control inside it is not clickable on its own
+        // (2026-09-15): a switch invites a tap on its words, and a tap on the label did
+        // nothing. The listener above fires through toggle() exactly as through a direct tap.
+        findViewById<View>(R.id.debugLoggingRow).setOnClickListener { toggle.toggle() }
+        findViewById<View>(R.id.debugTakRow).setOnClickListener { if (takToggle.isEnabled) takToggle.toggle() }
+        findViewById<View>(R.id.debugRadarRow).setOnClickListener { if (radarToggle.isEnabled) radarToggle.toggle() }
+        findViewById<View>(R.id.debugResourceMonitorRow).setOnClickListener {
+            if (resourceMonitorToggle.isEnabled) resourceMonitorToggle.toggle()
         }
 
         takToggle.isChecked = AppLog.takLogging
