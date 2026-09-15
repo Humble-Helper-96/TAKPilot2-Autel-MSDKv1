@@ -1364,6 +1364,16 @@ android {
         //        0.9° is ~40 m, within the pressure-altitude question. The geoid part is gone.
         //        STORED, NOT ACTED ON (operator).
         //
+        //        ⚠ STORED FOR LATER (operator, 2026-09-15 11:41): switching between photo and
+        //        video with the HARDWARE buttons gave an error on screen. The log:
+        //        11:41:13 hardware record pressed in SINGLE — the app takes the press as a
+        //        mode change and starts the recording after 2000 ms; 11:41:15 startRecordVideo
+        //        failed: "Needs the recording mode to record videos". So the 2 s wait was not
+        //        enough for the camera to reach RECORD, or the press did not change the mode at
+        //        all. Same at 11:42:14. The zoom restore fired both times. Also seen: the
+        //        "spurious SDK photo-failure callback" 3–49 ms after a named PHOTO_TAKEN_DONE,
+        //        ignored correctly. Logs kept under flight-logs/2026-09-15/. Not diagnosed.
+        //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
         //        twice, cancelLand was accepted twice, and the aircraft was still LANDING 1.5 s
