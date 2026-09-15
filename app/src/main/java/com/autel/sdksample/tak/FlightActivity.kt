@@ -1249,12 +1249,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // this column ends in the mini-map, and overflow CLIPS THE MAP SILENTLY.
         fpvOverlayText.text = android.text.SpannableStringBuilder().apply {
             // LINE ORDER IS DELIBERATE (operator, 2026-08-02), most-glanced-at first:
-            //   1 callsign + speed   2 AGL/MSL   3 lat/lon   4 home
+            //   1 callsign   2 speed   3 AGL/MSL   4 lat/lon   5 home
             // Height moved up to second because it is the number a pilot checks constantly;
             // lat/lon and home are reference figures they look up only when asked for them.
             // The clock sits above this block in its own view — see fpvClock.
+            // The callsign is its own line under the clock (operator, 2026-09-15); the speed
+            // follows on the next. They shared a line until the column gained the room.
             append(TakManager.getInstance().callsign ?: "—")
-            append(if (hud != null) "   ${Units.mph(hud.speedMs)}" else "   — mph")
+            append('\n')
+            append(if (hud != null) Units.mph(hud.speedMs) else "— mph")
             append('\n')
             // "AGL" only when DTED actually corrected it to height-above-terrain-below;
             // otherwise "ALT", which is what the raw number really is (height above the takeoff
