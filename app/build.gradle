@@ -1373,6 +1373,17 @@ android {
         //        all. Same at 11:42:14. The zoom restore fired both times. Also seen: the
         //        "spurious SDK photo-failure callback" 3–49 ms after a named PHOTO_TAKEN_DONE,
         //        ignored correctly. Logs kept under flight-logs/2026-09-15/. Not diagnosed.
+        //        ⚠ "TAKING A PHOTO LOCKS UP THE FPV" (operator) — THE LOG SHOWS WHY: the
+        //        downlink STOPS while the camera is in photo mode. Frame monitor: a 14,659 ms
+        //        freeze from the first shutter press at 11:41:03 until the recording started
+        //        at 11:41:17, and a 41,209 ms freeze from 11:41:35 until record mode came back
+        //        at 11:42:16. Every shutter press in between was taken blind. It is the CAMERA
+        //        holding the live stream while in SINGLE; the picture returns the moment the
+        //        camera is back in RECORD. Candidate fix: after a confirmed PHOTO_TAKEN_DONE
+        //        put the camera back to VIDEO (the spec's "no application drives the media
+        //        mode" note is about not GUESSING the mode; returning to video after a still is
+        //        a different thing), or at least a §4.8 notice that the picture is held. Not
+        //        built; stored (operator, 2026-09-15).
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
