@@ -594,12 +594,8 @@ class AutelTakBridge(
         // per-lens constants are the fallback for a camera that has not reported yet.
         // ⚠ In PIP the camera reports the THERMAL field over the VISIBLE frame, and the live
         // figure must lose — the rule and its measurement are in [publishedHFov].
-        val h = publishedHFov(
-            lens = activeLens,
-            liveHFov = TakBridgeHolder.currentHFovBase.takeIf { TakBridgeHolder.hasLiveCameraFov },
-            calibratedHFov = TakBridgeHolder.calibratedHFovBase,
-            irHFov = IR_HFOV,
-        )
+        // ONE accessor for the wire and the screen — see TakBridgeHolder.pictureHFovBase.
+        val h = TakBridgeHolder.pictureHFovBase
         return h to TakBridgeHolder.vFovFor(h)
     }
 
@@ -895,12 +891,12 @@ class AutelTakBridge(
         // Measured off the camera 2026-08-04 during an IR toggle: fov=33.0x26.0, implied aspect
         // 1.283 (the 640x512 thermal sensor is 5:4). The previous 42.0 here was a spec-sheet guess
         // and was wrong by 9 degrees.
-        private const val IR_HFOV = 33.0
+        internal const val IR_HFOV = 33.0
 
         /** Effective FOV at [zoom] — what both the published <sensor> cone and the AR projection
          *  read, so they cannot disagree. Zoom narrows both axes in tangent space by the same
          *  factor, which preserves the aspect coupling the vertical is derived from. */
-        fun hFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentHFovBase, zoom)
+        fun hFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.pictureHFovBase, zoom)
         fun vFovDeg(zoom: Double = 1.0) = zoomedFov(TakBridgeHolder.currentVFovBase, zoom)
 
         /** True-perspective zoom narrowing: FOV halves in tangent space, not linearly. */
@@ -1051,6 +1047,26 @@ object TakBridgeHolder {
      */
     val currentHFovBase: Double get() = liveCameraHFov ?: hFovBase
 
+    /**
+     * The horizontal FOV THE PICTURE HAS — what the AR overlay projects with, and what the
+     * published cone is based on. This is [currentHFovBase] passed through [publishedHFov],
+     * so that a blend (PIP) takes the visible lens's field although the camera reports the
+     * thermal one over it.
+     *
+     * ⚠ **FAULT 2 OF THE 2026-09-14 AR AUDIT.** The v2.2.0 PIP work routed the WIRE through
+     * [publishedHFov] and left the overlay on [currentHFovBase], so in PIP the overlay drew a
+     * 33° field across a 66.8° picture: every marker twice too far from the centre, and
+     * everything past 16° culled as off-frame while plainly in the picture. Confirmed in the
+     * cycle-test log of 21:00 ("camera-reported hFov 33.0" on the PIP step). One accessor now
+     * feeds both, so the screen and the wire cannot disagree again.
+     */
+    val pictureHFovBase: Double get() = publishedHFov(
+        lens = activeLens,
+        liveHFov = liveCameraHFov,
+        calibratedHFov = hFovBase,
+        irHFov = AutelTakBridge.IR_HFOV,
+    )
+
     /** What the PILOT set, ignoring the camera. The calibration dialog edits this — showing the
      *  camera's value in a stepper would imply the taps do something they don't. */
     val calibratedHFovBase: Double get() = hFovBase
@@ -1066,14 +1082,24 @@ object TakBridgeHolder {
      *
      * So the vertical is whatever that identity says it is. Deriving it means the two axes cannot
      * drift apart, and a camera mode change re-derives it for free.
+     *
+     * ⚠ **FAULT 1 OF THE 2026-09-14 AR AUDIT: IT WAS DERIVED FROM THE WRONG HORIZONTAL.** From
+     * v1.5.2 (`dd60c3a`) the horizontal followed the camera and this stayed on the CALIBRATED
+     * visible figure. In thermal that paired a live 33° horizontal with a vertical derived from
+     * 66.8° under the 5:4 aspect — 55.6° where the lens is 26.7° — and every vertical offset was
+     * drawn 2.2× too small: markers rode far too close to the horizon, left-right correct. The
+     * log printed the tell for a month: "camera-reported hFov 33.0 (vFov derives to 18.9)" and
+     * then "video aspect 1.250 -> vFov 55.6 (hFov 66.8)", seconds apart. It pairs with
+     * [pictureHFovBase] now, the same horizontal the overlay projects with. Pinned by
+     * [ArFovPolicyTest].
      */
-    val currentVFovBase: Double get() = vFovFor(hFovBase)
+    val currentVFovBase: Double get() = vFovFor(pictureHFovBase)
 
     /** The vertical that pairs with [hDeg] under the live video aspect. Shared so the published
      *  <sensor> cone, the AR projection and the IR lens all derive it exactly one way. */
     fun vFovFor(hDeg: Double): Double {
         val aspect = videoAspect.takeIf { it > 0.0 } ?: FALLBACK_ASPECT
-        return 2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(hDeg / 2.0)) / aspect))
+        return vFovForAspect(hDeg, aspect)
     }
 
     val currentZoomFactor: Double get() = zoomFactor

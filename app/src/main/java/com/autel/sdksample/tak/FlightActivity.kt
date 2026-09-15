@@ -2024,8 +2024,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             vValue.text = "%.1f°".format(TakBridgeHolder.vFovFor(h))
             hint.text = when {
                 TakBridgeHolder.hasLiveCameraFov ->
-                    "Camera is reporting %.1f° × %.1f° — that is being used. This setting is the fallback."
-                        .format(TakBridgeHolder.currentHFovBase, TakBridgeHolder.currentVFovBase)
+                    "The picture is %.1f° × %.1f° — that is being used. This setting is the fallback."
+                        .format(TakBridgeHolder.pictureHFovBase, TakBridgeHolder.currentVFovBase)
                 TakBridgeHolder.currentZoomFactor > 1.0 ->
                     "Effective at %.1fx zoom: %.1f° × %.1f°".format(
                         TakBridgeHolder.currentZoomFactor,

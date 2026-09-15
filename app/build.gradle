@@ -1268,6 +1268,32 @@ android {
         //        Stills in PIP were NOT measured (StartTakePhotos needs photo mode).
         //        Unexplained: the camera read IR at 19:38 and Visible at 19:41 with the app on
         //        the home screen. Something wrote it; not found.
+        //
+        //        ⚠ AR AUDIT, 2026-09-14 — THE OVERLAY WAS "WILDLY OFF" FOR THREE AIRCRAFT, IN
+        //        VISIBLE AND IN THERMAL (operator). Ten error sources ranked; the two largest
+        //        deterministic ones are FIXED here, both a wrong field-of-view datum:
+        //        1. THERMAL VERTICAL FIELD 2.2× TOO WIDE. TakBridgeHolder.currentVFovBase derived
+        //           from the CALIBRATED visible horizontal (66.8) while the horizontal followed the
+        //           camera (33.0 in thermal), since v1.5.2. Under the 5:4 aspect that gave 55.6°
+        //           for a 26.7° lens: every vertical offset drawn 2.2× too small, markers riding
+        //           near the horizon, left-right correct. The log printed the tell for a month:
+        //           "camera-reported hFov 33.0 (vFov derives to 18.9)" then "video aspect 1.250
+        //           -> vFov 55.6 (hFov 66.8)" seconds apart. Now derived from pictureHFovBase.
+        //        2. PIP HORIZONTAL FIELD 2.2× TOO NARROW. The v2.2.0 wire fix (publishedHFov)
+        //           was not wired to the overlay, which drew a 33° field across the 66.8°
+        //           picture. One accessor, pictureHFovBase, now feeds the overlay AND the wire.
+        //        Also: ArSettings.saveFov persisted the camera's live figure over the pilot's
+        //        calibration whenever an aircraft was attached. It saves the calibrated value.
+        //        ⚠ STILL OPEN, in order of size: (3) the projection treats bearing and elevation
+        //        as independent screen angles — true only at the horizon; at −60° pitch a marker
+        //        20° off the heading lands 10° wrong horizontally, zero at the centre, growing
+        //        outward, invisible to the crosshair self-test. (4) a pin with no stored
+        //        elevation (map tap, restored, look-point without DTED) is differenced against
+        //        a real aircraft MSL and lands at SEA LEVEL. (5) the flat-plane fallback when
+        //        no takeoff terrain reference latches — fired in every flight today although
+        //        DTED2 covers the area; check homeSet. (6) magnetometer bias 0.9–6° by heading.
+        //        (7) hae vs MSL for non-ground contacts. (8) telemetry leads video; DTED file
+        //        seeks per contact per frame on the UI thread. (9) gimbal roll unread.
         versionCode 94
         versionName "2.2.0"
         multiDexEnabled true

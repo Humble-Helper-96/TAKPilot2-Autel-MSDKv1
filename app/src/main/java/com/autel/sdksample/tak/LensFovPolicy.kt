@@ -32,3 +32,12 @@ internal fun publishedHFov(
     AutelTakBridge.Lens.IR -> liveHFov ?: irHFov
     AutelTakBridge.Lens.EO -> liveHFov ?: calibratedHFov
 }
+
+/**
+ * The vertical field that pairs with [hDeg] under the live video aspect, in tangent space —
+ * the only pairing that is self-consistent for a rectilinear lens:
+ * `tan(hFov/2) / tan(vFov/2) == frameWidth / frameHeight`. Pure; [TakBridgeHolder.vFovFor]
+ * calls it with the live aspect.
+ */
+internal fun vFovForAspect(hDeg: Double, aspect: Double): Double =
+    2.0 * Math.toDegrees(Math.atan(Math.tan(Math.toRadians(hDeg / 2.0)) / aspect))

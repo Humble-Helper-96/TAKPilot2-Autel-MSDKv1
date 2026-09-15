@@ -220,11 +220,16 @@ object ArSettings {
     /** Applies immediately AND persists — the pilot is adjusting while watching the overlay. */
     fun saveFov(context: Context, hDeg: Double) {
         TakBridgeHolder.setHFovBase(hDeg)
+        // ⚠ Persist what the PILOT set, not currentHFovBase: that accessor prefers the camera's
+        // live figure, so with an aircraft attached a save wrote the camera's value over the
+        // pilot's and the calibration could never be changed while it mattered (found in the
+        // 2026-09-14 AR audit).
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putFloat(KEY_HFOV, TakBridgeHolder.currentHFovBase.toFloat())
+            .putFloat(KEY_HFOV, TakBridgeHolder.calibratedHFovBase.toFloat())
             .apply()
         AppLog.i(TAG, "AR FOV calibrated to %.1f deg horizontal (vertical derives to %.1f)"
-            .format(TakBridgeHolder.currentHFovBase, TakBridgeHolder.currentVFovBase))
+            .format(TakBridgeHolder.calibratedHFovBase,
+                TakBridgeHolder.vFovFor(TakBridgeHolder.calibratedHFovBase)))
     }
 
     fun resetFov(context: Context) = saveFov(context, TakBridgeHolder.DEFAULT_HFOV)
