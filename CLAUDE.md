@@ -90,6 +90,26 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.2.0 IS ON THE BENCH, NOT RELEASED** — versionCode 94, 2026-09-14. PIP: the thermal image in
+the centre of the visible image, drawn by the CAMERA. A tap on the IR pill or the C1 key CYCLES visible → PIP → thermal; the
+long-press menu was tried and rejected (operator).
+The measurements are in `app/build.gradle` under v2.2.0 and every one came off the camera's own
+JSON-RPC API with a read-back. The five that must not be re-derived:
+
+- **The controller receives ONE composited stream.** The camera blends; the app only asks.
+- **OVERLAP is refused by this firmware** (status -1). Only PictureInPicture exists here.
+- **PIP is centred and scaled by the camera** and meshes; `SetIrPosition` is a manual ±20 px
+  trim that this app READS and never WRITES.
+- **A blend publishes the VISIBLE cone** (operator). In PIP the camera reports the thermal FOV
+  over the visible frame; `publishedHFov` overrides it. The CoT has no lens tag; the shared core
+  is untouched.
+- **`irOn` is gone.** `CameraView` (VISIBLE / IR / PIP) is the one lens state. Zoom is refused
+  in PIP; the recording lock covers the view; PIP records THREE files at 720p25, about 7 GB/h.
+
+⚠ Not measured: stills in PIP. ⚠ The 1080p H.264 record stream reads 60000 kbps, not the 45000
+the v2.1.7/v2.1.9 notes carry — that ladder was read under H.265. Confirm from a file before
+correcting those notes.
+
 v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master and waits for flight-test
 feedback from the test users. The v1.6.0 finding list is in `REVIEW_2026-08-07_AUDIT.md`
 section 4.

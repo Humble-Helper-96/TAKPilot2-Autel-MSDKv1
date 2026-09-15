@@ -120,8 +120,15 @@ class AutelTakBridge(
     @Volatile private var sensorElevation = 0.0
     @Volatile private var sensorRange = -1.0
 
-    /** Active camera spectrum; the 640T is EO + thermal. Sets the base FOV. */
-    enum class Lens { EO, IR }
+    /**
+     * Active camera spectrum; the 640T is EO + thermal. Sets the base FOV.
+     *
+     * [BLEND] is the camera's PictureInPicture view (v2.2.0): thermal drawn into the centre of
+     * the visible frame. It publishes the VISIBLE cone — see [publishedHFov] for the measured
+     * reason. The CoT carries no lens tag, only the numbers, so this is the whole of what a
+     * blend changes on the wire.
+     */
+    enum class Lens { EO, IR, BLEND }
     @Volatile var activeLens: Lens = Lens.EO
     /** Live digital zoom ratio (1.0 = none). Setter for future camera-listener wiring. */
     @Volatile var liveZoom: Double = 1.0
@@ -583,10 +590,16 @@ class AutelTakBridge(
      */
     private fun baseFov(): Pair<Double, Double> {
         // The camera reports the field for whatever lens is actually live — thermal included —
-        // so when it is talking, [activeLens] is not consulted at all. The per-lens constants are
-        // only the fallback for a camera that has not reported yet.
-        val h = TakBridgeHolder.currentHFovBase.takeIf { TakBridgeHolder.hasLiveCameraFov }
-            ?: if (activeLens == Lens.IR) IR_HFOV else TakBridgeHolder.currentHFovBase
+        // so on a single lens, when it is talking, [activeLens] is not consulted at all. The
+        // per-lens constants are the fallback for a camera that has not reported yet.
+        // ⚠ In PIP the camera reports the THERMAL field over the VISIBLE frame, and the live
+        // figure must lose — the rule and its measurement are in [publishedHFov].
+        val h = publishedHFov(
+            lens = activeLens,
+            liveHFov = TakBridgeHolder.currentHFovBase.takeIf { TakBridgeHolder.hasLiveCameraFov },
+            calibratedHFov = TakBridgeHolder.calibratedHFovBase,
+            irHFov = IR_HFOV,
+        )
         return h to TakBridgeHolder.vFovFor(h)
     }
 

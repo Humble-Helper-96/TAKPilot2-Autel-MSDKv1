@@ -1211,8 +1211,65 @@ android {
         //        alone, so both codecs write 45,000 kbps at 1080p30 and the same bytes a minute.
         //        H.265 was selected in v2.1.7 for a saving that does not exist. At 45 Mbps on
         //        1080p there is nothing left for it to win, and H.264 plays everywhere.
-        versionCode 93
-        versionName "2.1.9"
+        // v2.2.0 — 2026-09-14. PIP: THE THERMAL IMAGE IN THE CENTRE OF THE VISIBLE IMAGE, drawn by
+        //        the camera. A TAP ON THE IR PILL OR THE C1 KEY CYCLES visible → PIP → thermal
+        //        (operator). A long-press menu was built first and rejected after one flight:
+        //        three views are a cycle, not a menu. The operator's goal was
+        //        the IR image overlaid on the RGB image and REGISTERED so the two mesh, at
+        //        150 ft AGL. Every fact below was measured on the bench over the camera's own
+        //        JSON-RPC API (http://192.168.1.11/camera), each write read back.
+        //
+        //        ⚠ THE CONTROLLER RECEIVES ONE COMPOSITED STREAM. StreamId 1 is the 1280x720p30
+        //        H.264 downlink; there is no second stream to draw. The camera composites, and
+        //        this application asks it to — it cannot do it itself.
+        //        ⚠ OVERLAP IS REFUSED BY THIS FIRMWARE (XL726 V5.0.6.49): SetDisplayMode Overlap
+        //        answers status -1 in every spelling. PictureInPicture answers 0 and reads back.
+        //        The SDK enum still has OVERLAP; CameraView maps it to PIP if a camera reports it.
+        //        ⚠ PIP IS CENTRED AND SCALED, NOT A CORNER BOX. The thermal picture is drawn into
+        //        the centre of the visible frame at the visible lens's angular scale — fence,
+        //        trunks and utility boxes inside the window sit on the same objects outside it.
+        //        The firmware does NOT register the images by itself: SetIrPosition is a manual
+        //        DeltaX/DeltaY trim, clamped by the camera to ±20 px (40 wrote back as 20, -500
+        //        as -20), and it read 0,0 with the pictures already lined up. Not written by
+        //        this application — it is the camera's own trim. Parallax is not the obstacle
+        //        at 150 ft: a few cm of lens baseline at 45 m is one visible pixel.
+        //        ⚠ PipBlenderBase decides what fills the window: IR = the thermal picture whole
+        //        (chosen); Visible = the colour picture with the thermal EDGES over it as bright
+        //        outlines; None = factory. PipBlenderRatio is a 16-bit weight pair, IR FIRST —
+        //        Explorer writes IR = pct/100 × 65536, Visible = 65535 − IR. Written at every
+        //        connect like the recording format (AutelBlendFormat), read back.
+        //        ⚠ WHAT THE CARD WRITES IN PIP: THREE FILES, AND THE FORMAT CHANGES. 11 s in PIP
+        //        gave MAX_0004 1280x720p25 H.264 2.9 Mbps, MIX_0004 1280x720p25 7.8 Mbps and
+        //        IRX_0004 640x512p25 5.7 Mbps — about 16 Mbps together, 7 GB/h, LESS than the
+        //        single 1080p file. Entering PIP switches the record stream to 1280x720p25 at a
+        //        30000 target on its own and Visible restores 1920x1080p30; the camera keeps a
+        //        configuration per display mode. The v2.1.7 recording-format write is not
+        //        changed; its read-back reports the disagreement in PIP and that is correct.
+        //        ⚠ THE 1080p H.264 STREAM READS 60000 kbps, NOT 45000. The v2.1.7 ladder was read
+        //        under H.265. H.264 costs a third more at 1080p (27 GB/h). Not yet confirmed
+        //        from a file; the v2.1.9 claim that the codec is not a size lever is in doubt
+        //        in the other direction.
+        //        ⚠ IN PIP THE CAMERA REPORTS THE THERMAL FIELD OF VIEW (fov=33.0 on the status
+        //        push) OVER THE VISIBLE FRAME, and the bridge published a 33° cone over a 66.8°
+        //        picture. A blend now publishes the VISIBLE cone (operator's decision) —
+        //        Lens.BLEND and publishedHFov, pinned by LensFovPolicyTest. The CoT carries no
+        //        lens tag, only the numbers, so the shared core is untouched.
+        //        ⚠ ZOOM IS IGNORED IN PIP AND THE CAMERA SAYS OK: SetZoomFactor 200 answered 0
+        //        and read back 100. Refused on the pill and the rocker with the §4.8 notice.
+        //        ⚠ THE RECORDING LOCK HOLDS FOR THE VIEW. The camera's own API answers
+        //        SetDisplayMode with status -1 while recording, where the SDK path says OK.
+        //        SetIrPosition and SetPipBlenderRatio WERE honoured mid-recording, read back.
+        //        ⚠ irOn WAS THE WHOLE LENS MODEL AND IS GONE. CameraView (VISIBLE / IR / PIP)
+        //        drives the bridge lens, the fill rule and the pill from one setter. Two latent
+        //        faults went with it: the connect-time read mapped PIP to VISIBLE (a camera left
+        //        in PIP by Explorer got the visible cone over a blend), and the frame-shape
+        //        verify was binary, so a PIP write would have been "corrected" back 1.5 s later.
+        //        PIP expects the VIDEO shape — CameraViewTest and LensFramePolicyTest pin it.
+        //        Stills in PIP were NOT measured (StartTakePhotos needs photo mode).
+        //        Unexplained: the camera read IR at 19:38 and Visible at 19:41 with the app on
+        //        the home screen. Something wrote it; not found.
+        versionCode 94
+        versionName "2.2.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

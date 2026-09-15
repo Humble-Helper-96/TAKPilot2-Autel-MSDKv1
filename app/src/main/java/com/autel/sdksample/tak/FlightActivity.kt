@@ -95,20 +95,22 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     /** Thermal state. Both are re-read from the camera on connect rather than assumed — see
      *  syncIrStateFromCamera(). The buttons must never claim a mode the camera is not in. */
     /**
-     * Thermal live. Setting this also tells the FOV model which lens is on screen, so the
-     * published <sensor> cone and the AR projection narrow to the IR lens with it — routed
-     * through the setter so every assignment site is covered, including the connect-time
-     * resync in [syncIrStateFromCamera].
+     * What the camera shows: visible, thermal, or thermal in the centre of visible (PIP).
+     * Setting this also tells the FOV model which lens is on screen, so the published <sensor>
+     * cone and the AR projection follow it — routed through the setter so every assignment
+     * site is covered, including the connect-time resync in [syncIrStateFromCamera].
+     *
+     * ⚠ This was a boolean, `irOn`, until v2.2.0. A blend is neither value; see [CameraView]
+     * for the questions each consumer now asks instead.
      */
-    private var irOn = false
+    private var cameraView = CameraView.VISIBLE
         set(value) {
             field = value
-            TakBridgeHolder.setActiveLens(
-                if (value) AutelTakBridge.Lens.IR else AutelTakBridge.Lens.EO)
-            // Thermal is shown FIT and the other modes FILL, thus the transform depends on this
-            // state. A mode change normally alters the frame size too and applyVideoFill re-runs
-            // on its own; this covers the order where the state lands before the first frame of
-            // the new mode does, which is what the connect-time resync does.
+            TakBridgeHolder.setActiveLens(value.lens)
+            // Bare thermal is shown FIT and the other views FILL, thus the transform depends on
+            // this state. A view change normally alters the frame size too and applyVideoFill
+            // re-runs on its own; this covers the order where the state lands before the first
+            // frame of the new view does, which is what the connect-time resync does.
             codecView?.let { v -> runOnUiThread { applyVideoFill(v) } }
         }
     /**
@@ -863,7 +865,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                                 runOnUiThread { onIrTapped() }
                             "CUSTOM_BUTTON_LONG_$IR_BUTTON" ->
                                 runOnUiThread {
-                                    if (irOn) onIrPaletteTapped()
+                                    if (cameraView.hasThermal) onIrPaletteTapped()
                                     else showNotice("The thermal camera is off.")
                                 }
 
@@ -2260,7 +2262,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // A scale of exactly 1 is the SDK's own behaviour: it already fits content INSIDE the
         // widget and centres it, so the identity transform IS the fit, and the bars are the
         // root layout's tp_bg_flight (#000000) showing through the TextureView.
-        val scale = if (irOn) 1f
+        // PIP is a 1280x720 composite from the camera (measured 2026-09-14), thus it fills
+        // like the visible modes; only the bare 640x512 sensor is shown whole.
+        val scale = if (cameraView.fitsWhole) 1f
             else maxOf(videoAspect / viewAspect, viewAspect / videoAspect)
         view.setTransform(android.graphics.Matrix().apply {
             setScale(scale, scale, vw / 2f, vh / 2f)   // anchor = view centre = reticle centre
@@ -2290,7 +2294,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             vw / 2f - fullW / 2f, vh / 2f - fullH / 2f,
             vw / 2f + fullW / 2f, vh / 2f + fullH / 2f))
         AppLog.i(TAG, "AR video rect: ${fullW.toInt()}x${fullH.toInt()} in view ${vw.toInt()}x${vh.toInt()}")
-        AppLog.i(TAG, "video ${if (irOn) "FIT (thermal)" else "FILL"}: " +
+        AppLog.i(TAG, "video ${if (cameraView.fitsWhole) "FIT (thermal)" else "FILL"} ($cameraView): " +
             "view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
             "content aspect ${"%.3f".format(videoAspect)} -> scale ${"%.3f".format(scale)}")
     }
@@ -2309,9 +2313,12 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     /**
      * Switches the FPV between the visible camera and the 640T's thermal sensor.
      *
-     * `setDisplayMode` also offers PICTURE_IN_PICTURE and OVERLAP; this button is deliberately
-     * a two-way VISIBLE/IR toggle (operator's spec). The other modes are a settings-screen
-     * question, not something to cycle through blind in flight.
+     * A tap CYCLES the views — visible, PIP, thermal, visible — on the pill and on the C1 key
+     * alike (operator, 2026-09-14). A long-press menu was tried first and rejected: three
+     * views are a cycle, not a menu, and a pilot who has learned "tap IR" keeps tapping. The
+     * order puts PIP between the two plain cameras, so from either the next tap adds or
+     * removes the other picture rather than swapping it outright. [selectCameraView] owns the
+     * write, the belief and the verify.
      *
      * ⚠ **THE CAMERA WILL NOT CHANGE LENS WHILE IT IS RECORDING, AND IT SAYS `OK` ANYWAY**
      * (measured in flight 2026-09-12). This is safety rule 4 in the flesh, and the comment that
@@ -2339,25 +2346,39 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * Otherwise, state flips only in the success callback.
      */
     private fun onIrTapped() {
+        selectCameraView(cameraView.next)
+    }
+
+    /**
+     * Writes a camera view, then believes it only until the picture says otherwise.
+     *
+     * ⚠ The recording refusal covers PIP as well as the lens: `setDisplayMode` is one call,
+     * and the camera's own API answers it with status -1 while recording (bench 2026-09-14),
+     * where the SDK path reports OK. Either way nothing changes, so the request is refused
+     * here with the §4.8 amber notice and nothing is written.
+     */
+    private fun selectCameraView(target: CameraView) {
         val cam = AutelProductHolder.xt706
         if (cam == null) {
-            AppLog.w(TAG, "IR ignored — camera not connected (or not an XT70x)")
+            AppLog.w(TAG, "camera view ignored — camera not connected (or not an XT70x)")
             toast("The camera is not connected.")
             return
         }
+        if (target == cameraView) return
         if (AutelProductHolder.isRecording) {
             // Refused, not silently dropped: showNotice's refused flag is the amber transient
             // on the flight screen, which IS in the screen capture the team sees — §4.8.
-            AppLog.w(TAG, "IR refused — the camera is recording and will ignore a lens change")
-            showNotice("Stop the recording to change the lens", refused = true)
+            AppLog.w(TAG, "camera view $target refused — the camera is recording and will " +
+                "ignore a display-mode change")
+            showNotice("Stop the recording to change the camera view", refused = true)
             return
         }
-        val target = if (irOn) DisplayMode.VISIBLE else DisplayMode.IR
-        cam.setDisplayMode(target, camCb("setDisplayMode($target)") {
-            irOn = !irOn
-            verifyLensAgainstVideo(expectIr = target == DisplayMode.IR)
+        val mode = DisplayMode.valueOf(target.displayModeName)
+        cam.setDisplayMode(mode, camCb("setDisplayMode($mode)") {
+            cameraView = target
+            verifyLensAgainstVideo(expectThermalFrame = target.expectsThermalFrame)
             refreshIrButtons()
-            AppLog.i(TAG, "display mode now ${if (irOn) "IR" else "VISIBLE"}")
+            AppLog.i(TAG, "camera view now $target (display mode $mode)")
         })
     }
 
@@ -2383,7 +2404,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * for what the shapes are and why the answer has three values.
      *
      * ⚠ **THE PICTURE WINS, AND THAT IS THE POINT OF THE WHOLE THING.** On a contradiction this
-     * corrects [irOn], which is not cosmetic: that setter tells [TakBridgeHolder] which lens is
+     * corrects [cameraView], which is not cosmetic: that setter tells [TakBridgeHolder] which lens is
      * live, and a wrong answer there sent the camera point to the entire TAK team tagged
      * thermal, with the thermal field of view, over visible video. It also restores the right
      * FILL rule, so the pilot stops seeing their own visible picture letterboxed by the thermal
@@ -2394,7 +2415,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * when the question matters. The frame size costs nothing and arrives anyway —
      * [armVideoFill] is already listening to it for the FOV model.
      */
-    private fun verifyLensAgainstVideo(expectIr: Boolean) {
+    private fun verifyLensAgainstVideo(expectThermalFrame: Boolean) {
         lensVerify?.let { handler.removeCallbacks(it) }
         val check = Runnable {
             lensVerify = null
@@ -2402,23 +2423,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // describes a picture that is no longer arriving and proves nothing.
             if (AutelProductHolder.xt706 == null) return@Runnable
             val aspect = videoAspect
-            when (lensAgreesWithFrame(believeIr = expectIr, frameAspect = aspect)) {
+            val expected = if (expectThermalFrame) "thermal 5:4" else "video 16:9"
+            when (lensAgreesWithFrame(believeIr = expectThermalFrame, frameAspect = aspect)) {
                 Verdict.AGREES ->
                     AppLog.i(TAG, "lens check: the picture agrees " +
-                        "(${if (expectIr) "IR" else "VISIBLE"}, aspect ${"%.3f".format(aspect)})")
+                        "($cameraView, $expected, aspect ${"%.3f".format(aspect)})")
                 Verdict.INCONCLUSIVE ->
                     AppLog.i(TAG, "lens check: no answer from the picture " +
                         "(aspect ${"%.3f".format(aspect)}) — neither lens shape")
                 Verdict.CONTRADICTS -> {
-                    AppLog.e(TAG, "LENS DID NOT CHANGE. Asked for " +
-                        "${if (expectIr) "IR" else "VISIBLE"}, the camera reported OK, and the " +
-                        "picture is still ${if (expectIr) "VISIBLE" else "IR"} " +
+                    AppLog.e(TAG, "VIEW DID NOT CHANGE. Asked for $cameraView ($expected), " +
+                        "the camera reported OK, and the picture is still the other shape " +
                         "(aspect ${"%.3f".format(aspect)}). Correcting the published lens.")
                     // The belief goes back to what the picture shows. This repairs the wire as
-                    // well as the screen — see the note on this method.
-                    irOn = !expectIr
+                    // well as the screen — see the note on this method. A thermal frame can
+                    // only be the bare sensor; a video frame is read as the plain camera, the
+                    // safe direction (visible cone, FILL) if it is really PIP.
+                    cameraView = if (expectThermalFrame) CameraView.VISIBLE else CameraView.IR
                     refreshIrButtons()
-                    showNotice("The camera did not change lens", refused = true)
+                    showNotice("The camera did not change the view", refused = true)
                 }
             }
         }
@@ -2426,7 +2449,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         handler.postDelayed(check, LENS_VERIFY_SETTLE_MS)
     }
 
-    /** White hot → black hot → ironbow, then round again. Only reachable while [irOn] — the
+    /** White hot → black hot → ironbow, then round again. Only reachable while [CameraView.hasThermal] — the
      *  button is hidden otherwise. A palette outside the cycle (Explorer's leftovers) enters
      *  at WHITE HOT: indexOf returns -1, and -1 + 1 is index 0. */
     private fun onIrPaletteTapped() {
@@ -2448,13 +2471,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         })
     }
 
-    /** IR button highlighted when thermal is live; palette button shown only then. */
+    /** IR pill lit when the thermal sensor is on screen (thermal or PIP), labelled with the
+     *  view like the zoom pill is labelled with its level; palette button shown only then. */
     private fun refreshIrButtons() {
+        irButton.text = cameraView.label
         irButton.setBackgroundResource(
-            if (irOn) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill
+            if (cameraView.active) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill
         )
-        irButton.setTextColor(if (irOn) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else Color.WHITE)
-        irPaletteButton.visibility = if (irOn) View.VISIBLE else View.GONE
+        irButton.setTextColor(if (cameraView.active) androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go) else Color.WHITE)
+        irPaletteButton.visibility = if (cameraView.hasThermal) View.VISIBLE else View.GONE
         // Spelled out, not "WHOT"/"BHOT": in the HUD column it has the full column width, and
         // the abbreviations only existed to fit a narrow toolbar pill.
         irPaletteButton.text = when (irPalette) {
@@ -2482,9 +2507,11 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // the aar 2026-08-03; none is a repeating subscription, so calling them on demand is safe.
         cam.getDisplayMode(object : CallbackWithOneParam<DisplayMode> {
             override fun onSuccess(mode: DisplayMode?) {
-                irOn = mode == DisplayMode.IR
+                // A camera left in PIP by Explorer or a previous flight lands here as PIP,
+                // with the visible cone and the FILL rule — before v2.2.0 it read as VISIBLE.
+                cameraView = CameraView.fromDisplayModeName(mode?.name)
                 runOnUiThread { refreshIrButtons() }
-                AppLog.i(TAG, "camera display mode at connect: $mode")
+                AppLog.i(TAG, "camera display mode at connect: $mode -> $cameraView")
             }
             override fun onFailure(error: AutelError?) {
                 AppLog.w(TAG, "getDisplayMode failed: ${error?.description}")
@@ -2508,6 +2535,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             toast("The camera is not connected.")
             return
         }
+        if (refuseZoomInPip()) return
         // ABSOLUTE, NOT RELATIVE TO A LEARNED BASELINE.
         //
         // The raw units are hundredths — 100 = 1.0x. Established 2026-08-04 from the camera's own
@@ -2522,6 +2550,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // could no longer zoom out; "1X" returned to 4x and "4X" drove the camera to 16x. An
         // absolute scale has no baseline to capture wrong.
         applyZoomRaw(level * ZOOM_RAW_PER_X)
+    }
+
+    /**
+     * ⚠ **THE CAMERA IGNORES ZOOM IN PIP AND SAYS OK** (bench 2026-09-14: `SetZoomFactor 200`
+     * answered status 0 and read back 100). Safety rule 4 again. Refused here, with the §4.8
+     * amber notice, rather than written and then caught by [verifyZoomAgainstCamera] — a pill
+     * that jumps to 2X and back to 1X a second later reads as a fault, and the rocker would
+     * do it on every tick. Not throttled: the rocker's own repeat delay spaces the ticks.
+     */
+    private fun refuseZoomInPip(): Boolean {
+        if (cameraView != CameraView.PIP) return false
+        AppLog.w(TAG, "zoom refused — the camera ignores zoom in PIP")
+        showNotice("Zoom is not available in the PIP view", refused = true)
+        return true
     }
 
     /**
@@ -2694,6 +2736,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * go; only the newest target matters, thus coalescing loses nothing.
      */
     private fun stepZoomOneLevel(direction: Int) {
+        if (refuseZoomInPip()) return
         val next = ZoomLadder.next(pendingZoomRaw, direction)
             .coerceIn(ZOOM_RAW_MIN, ZOOM_RAW_MAX)
         if (next == pendingZoomRaw) return          // already against the end of the ladder

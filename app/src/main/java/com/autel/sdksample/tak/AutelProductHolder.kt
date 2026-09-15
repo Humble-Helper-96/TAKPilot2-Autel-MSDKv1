@@ -544,6 +544,10 @@ object AutelProductHolder {
             // SD resolution and no bitrate control on this camera.
             AutelRecordingFormat.applyAtConnect(cam as? AutelXT706)
 
+            // HOW THE CAMERA BLENDS IN PIP: thermal, whole, in the centre window. Same rule,
+            // same reason, same read-back — see [AutelBlendFormat]. The offset is not written.
+            AutelBlendFormat.applyAtConnect(cam as? AutelXT706)
+
             // TELL THE SCREENS THE CAMERA IS REAL NOW.
             //
             // A screen that wants to know what mode the camera is IN cannot ask at onResume: on

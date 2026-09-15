@@ -59,7 +59,14 @@ internal const val LENS_VERIFY_SETTLE_MS = 1500L
 /**
  * Compares the lens this application believes is live against the shape of the picture.
  *
- * @param believeIr what this application currently tells the bridge and the buttons.
+ * ⚠ **PIP EXPECTS THE VIDEO SHAPE, NOT THE THERMAL ONE.** The camera's PictureInPicture view
+ * draws the thermal picture INTO the 1280x720 visible frame; the frame that arrives is the
+ * composite (`MAX_0004` off the card, 1280x720p25, bench 2026-09-14). A caller that passed
+ * "thermal" for a blend would get CONTRADICTS on a view that changed correctly and undo it
+ * 1.5 s later. [CameraView.expectsThermalFrame] is what to pass.
+ *
+ * @param believeIr whether the view this application believes is live emits the THERMAL frame
+ *   shape — [CameraView.expectsThermalFrame], not "is the thermal sensor on screen".
  * @param frameAspect the live frame's width/height, 0 when no frame has arrived.
  */
 internal fun lensAgreesWithFrame(believeIr: Boolean, frameAspect: Float): Verdict {

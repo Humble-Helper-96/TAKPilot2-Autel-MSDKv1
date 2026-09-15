@@ -54,6 +54,18 @@ class LensFramePolicyTest {
     }
 
     @Test
+    fun `PIP is a video-shaped frame and must not be read as a failed lens change`() {
+        // Bench 2026-09-14: the camera composites the thermal picture into the 1280x720 visible
+        // frame, thus the witness sees the video shape. The belief passed for PIP is "not the
+        // thermal shape", and the composite AGREES with it.
+        val believe = CameraView.PIP.expectsThermalFrame
+        assertEquals(Verdict.AGREES, lensAgreesWithFrame(believeIr = believe, frameAspect = video720))
+        // And a PIP write that did NOT take, while the camera still streams bare thermal, is
+        // still caught.
+        assertEquals(Verdict.CONTRADICTS, lensAgreesWithFrame(believeIr = believe, frameAspect = thermal))
+    }
+
+    @Test
     fun `no frame is no evidence`() {
         // Before the first frame arrives, and after a disconnect stops them.
         assertEquals(Verdict.INCONCLUSIVE, lensAgreesWithFrame(believeIr = true, frameAspect = 0f))

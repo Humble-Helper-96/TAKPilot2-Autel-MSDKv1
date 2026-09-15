@@ -222,7 +222,8 @@ class FieldGuideActivity : AppCompatActivity() {
 
         keyEntry(
             "C1",
-            "Changes the camera between the normal camera and the thermal camera.",
+            "Changes the image: the normal camera, then PIP, then the thermal camera, then " +
+                "the normal camera again. The same as the IR button.",
             "Changes the thermal colours.",
         )
 
@@ -384,13 +385,16 @@ class FieldGuideActivity : AppCompatActivity() {
         )
 
         entry(
-            listOf(zoomPill("IR") to "Thermal"),
+            listOf(modePill("IR", false) to "Normal", modePill("IR", true) to "Thermal",
+                modePill("PIP", true) to "PIP"),
             "IR: the thermal camera",
-            "This changes the image between the normal camera and the thermal camera.\n\n" +
+            "Each touch changes the image: the normal camera, then PIP, then the thermal " +
+                "camera, then the normal camera again. PIP is the thermal image in the centre " +
+                "of the normal image. Zoom does not work in PIP.\n\n" +
                 "YOU CANNOT CHANGE THE CAMERA WHILE THE AIRCRAFT RECORDS. The app tells you " +
-                "to stop the recording. The aircraft records one camera only, and it is the " +
-                "camera you were on when the recording started. Select the camera you want " +
-                "BEFORE you start to record.",
+                "to stop the recording. The aircraft records the camera you were on when the " +
+                "recording started. In PIP it records three files: normal, thermal and PIP. " +
+                "Select the camera you want BEFORE you start to record.",
         )
 
         entry(
@@ -846,6 +850,19 @@ class FieldGuideActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         setBackgroundResource(R.drawable.bg_zoom_pill)
         setTextColor(Color.WHITE); textSize = 12f
+        setTypeface(null, android.graphics.Typeface.BOLD)
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
+    }
+
+    /** The IR pill in a state, built from the same drawables the toolbar uses. The label
+     *  follows the view the way the zoom pill's label follows its level: "IR" lit for thermal,
+     *  "PIP" lit for thermal in the centre. */
+    private fun modePill(label: String, on: Boolean): View = TextView(this).apply {
+        text = label
+        gravity = Gravity.CENTER
+        setBackgroundResource(if (on) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill)
+        setTextColor(if (on) CONNECTED_GREEN else Color.WHITE)
+        textSize = 12f
         setTypeface(null, android.graphics.Typeface.BOLD)
         layoutParams = LinearLayout.LayoutParams(dp(36), dp(26))
     }
