@@ -1307,7 +1307,11 @@ android {
         //           aircraft's raw GPS height drifted 309 m to 188 m in the first minute of the
         //           21:25 flight; N is untouched by that, both altitudes come from one solution.
         //        ElevationPolicy.kt holds all three rules, pinned by ElevationPolicyTest.
-        //        ⚠ STILL OPEN: (6) magnetometer bias 0.9–6° by heading. (8) telemetry leads
+        //        ⚠ STILL OPEN: (6) magnetometer bias 0.9–6° by heading — NO APP CORRECTION, BY
+        //        THE OPERATOR'S DECISION (2026-09-15): a per-airframe, per-site table is too
+        //        much to manage across a fleet; the answer is Autel's own compass calibration
+        //        per aircraft, away from vehicles and rebar. Do not propose a table again.
+        //        (8) telemetry leads
         //        video; DTED file seeks per contact per frame on the UI thread. (9) gimbal roll
         //        unread. ⚠ ADS-B: an ADS-B gateway's hae is usually PRESSURE altitude (29.92 in
         //        standard day), not geometric height — off by the day's altimeter setting,
