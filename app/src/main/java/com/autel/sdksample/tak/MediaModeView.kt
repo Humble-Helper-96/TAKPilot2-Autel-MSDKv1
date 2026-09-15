@@ -26,10 +26,11 @@ import com.autel.sdksample.R
  * the highlight where it was, which is the truth. Unknown is its own state: both halves amber
  * until the camera answers (§4.6).
  *
- * Drawn as one pill (§6.7 radius and stroke) split by a hairline, the lit half in the active
- * fill with its glyph in `tp_state_go`, the other half idle with a white glyph. The glyphs are
- * [CameraGlyphs], the same shapes the record pill drew, so a pilot learns one symbol per mode.
- * Each glyph carries the HUD's outline, so it stays legible over bright ground.
+ * Drawn as a SWITCH: a fully rounded track (§6.7 stroke) with a white thumb on the side the
+ * camera reports, the glyph under the thumb in `tp_state_go` and the other in white on the
+ * track. A pill was tried first the same day and read as "tap to capture"; a thumb on a track
+ * reads as "which of two". The glyphs are [CameraGlyphs], the same shapes the record pill
+ * drew, so a pilot learns one symbol per mode; the one on the track carries the HUD's outline.
  */
 class MediaModeView @JvmOverloads constructor(
     context: Context,
@@ -81,9 +82,9 @@ class MediaModeView @JvmOverloads constructor(
     private val half = RectF()
 
     private val glyphSize: Float get() = textSize * 1.15f
-    /** Each half is a square-ish cell around its glyph; the pill is two cells. */
-    private val cell: Float get() = glyphSize * 2.2f
-    private val cellH: Float get() = glyphSize * 1.8f
+    /** The track is two thumbs wide plus a little travel; its height is a thumb. */
+    private val cellH: Float get() = glyphSize * 1.7f
+    private val cell: Float get() = cellH * 1.15f
 
     fun setMode(m: Mode?, unhandledName: String? = null) {
         if (m == mode && unhandledName == otherLabel) return
@@ -121,46 +122,52 @@ class MediaModeView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val pad = stroke / 2f   // a stroke is centred on its path: inset by half — §6.7
+        // A SWITCH, not a pill (operator, 2026-09-15): a fully rounded track with a THUMB that
+        // sits on the mode the camera reports. A pill read as "tap to capture", which this is
+        // not; a thumb on a track reads as "which of two", which it is. The track keeps the
+        // §6.7 stroke; the radius is the track's half height because it IS a switch — this
+        // is the one control on the screen where the knob is the right affordance.
+        val pad = stroke / 2f
         pill.set(pad, pad, width - pad, height - pad)
+        val r = pill.height() / 2f
         val unknown = mode == null || otherLabel != null
 
-        // The lit half first, clipped to the pill, then the whole pill's stroke over it.
-        fillPaint.color = idleFill
-        canvas.drawRoundRect(pill, radius, radius, fillPaint)
-        if (!unknown) {
-            val mid = width / 2f
-            if (mode == Mode.VIDEO) half.set(pill.left, pill.top, mid, pill.bottom)
-            else half.set(mid, pill.top, pill.right, pill.bottom)
-            canvas.save()
-            canvas.clipRect(half)
-            fillPaint.color = activeFill
-            canvas.drawRoundRect(pill, radius, radius, fillPaint)
-            canvas.restore()
-        } else {
-            fillPaint.color = unknownFill
-            canvas.drawRoundRect(pill, radius, radius, fillPaint)
-        }
+        fillPaint.color = if (unknown) unknownFill else idleFill
+        canvas.drawRoundRect(pill, r, r, fillPaint)
         strokePaint.color = if (unknown) unknownColor else idleStroke
-        canvas.drawRoundRect(pill, radius, radius, strokePaint)
-        // The hairline between the halves.
-        canvas.drawLine(width / 2f, pill.top + stroke, width / 2f, pill.bottom - stroke, strokePaint)
+        canvas.drawRoundRect(pill, r, r, strokePaint)
 
-        // Glyphs: movie left, still right; the lit one in the go colour.
+        // The thumb: a disc the height of the track, on the left for video, the right for
+        // photo, centred and amber when the camera has not answered.
+        val thumbR = r - stroke
+        val thumbCx = when {
+            unknown -> width / 2f
+            mode == Mode.VIDEO -> pill.left + r
+            else -> pill.right - r
+        }
+        fillPaint.color = if (unknown) unknownColor else Color.WHITE
+        canvas.drawCircle(thumbCx, height / 2f, thumbR, fillPaint)
+
+        // Glyphs at the two ends: the one under the thumb is drawn dark on the white disc, the
+        // other white on the track. Movie left, still right.
         val cy = height / 2f
-        val leftCx = width / 4f
-        val rightCx = width * 3f / 4f
+        val leftCx = pill.left + r
+        val rightCx = pill.right - r
         drawGlyph(canvas, leftCx, cy, movie = true,
-            colour = if (unknown) unknownColor else if (mode == Mode.VIDEO) goColor else Color.WHITE)
+            colour = if (unknown) Color.WHITE else if (mode == Mode.VIDEO) goColor else Color.WHITE,
+            onThumb = !unknown && mode == Mode.VIDEO)
         drawGlyph(canvas, rightCx, cy, movie = false,
-            colour = if (unknown) unknownColor else if (mode == Mode.PHOTO) goColor else Color.WHITE)
+            colour = if (unknown) Color.WHITE else if (mode == Mode.PHOTO) goColor else Color.WHITE,
+            onThumb = !unknown && mode == Mode.PHOTO)
     }
 
-    private fun drawGlyph(canvas: Canvas, cx: Float, cy: Float, movie: Boolean, colour: Int) {
-        val s = glyphSize
+    private fun drawGlyph(canvas: Canvas, cx: Float, cy: Float, movie: Boolean, colour: Int, onThumb: Boolean) {
+        val s = glyphSize * 0.85f
         if (movie) CameraGlyphs.movie(glyph, body, cx - s / 2f, cy - s / 2f, s)
         else CameraGlyphs.still(glyph, body, cx - s / 2f, cy - s / 2f, s)
-        canvas.drawPath(glyph, glyphStroke)
+        // On the white thumb the black outline pass would just be a black glyph; the go colour
+        // alone reads there. On the track the HUD outline stays.
+        if (!onThumb) canvas.drawPath(glyph, glyphStroke)
         glyphFill.color = colour
         canvas.drawPath(glyph, glyphFill)
     }
