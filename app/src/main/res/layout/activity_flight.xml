@@ -45,11 +45,9 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- The PIP window's corner control (operator, 2026-09-15): ⤢ on the thermal window's
-         upper-right corner makes thermal full screen; ⤡ left of the EV slider puts the
-         window back. Gone in visible. Positioned by FlightActivity.renderPipSizeButton from
-         the AR video rect and PipWindowGeometry — it is a pill (§6.7) placed on the picture,
-         so it keeps the capsule fill like the map's WIDE button, for the same reason. -->
+    <!-- The PIP size control (operator, 2026-09-15): ⤢ makes thermal full screen, ⤡ puts the
+         window back, both in ONE place just left of the EV slider — see
+         FlightActivity.renderPipSizeButton. A bare icon at 60 %, no backing. Gone in visible. -->
     <ImageButton
         android:id="@+id/flightPipSizeButton"
         android:layout_width="40dp"
