@@ -1365,6 +1365,15 @@ android {
         //        0.9° is ~40 m, within the pressure-altitude question. The geoid part is gone.
         //        STORED, NOT ACTED ON (operator).
         //
+        //        THE ACTIONS CAPSULE IS A VERTICAL COLUMN ON THE LEFT (operator, 2026-09-15):
+        //        the bar across the top was hard to reach. Same seven controls, same order
+        //        top to bottom, every pill 66dp wide (one width; the two-width rule is spent
+        //        for a column), 18dp gaps against accidental taps, under the status capsule;
+        //        the warning banner starts right of it. The band keeps flightToolbar and now
+        //        reports the status capsule's height alone as the chrome inset. Specification
+        //        §4.2; the DJI trees owe it (D29). ⚠ OPEN: the obstacle view's left-edge label
+        //        sits under the column's foot — it needs a LEFT inset like its top one.
+        //
         //        ⚠ STORED FOR LATER (operator, 2026-09-15 11:41): switching between photo and
         //        video with the HARDWARE buttons gave an error on screen. The log:
         //        11:41:13 hardware record pressed in SINGLE — the app takes the press as a
