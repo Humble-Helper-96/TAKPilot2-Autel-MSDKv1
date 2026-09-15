@@ -235,13 +235,16 @@
     <!-- Drop-pin heads the right-hand cluster and is the LARGEST control in the bar: it's
          the most-used action on this screen and a pilot reaching for it is usually also
          flying, so it has to be hittable without aiming. Same sizing/placement as DJI. -->
+    <!-- A PILL like the rest of the column (operator, 2026-09-15): 66x42, the one width and
+         height every control in the column has. It was the bar's largest control at 56x46 as
+         a bare glyph; in a column of one width a different shape read as a different class. -->
     <ImageButton
         android:id="@+id/flightDropPinButton"
-        android:layout_width="56dp"
-        android:layout_height="46dp"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:layout_width="66dp"
+        android:layout_height="42dp"
+        android:background="@drawable/bg_zoom_pill"
         android:contentDescription="Drop a TAK marker at the camera crosshair"
-        android:padding="1dp"
+        android:padding="4dp"
         android:scaleType="fitCenter"
         android:src="@drawable/ic_drop_pin" />
     <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
