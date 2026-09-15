@@ -197,28 +197,6 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
-        <!-- CAMERA MODE, right, in its own capsule level with the status capsule (operator,
-             2026-09-15): the media-mode switch — movie camera left, still camera right, the
-             thumb on what the camera reports. It moved up out of the HUD column so it sits in
-             the chrome like the status, above the EV slider. Same capsule fill and padding. -->
-        <LinearLayout
-            android:id="@+id/flightModeCapsule"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minHeight="@dimen/hud_capsule_height"
-            android:background="@drawable/bg_hud_capsule"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="3dp">
-
-            <com.autel.sdksample.tak.MediaModeView
-                android:id="@+id/fpvMediaMode"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
-
-        </LinearLayout>
-
 
     </LinearLayout>
 
@@ -498,7 +476,7 @@
         android:layout_gravity="end"
         android:gravity="end"
         android:orientation="vertical"
-        android:paddingTop="60dp"
+        android:paddingTop="10dp"
         android:paddingBottom="12dp"
         android:paddingEnd="14dp">
 
@@ -569,6 +547,12 @@
                  ⚠ UNKNOWN IS ITS OWN STATE. Amber "— MODE" until the camera answers, never
                  collapsed into one of the two real modes. Same rule as the RTH altitude and the
                  exterior lights. -->
+            <com.autel.sdksample.tak.MediaModeView
+                android:id="@+id/fpvMediaMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="6dp" />
 
             <!-- Thermal palette, under the exposure block (operator's placement, 2026-07-31).
                  It belongs with the image-quality controls rather than in the toolbar: it changes

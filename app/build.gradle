@@ -1376,9 +1376,7 @@ android {
         //        The obstacle view has the LEFT inset now (setLeftInset, the column's right edge).
         //        THE MEDIA-MODE READOUT IS A SWITCH (operator, 2026-09-15): a track with a thumb,
         //        movie camera left, still camera right, the thumb on what the camera REPORTS
-        //        (a pill was tried first and read as "tap to capture"); it sits in its OWN CAPSULE
-        //        at the right end of the band, level with the status capsule, and the HUD
-        //        column's top padding is 60dp again; a tap asks for
+        //        (a pill was tried first and read as "tap to capture"); a tap asks for
         //        that mode and takes nothing; refused while recording. The shutter and REC keep
         //        moving the mode by themselves. Specification §4.3; DJI owes it under D29.
         //        The callsign is its own HUD line under the clock, the speed on the next (§4.4).
