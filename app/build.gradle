@@ -1349,8 +1349,20 @@ android {
         //        window's lower-left corner (top-right sat under the EV slider), the phone idiom; ⤡ goes back;
         //        a pill tap from full thermal goes back to PIP. The pill reads PIP unlit in
         //        visible, PIP lit, IR lit. The window's corner is MEASURED, not derived from
-        //        the FOV ratio (PipWindowGeometry: 0.40 x 0.607 of the frame, 1.6 % left and
-        //        4.7 % up — the thermal lens's boresight). Built the same day, not yet flown.
+        //        the FOV ratio (PipWindowGeometry: 0.40 x 0.607 of the frame, 0.6 % left and
+        //        3.6 % up — the thermal lens's boresight). The control is a 30dp glyph on a
+        //        faint disc in the window's LOWER-LEFT corner (top-right sat under the EV
+        //        slider). Checked on the controller the same day, not yet flown.
+        //
+        //        ⚠ ADS-B, MEASURED 2026-09-15 11:39 with the real aircraft in frame at 2x:
+        //        N378PA at 2.64 km, marker drawn 3.3° BEHIND the aircraft along its track and
+        //        0.9° low. The horizontal part is LATENCY — the marker was walking across the
+        //        frame at ~60 px/s and the aircraft was ahead of it; an ADS-B report is a
+        //        second or two old through the gateway and the server, 60–120 m at that
+        //        range. Fix when wanted: dead-reckon the marker forward along its reported
+        //        course and speed by the report's age (the CoT carries time). The vertical
+        //        0.9° is ~40 m, within the pressure-altitude question. The geoid part is gone.
+        //        STORED, NOT ACTED ON (operator).
         //
         //        ⚠ CANCEL LANDING IS REMOVED (operator, 2026-09-14). The v2.1.4 RTH long-press
         //        menu offered it beside Cancel Return; the first flight to try it (21:30) asked
