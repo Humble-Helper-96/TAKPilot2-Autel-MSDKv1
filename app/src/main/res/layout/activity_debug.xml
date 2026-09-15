@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
@@ -36,8 +37,14 @@
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:paddingTop="6dp">
-                <CheckBox android:id="@+id/debugLoggingToggle" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:buttonTint="@color/tp_btn_info" />
+                <!-- A SWITCH, not a check box (operator, 2026-09-15): this is the one control
+                     on the screen that starts and stops something — the file sink refuses every
+                     line the moment it is off, and the setter flushes and closes the file. The
+                     three options below are greyed while it is off. -->
+                <androidx.appcompat.widget.SwitchCompat android:id="@+id/debugLoggingToggle"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginEnd="10dp"
+                    app:thumbTint="@color/tp_btn_info" app:trackTint="@color/tp_pill_idle_stroke" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="Logging enabled" android:textColor="@color/tp_text_bright" android:textSize="15sp" />
             </LinearLayout>

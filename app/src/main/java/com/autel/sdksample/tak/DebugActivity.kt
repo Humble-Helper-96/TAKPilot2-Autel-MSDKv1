@@ -96,7 +96,7 @@ class DebugActivity : AppCompatActivity() {
             resourceMonitorToggle.isEnabled = on
         }
 
-        val toggle = findViewById<CheckBox>(R.id.debugLoggingToggle)
+        val toggle = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.debugLoggingToggle)
         toggle.isChecked = AppLog.enabled
         renderSubOptions(AppLog.enabled)
         toggle.setOnCheckedChangeListener { _, on ->
