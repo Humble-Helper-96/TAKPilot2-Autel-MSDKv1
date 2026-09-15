@@ -365,7 +365,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // left-face label lands beside the column rather than under it.
             val column = findViewById<View>(R.id.flightToolbarActions)
             obstacleEdges.setLeftInset(column.x + column.width)
-            renderPipSizeButton()
         }
         streamToggle = findViewById(R.id.flightStreamButton)
         recordToggle = findViewById(R.id.flightRecordButton)
@@ -2342,7 +2341,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             vw / 2f + fullW / 2f, vh / 2f + fullH / 2f)
         arOverlay.setVideoRect(rect)
         lastVideoRect = rect
-        renderPipSizeButton()
         AppLog.i(TAG, "AR video rect: ${fullW.toInt()}x${fullH.toInt()} in view ${vw.toInt()}x${vh.toInt()}")
         AppLog.i(TAG, "video ${if (cameraView.fitsWhole) "FIT (thermal)" else "FILL"} ($cameraView): " +
             "view ${vw.toInt()}x${vh.toInt()} (aspect ${"%.3f".format(viewAspect)}) " +
@@ -2521,37 +2519,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
-     * The ⤢ / ⤡ control (operator, 2026-09-15): in PIP it makes thermal full screen, in full
-     * thermal it puts the window back, and it sits in ONE place in both — just left of the EV
-     * slider, level with it. Gone in visible. Four placements on the window's corner were
-     * tried and rejected the same day; the icon says which way it goes, the position never
-     * moves. [PipWindowGeometry] still records where the camera draws the window.
+     * The thermal expand / contract PILL (operator, 2026-09-15): a pill in the actions column
+     * directly under the PIP pill, shown only while thermal is on screen. In PIP its icon
+     * makes thermal full screen; in full thermal it puts the window back. Gone in visible and
+     * the column closes up. Five placements ON the picture were tried and rejected the same
+     * day; the pill is where the thumb already is. [PipWindowGeometry] still records where the
+     * camera draws the window.
      */
     private fun renderPipSizeButton() {
         if (!::pipSizeButton.isInitialized) return
         val target = cameraView.maximised
-        val rect = lastVideoRect
-        if (target == null || rect == null) { pipSizeButton.visibility = View.GONE; return }
-        // UPPER-RIGHT corner (operator, 2026-09-15, after lower-left and top-right-under-
-        // the-slider were both tried). In PIP the icon's frame corner sits on the window's
-        // upper-right corner; in full thermal it sits just LEFT of the EV slider, level with
-        // it, where the HUD does not cover it.
-        // The icon is drawn as the operator specified — solid square in the frame's lower-
-        // left, arrow up and to the right — and is NOT turned. Its frame's right and top
-        // edges sit 4/24 of the view in, so the view is placed by the frame's corner and the
-        // frame touches the window's corner with no inset (operator: "tight").
-        val parent = pipSizeButton.parent as View
-        val w = pipSizeButton.layoutParams.width.toFloat()
-        val h = pipSizeButton.layoutParams.height.toFloat()
-        // ONE PLACE FOR BOTH (operator, 2026-09-15): centred under the foot of the actions
-        // column, in PIP and in full thermal alike — with the thumb's other controls. Beside
-        // the EV slider was tried the same day. The icon says which way it goes; the position
-        // never moves.
-        val column = findViewById<View>(R.id.flightToolbarActions)
-        val x = column.x + (column.width - w) / 2f
-        val y = column.y + column.height + 6 * resources.displayMetrics.density
-        pipSizeButton.x = x
-        pipSizeButton.y = y
+        if (target == null) { pipSizeButton.visibility = View.GONE; return }
         pipSizeButton.setImageResource(
             if (cameraView == CameraView.PIP) R.drawable.ic_pip_expand else R.drawable.ic_pip_collapse)
         pipSizeButton.visibility = View.VISIBLE

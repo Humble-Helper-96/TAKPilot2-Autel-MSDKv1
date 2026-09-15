@@ -45,21 +45,6 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- The PIP size control (operator, 2026-09-15): ⤢ makes thermal full screen, ⤡ puts the
-         window back, both in ONE place under the actions column — see
-         FlightActivity.renderPipSizeButton. A bare icon at 60 %, no backing. Gone in visible. -->
-    <ImageButton
-        android:id="@+id/flightPipSizeButton"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:background="@null"
-        android:alpha="0.6"
-        android:contentDescription="Thermal full screen or window"
-        android:padding="0dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_pip_expand"
-        android:visibility="gone" />
-
     <!-- Shown until the aircraft connects. DJI hides its equivalent on the first decoded
          frame; AutelCodecView is an opaque SDK widget with no frame callback, so aircraft
          connection is the closest honest proxy available — see updateHud(). -->
@@ -306,6 +291,23 @@
         android:textColor="@color/tp_text_primary"
         android:textSize="14sp"
         android:textStyle="bold" />
+
+    <!-- The thermal expand / contract PILL (operator, 2026-09-15): under the PIP pill, only
+         while thermal is on screen. In PIP its icon makes thermal full screen; in full thermal
+         it puts the window back. Same 66x42 pill as the rest; the icon is the operator's —
+         a rounded frame with a solid square in the lower-left and an arrow. Gone in visible,
+         and the column closes up. -->
+    <ImageButton
+        android:id="@+id/flightPipSizeButton"
+        android:layout_marginTop="18dp"
+        android:layout_width="66dp"
+        android:layout_height="42dp"
+        android:background="@drawable/bg_zoom_pill"
+        android:contentDescription="Thermal full screen or window"
+        android:padding="7dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_pip_expand"
+        android:visibility="gone" />
 
 
     <!-- Framed to match the AR / camera / zoom / IR pills — it is the last of the run of
