@@ -1284,10 +1284,12 @@ android {
         //           picture. One accessor, pictureHFovBase, now feeds the overlay AND the wire.
         //        Also: ArSettings.saveFov persisted the camera's live figure over the pilot's
         //        calibration whenever an aircraft was attached. It saves the calibrated value.
-        //        ⚠ STILL OPEN, in order of size: (3) the projection treats bearing and elevation
-        //        as independent screen angles — true only at the horizon; at −60° pitch a marker
-        //        20° off the heading lands 10° wrong horizontally, zero at the centre, growing
-        //        outward, invisible to the crosshair self-test. (4) a pin with no stored
+        //        3. THE PROJECTION TREATED BEARING AND ELEVATION AS INDEPENDENT SCREEN ANGLES —
+        //           FIXED. True only at the horizon; at −60° pitch a marker 20° off the heading
+        //           landed 10° wrong sideways, zero at the centre, growing outward, invisible to
+        //           the crosshair self-test. The target direction is now rotated into the
+        //           camera frame first (CameraProjection.kt, pinned by CameraProjectionTest).
+        //        ⚠ STILL OPEN, in order of size: (4) a pin with no stored
         //        elevation (map tap, restored, look-point without DTED) is differenced against
         //        a real aircraft MSL and lands at SEA LEVEL. (5) the flat-plane fallback when
         //        no takeoff terrain reference latches — fired in every flight today although

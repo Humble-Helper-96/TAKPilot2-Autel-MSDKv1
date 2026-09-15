@@ -305,12 +305,14 @@ class ArOverlayView @JvmOverloads constructor(
             // Depression angle: rise over run against the ground distance, so straight-down
             // correctly approaches -90 degrees.
             val elevDeg = Math.toDegrees(atan2(dz, groundDist))
-            val dElev = elevDeg - pose.pitchDeg
+            // INTO THE CAMERA'S FRAME before anything becomes a pixel — see [cameraFrameAngles]
+            // for why the world's bearing and elevation differences are not the camera's.
+            val (azCam, elCam) = cameraFrameAngles(dBearing, elevDeg, pose.pitchDeg)
 
-            val xy = project(dBearing, dElev)
-            if (logThisPass) diag(pin, pose, groundDist, dz, bearing, dBearing, elevDeg, dElev, xy)
+            val xy = project(azCam, elCam)
+            if (logThisPass) diag(pin, pose, groundDist, dz, bearing, dBearing, elevDeg, azCam, elCam, xy)
             if (xy == null) {
-                drawEdgeArrow(canvas, dBearing, dElev, ARROW_COLOR_PIN)
+                drawEdgeArrow(canvas, azCam, elCam, ARROW_COLOR_PIN)
                 continue
             }
             drawPin(canvas, xy.first, xy.second, pin)
@@ -447,9 +449,9 @@ class ArOverlayView @JvmOverloads constructor(
 
             val bearing = CameraSlantPoint.initialBearingDeg(hud.lat, hud.lon, lat, lon)
             val dBearing = ((bearing - pose.bearingDeg + 540.0) % 360.0) - 180.0
-            val dElev = Math.toDegrees(atan2(dz, groundDist)) - pose.pitchDeg
+            val (azCam, elCam) = cameraFrameAngles(dBearing, Math.toDegrees(atan2(dz, groundDist)), pose.pitchDeg)
 
-            val xy = project(dBearing, dElev)
+            val xy = project(azCam, elCam)
 
             // Trace the first few in detail, showing BOTH height methods side by side. The
             // whole point is that "reported" and "terrain" disagree by the geoid offset, and
@@ -478,7 +480,7 @@ class ArOverlayView @JvmOverloads constructor(
 
             if (xy == null) {
                 offFrame++
-                drawEdgeArrow(canvas, dBearing, dElev, TakMapMarkers.teamColor(u.team))
+                drawEdgeArrow(canvas, azCam, elCam, TakMapMarkers.teamColor(u.team))
                 continue
             }
             // Label budget: icons stay (they're the position information), but past this many
@@ -604,6 +606,10 @@ class ArOverlayView @JvmOverloads constructor(
 
     /**
      * Angular offset from the camera axis → pixel, or null if outside the frame.
+     *
+     * ⚠ The two angles are the CAMERA-FRAME azimuth and elevation from [cameraFrameAngles],
+     * never the world bearing and elevation differences — those were handed in here until
+     * 2026-09-14 and were wrong by up to 15° on a pitched camera (fault 3 of the AR audit).
      *
      * Gnomonic (true perspective) rather than the reference's linear mapping: screen offset is
      * proportional to `tan` of the angle, normalised by `tan` of the half-FOV.
@@ -807,15 +813,16 @@ class ArOverlayView @JvmOverloads constructor(
         bearing: Double,
         dBearing: Double,
         elevDeg: Double,
-        dElev: Double,
+        azCam: Double,
+        elCam: Double,
         xy: Pair<Float, Float>?,
     ) {
         AppLog.d(
             TAG,
             "pin='${pin.name}' gDist=%.1fm dz=%.1fm | camBrg=%.1f pinBrg=%.1f dBrg=%.1f | " .format(
                 groundDist, dz, pose.bearingDeg, bearing, dBearing,
-            ) + "camPitch=%.1f pinElev=%.1f dElev=%.1f | fov=%.0fx%.0f | %s".format(
-                pose.pitchDeg, elevDeg, dElev,
+            ) + "camPitch=%.1f pinElev=%.1f | cam az=%.1f el=%.1f | fov=%.0fx%.0f | %s".format(
+                pose.pitchDeg, elevDeg, azCam, elCam,
                 // EFFECTIVE fov, zoom included — printing the 1x base while zoomed is
                 // actively misleading during calibration, which is when this gets read.
                 AutelTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
