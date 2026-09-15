@@ -4,7 +4,7 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <!-- Maximise: the two-headed diagonal arrow every phone puts on a floating video window.
-         Sits on the top-right corner of the PIP thermal window; a tap makes thermal full
+         Sits on the lower-left corner of the PIP thermal window; a tap makes thermal full
          screen (2026-09-15). White; the pill behind it carries the state colour. -->
     <path
         android:fillColor="#FFFFFFFF"

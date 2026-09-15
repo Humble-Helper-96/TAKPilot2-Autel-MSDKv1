@@ -3,7 +3,7 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Minimise: the inward pair of ic_pip_expand. Sits on the top-right corner of the full
+    <!-- Minimise: the inward pair of ic_pip_expand. Sits on the lower-left corner of the full
          thermal picture; a tap puts the thermal window back inside the visible picture. -->
     <path
         android:fillColor="#FFFFFFFF"

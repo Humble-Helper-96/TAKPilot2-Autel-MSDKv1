@@ -2510,7 +2510,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /**
      * The ⤢ / ⤡ control on the thermal picture (operator, 2026-09-15): on the PIP window's
-     * top-right corner it makes thermal full screen; on the full thermal picture it puts the
+     * lower-left corner it makes thermal full screen; on the full thermal picture it puts the
      * window back. Gone in visible. The window's corner comes from [PipWindowGeometry] and the
      * AR video rect; in full thermal the picture is the whole FIT rect. Kept under the toolbar
      * band and inside the view, so it can never hide behind the chrome or off the edge.
@@ -2526,12 +2526,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         } else {
             PipWindowGeometry.Box(rect.left.toDouble(), rect.top.toDouble(), rect.right.toDouble(), rect.bottom.toDouble())
         }
+        // LOWER-LEFT corner (operator, 2026-09-15): the top-right put the ⤡ under the EV
+        // slider in full thermal. Clamped inside the view and above the resource row.
         val inset = (8 * resources.displayMetrics.density)
-        val chromeTop = findViewById<View>(R.id.flightToolbar).height.toFloat()
-        val parentW = (pipSizeButton.parent as View).width.toFloat()
+        val parent = pipSizeButton.parent as View
         val w = pipSizeButton.layoutParams.width.toFloat()
-        val x = (box.right.toFloat() - inset - w).coerceIn(0f, parentW - w)
-        val y = maxOf(box.top.toFloat(), chromeTop) + inset
+        val h = pipSizeButton.layoutParams.height.toFloat()
+        val bottomChrome = if (resourceMonitorRow.visibility == View.VISIBLE) resourceMonitorRow.height.toFloat() else 0f
+        val x = (box.left.toFloat() + inset).coerceIn(0f, parent.width - w)
+        val y = (box.bottom.toFloat() - inset - h).coerceAtMost(parent.height - bottomChrome - inset - h)
         pipSizeButton.x = x
         pipSizeButton.y = y
         pipSizeButton.setImageResource(
