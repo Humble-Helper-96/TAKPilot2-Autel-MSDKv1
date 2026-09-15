@@ -3,14 +3,16 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Maximise: the two-headed diagonal arrow every phone puts on a floating video window.
-         Sits on the lower-left corner of the PIP thermal window; a tap makes thermal full
-         screen (2026-09-15). White; the pill behind it carries the state colour. -->
-    <!-- No backing at all and drawn at 60 % (operator, 2026-09-15: "too obtrusive"). A
-         thin dark outline keeps the arrows readable on a white-hot thermal picture. -->
+    <!-- Maximise, the operator's chosen style (2026-09-15): a rounded frame, a small filled
+         square nestled in its lower-left corner (where the control itself sits on the window),
+         and an arrow from that square out to the upper right. No backing; drawn at 60 % by the
+         view. The thin dark outline keeps it readable over a white-hot picture. -->
     <path
-        android:strokeColor="#99000000"
-        android:strokeWidth="1"
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M21,11V3h-8l3.29,3.29l-10,10L3,13v8h8l-3.29,-3.29l10,-10z" />
+        android:strokeColor="#99000000" android:strokeWidth="3.2" android:strokeLineJoin="round"
+        android:pathData="M6,4 H18 A2,2 0 0 1 20,6 V18 A2,2 0 0 1 18,20 H11 M4,11 V6 A2,2 0 0 1 6,4 M10,14 L18,6 M13,6 H18 V11" />
+    <path
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineJoin="round" android:strokeLineCap="round"
+        android:pathData="M6,4 H18 A2,2 0 0 1 20,6 V18 A2,2 0 0 1 18,20 H11 M4,11 V6 A2,2 0 0 1 6,4 M10,14 L18,6 M13,6 H18 V11" />
+    <path android:fillColor="#99000000" android:pathData="M3,13 H10.6 V20.6 H3 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,14 H10 V20 H4 Z" />
 </vector>

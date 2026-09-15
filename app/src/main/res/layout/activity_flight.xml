@@ -52,12 +52,12 @@
          so it keeps the capsule fill like the map's WIDE button, for the same reason. -->
     <ImageButton
         android:id="@+id/flightPipSizeButton"
-        android:layout_width="34dp"
-        android:layout_height="34dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:background="@null"
         android:alpha="0.6"
         android:contentDescription="Thermal full screen or window"
-        android:padding="6dp"
+        android:padding="4dp"
         android:scaleType="fitCenter"
         android:src="@drawable/ic_pip_expand"
         android:visibility="gone" />

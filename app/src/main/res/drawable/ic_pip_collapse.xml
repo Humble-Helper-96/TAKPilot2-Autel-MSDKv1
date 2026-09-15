@@ -3,13 +3,14 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Minimise: the inward pair of ic_pip_expand. Sits on the lower-left corner of the full
-         thermal picture; a tap puts the thermal window back inside the visible picture. -->
-    <!-- No backing at all and drawn at 60 % (operator, 2026-09-15: "too obtrusive"). A
-         thin dark outline keeps the arrows readable on a white-hot thermal picture. -->
+    <!-- Minimise: the pair of ic_pip_expand with the arrow running from the upper right INTO
+         the small square in the lower-left corner. -->
     <path
-        android:strokeColor="#99000000"
-        android:strokeWidth="1"
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M22,3.41L16.71,8.7L20,12h-8V4l3.29,3.29L20.59,2L22,3.41zM3.41,22l5.29,-5.29L12,20v-8H4l3.29,3.29L2,20.59L3.41,22z" />
+        android:strokeColor="#99000000" android:strokeWidth="3.2" android:strokeLineJoin="round"
+        android:pathData="M6,4 H18 A2,2 0 0 1 20,6 V18 A2,2 0 0 1 18,20 H11 M4,11 V6 A2,2 0 0 1 6,4 M18,6 L11,13 M11,8.5 V13 H15.5" />
+    <path
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineJoin="round" android:strokeLineCap="round"
+        android:pathData="M6,4 H18 A2,2 0 0 1 20,6 V18 A2,2 0 0 1 18,20 H11 M4,11 V6 A2,2 0 0 1 6,4 M18,6 L11,13 M11,8.5 V13 H15.5" />
+    <path android:fillColor="#99000000" android:pathData="M3,13 H10.6 V20.6 H3 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,14 H10 V20 H4 Z" />
 </vector>
