@@ -180,95 +180,42 @@ object AutelProductHolder {
     }
 
     /**
-     * Ask the camera whether it is recording, instead of believing a flag.
-     *
-     * `getCurrentRecordTime` returns the seconds the camera has been recording, thus anything
-     * above zero IS a recording in progress. It is an independent signal from the MediaStatus
-     * pushes this object normally learns from, which is the point: a push can be missed, and
-     * after a process restart there were never any pushes to miss.
-     *
-     * ⚠ One call, not a subscription — confirmed in the bytecode before use (safety rule 1).
-     *
-     * Called when a camera is armed or re-armed, never on a timer. The REC pill repaints from
-     * [isRecording] on every HUD tick, so a correction that arrives late still reaches the pilot
-     * within a tick and needs no other plumbing.
+     * The camera's own report of what it is DOING — IDLE, CAPTURE, RECORD, RECORD_PHOTO_TAKING.
+     * Null until it says. Carried on the same ~2 Hz info push as the FOV and the card figures,
+     * thus it costs no call of its own.
      */
-    private fun syncRecordingStateFromCamera(cam: AutelXT706?, onAnswer: ((Boolean?) -> Unit)? = null) {
-        if (cam == null) { onAnswer?.invoke(null); return }
-        runCatching {
-            cam.getCurrentRecordTime(object : com.autel.common.CallbackWithOneParam<Int> {
-                override fun onSuccess(seconds: Int?) {
-                    val recording = (seconds ?: 0) > 0
-                    if (recording != isRecording) {
-                        AppLog.i(TAG, "recording state corrected from the camera: " +
-                            "was $isRecording, camera reports ${seconds}s -> $recording")
-                    }
-                    isRecording = recording
-                    onAnswer?.invoke(recording)
-                }
-                override fun onFailure(error: AutelError?) {
-                    // The flag is left alone. An unanswered question is not an answer, and
-                    // guessing "not recording" here would put the pill back where it was.
-                    AppLog.w(TAG, "getCurrentRecordTime failed: ${error?.description}")
-                    onAnswer?.invoke(null)
-                }
-            })
-        }.onFailure {
-            AppLog.w(TAG, "getCurrentRecordTime threw: ${it.message}")
-            onAnswer?.invoke(null)
-        }
-    }
+    @Volatile var workState: com.autel.common.camera.base.WorkState? = null
+        private set
+
+    /** True when the camera says it is recording, whatever the pushes have or have not said. */
+    val cameraSaysRecording: Boolean
+        get() = workState == com.autel.common.camera.base.WorkState.RECORD ||
+                workState == com.autel.common.camera.base.WorkState.RECORD_PHOTO_TAKING
 
     /**
-     * Asks the camera whether it is recording, and reports the answer — null when it did not
-     * answer, which is NOT the same as "no".
+     * Corrects [isRecording] from the camera's own work state.
      *
-     * ⚠ **THE CALLBACK COMES BACK ON THE SDK'S THREAD**, like every callback in this file. A
-     * caller that touches the UI must hop to the main thread itself.
+     * ⚠ **THIS REPLACED A READ THAT LIED** (2026-09-16). The correction used to call
+     * `getCurrentRecordTime` and treat "> 0 seconds" as recording. Measured on the controller at
+     * 15:36:09, six seconds into a confirmed recording, that call answered **-1209991155**. The
+     * SDK hands the seconds back through a `CallbackWithOneParam<Int>` while the camera-info
+     * object types the same value as a LONG, and the truncation is what comes out. So the
+     * correction read a live recording as "not recording", cleared the flag, and the REC pill
+     * went dark with the aircraft still rolling. **Do not use `getCurrentRecordTime` for a
+     * decision. It is not a duration and it is not a state.**
      *
-     * For a caller that must not act on a stale flag. The REC pill is the case that matters:
-     * the flag is the right thing to PAINT from, on every tick, but the wrong thing to base an
-     * irreversible press on. See FlightActivity.onRecordToggleTapped.
+     * `WorkState` is an enum on the ~2 Hz info push, thus it cannot be truncated into a wrong
+     * answer and it needs no call. UNKNOWN and null are NOT answers and change nothing.
      */
-    fun askRecordingState(onAnswer: (Boolean?) -> Unit) =
-        syncRecordingStateFromCamera(camera as? AutelXT706, onAnswer)
-
-    /** How often the recording state is re-asked while a camera is attached. SLOW on purpose —
-     *  this is a correction, not a source. See [startRecordingStateWatch]. */
-    private const val RECORD_STATE_POLL_MS = 5000L
-
-    private val recordingStateWatch = object : Runnable {
-        override fun run() {
-            val cam = camera as? AutelXT706 ?: return   // no camera: the watch stops here
-            syncRecordingStateFromCamera(cam)
-            mainHandler.postDelayed(this, RECORD_STATE_POLL_MS)
+    private fun applyWorkState(state: com.autel.common.camera.base.WorkState?) {
+        if (state == null || state == com.autel.common.camera.base.WorkState.UNKNOWN) return
+        workState = state
+        val recording = cameraSaysRecording
+        if (recording != isRecording) {
+            AppLog.i(TAG, "recording state corrected from the camera's work state: " +
+                "was $isRecording, camera reports $state -> $recording")
         }
-    }
-
-    /**
-     * Re-asks the camera what it is doing, every [RECORD_STATE_POLL_MS], while a camera is
-     * attached.
-     *
-     * ⚠ **THIS EXISTS BECAUSE A WRONG FLAG USED TO BE PERMANENT.** `isRecording` is learned
-     * from pushes, and a recording that is already running has no further RECORD_START to send.
-     * So a flag that went false while the aircraft recorded stayed false for the rest of the
-     * flight: a dark REC pill, and a tap that took the start path and told the pilot the camera
-     * did not confirm (2026-09-16). Every other repair — the re-fire guard, asking instead of
-     * clearing — closes one way IN. This closes the way it stays.
-     *
-     * ⚠ **THE CADENCE IS NOT A SUBSCRIPTION AND MUST NOT BECOME ONE.** `getCurrentRecordTime`
-     * is one call per tick, confirmed in the bytecode (safety rule 1), on the camera channel and
-     * never the fly-controller channel (safety rule 3). 5 s is chosen to be far slower than the
-     * camera's own 2 Hz push: the pushes remain the source and this only catches what they miss.
-     * A failed read changes nothing — see [syncRecordingStateFromCamera].
-     */
-    private fun startRecordingStateWatch() {
-        mainHandler.removeCallbacks(recordingStateWatch)
-        mainHandler.postDelayed(recordingStateWatch, RECORD_STATE_POLL_MS)
-    }
-
-    private fun stopRecordingStateWatch() {
-        mainHandler.removeCallbacks(recordingStateWatch)
+        isRecording = recording
     }
 
     private val mediaStateListener = object : CallbackWithTwoParams<MediaStatus, String> {
@@ -418,6 +365,10 @@ object AutelProductHolder {
             // it. Only the free/used figures and card health come from here; WHICH storage the
             // camera writes to is not in this object and has to be read separately, see
             // [armCameraStorage].
+            // What the camera is DOING, off the same push. This is the ONLY correction for the
+            // recording flag — see [applyWorkState] for the read it replaced and why.
+            runCatching { applyWorkState(info.workState) }
+
             runCatching {
                 sdCardState = info.sdCardState
                 mmcState = info.mmcState
@@ -531,15 +482,13 @@ object AutelProductHolder {
                 cam?.setMediaStateListener(mediaStateListener)
                 // ⚠ ASK THE CAMERA whether it is recording rather than assume the flag survived.
                 // This is the read-back that makes the pill true again.
-                syncRecordingStateFromCamera(cam as? AutelXT706)
-                startRecordingStateWatch()
                 // The screens still need telling: a flight screen created after this point reads
                 // the camera at this event and nowhere else.
                 (cam as? AutelXT706)?.let { notifyCameraReady() }
                 return
             }
             armedCameraType = type
-            // ⚠ THE RECORDING FLAG IS NOT CLEARED HERE. IT IS ASKED.
+            // ⚠ THE RECORDING FLAG IS NOT CLEARED HERE.
             //
             // This line was `isRecording = false`, and it is how the pill went dark while the
             // aircraft was recording (2026-09-16). The read-back below was meant to cover it,
@@ -554,20 +503,18 @@ object AutelProductHolder {
             // of the flight: the pill is dark, and a tap takes the START path and tells the
             // pilot the camera did not confirm. Only a hardware stop/start recovers it.
             //
-            // So the camera is asked, and only the ANSWER moves the flag — see
-            // [syncRecordingStateFromCamera]. On a genuinely new camera session the answer is
-            // 0 seconds and the flag lands false anyway, which is the case this clear was
-            // written for.
+            // So only the camera's own work state moves the flag — see [applyWorkState]. On a
+            // genuinely new camera session it reports IDLE within ~500 ms and the flag lands
+            // false anyway, which is the case this clear was written for.
             mediaMode = null      // and so is the mode — unknown until the new camera says
             zoomBaseRaw = null
             liveHFovDeg = null; liveVFovDeg = null; lastLoggedCamInfo = null
             storageTarget = null; sdCardState = null; mmcState = null
             sdFreeMb = null; mmcFreeMb = null; mmcTotalMb = null
             cam?.setMediaStateListener(mediaStateListener)
-            // A cold start into an aircraft that is ALREADY recording has no push to learn from,
-            // thus the camera is asked directly here too.
-            syncRecordingStateFromCamera(cam as? AutelXT706)
-            startRecordingStateWatch()
+            // A cold start into an aircraft that is ALREADY recording has no MediaStatus push
+            // to learn from. The info push carries the work state within ~500 ms and corrects it
+            // — see [applyWorkState].
             // Storage FIRST among the XT706 calls: until this has run, a REC press against
             // internal flash throws inside the SDK rather than reporting anything. See
             // [armCameraStorage].
@@ -821,7 +768,6 @@ object AutelProductHolder {
                 camera = null
                 armedCamera = null
                 armedCameraType = null
-                stopRecordingStateWatch()
                 isRecording = false
                 // Unknown rather than stale: the mode belongs to a camera that has gone.
                 mediaMode = null
@@ -856,7 +802,6 @@ object AutelProductHolder {
     fun release() {
         AppLog.i(TAG, "releasing aircraft link (listeners + SDK)")
         runCatching { product?.cameraManager?.setCameraChangeListener(null) }
-        stopRecordingStateWatch()
         runCatching { camera?.setMediaStateListener(null) }
         runCatching { Autel.setProductConnectListener(null) }
         runCatching { Autel.destroy() }
