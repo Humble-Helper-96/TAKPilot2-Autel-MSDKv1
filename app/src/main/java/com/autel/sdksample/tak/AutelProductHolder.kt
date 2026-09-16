@@ -462,7 +462,25 @@ object AutelProductHolder {
                 return
             }
             armedCameraType = type
-            isRecording = false   // new camera session — state re-learned from its events
+            // ⚠ THE RECORDING FLAG IS NOT CLEARED HERE. IT IS ASKED.
+            //
+            // This line was `isRecording = false`, and it is how the pill went dark while the
+            // aircraft was recording (2026-09-16). The read-back below was meant to cover it,
+            // but the clear ran FIRST and the read is the part that can fail: camera getters
+            // were measured timing out ~350 ms after RECORD_START, thus the one moment this
+            // needs an answer is the moment the camera is least able to give one. A failed read
+            // leaves the flag alone by design, which preserved the wrong answer instead of the
+            // right one.
+            //
+            // ⚠ AND THERE IS NO SECOND CHANCE FROM THE PUSHES. A recording already running has
+            // no further RECORD_START to send, thus a wrong-false flag stays wrong for the rest
+            // of the flight: the pill is dark, and a tap takes the START path and tells the
+            // pilot the camera did not confirm. Only a hardware stop/start recovers it.
+            //
+            // So the camera is asked, and only the ANSWER moves the flag — see
+            // [syncRecordingStateFromCamera]. On a genuinely new camera session the answer is
+            // 0 seconds and the flag lands false anyway, which is the case this clear was
+            // written for.
             mediaMode = null      // and so is the mode — unknown until the new camera says
             zoomBaseRaw = null
             liveHFovDeg = null; liveVFovDeg = null; lastLoggedCamInfo = null
