@@ -3,7 +3,10 @@
 **Written in Simplified Technical English (ASD-STE100).** This file goes to the agent on
 every invocation. It holds the decisions and the safety rules that the code cannot show by
 itself. The full reference is `TAKPILOT2_AUTEL_PORT_PLAN.md`; the current state is
-`PORT-STATUS.md`.
+`PORT-STATUS.md`. **`README.md` is CURRENT as of v2.3.2 (2026-09-16)**: it was rewritten that
+day against this file, the gradle version record and the tree. It is the public face of the
+repository, thus a release that changes what the application does, or the list of documents,
+owes it a line.
 
 ## What this application is
 
