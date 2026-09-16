@@ -90,6 +90,12 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.3.2 IS RELEASED** — tag `v2.3.2`, versionCode 97, 2026-09-16, on the operator's controller.
+A persistent item never reports stale (`TakUser.isStale`), so a marker shared through TAK Aware
+keeps its colour instead of going grey when the sender's ten-minute window passes. Shared core:
+the taklite-core master moved first (commit `1cd9d3e` in the UAS_Apps repo, which also committed
+the 14 September `isUasReport` move that had sat on disk). Both DJI trees owe both moves.
+
 **v2.3.1 IS RELEASED** — tag `v2.3.1`, versionCode 96, 2026-09-15: the log switch sets its
 three options (on checks all, off clears all) and the resource row follows the switch.
 
