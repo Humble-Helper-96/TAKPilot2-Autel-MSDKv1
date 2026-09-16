@@ -58,7 +58,18 @@ public class TakUser {
         this.staleTime = staleTime;
     }
 
+    /**
+     * True when the sender's stale time has passed. A renderer draws a stale item grey.
+     *
+     * A PERSISTENT item never reports stale (operator, 2026-09-16). The stale sweep already
+     * ignores the sender's window for a placed marker, because senders put useless windows on
+     * them: CloudTAK about four seconds, TAK Aware ten minutes. The colour then trusted the same
+     * window the sweep distrusted, and a marker shared through TAK Aware turned grey ten minutes
+     * after it was placed while it stayed on the map for 72 hours. A placed marker keeps its
+     * colour until it is deleted or evicted. Live clients and air tracks grey as before.
+     */
     public boolean isStale() {
+        if (persistent) return false;
         return System.currentTimeMillis() > staleTime;
     }
 

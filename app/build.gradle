@@ -1463,8 +1463,13 @@ android {
         //        off clears all three. A checked box under an off switch was still showing the
         //        resource row on the flight screen, because the row read the box and not the
         //        switch. The radar and resource getters are gated on the switch as well.
-        versionCode 96
-        versionName "2.3.1"
+        // v2.3.2 — 2026-09-16. A SHARED MARKER KEEPS ITS COLOUR (operator). A marker shared
+        //        through TAK Aware arrives with a ten-minute stale window; the sweep kept it, as
+        //        it keeps every placed marker, but the map and the AR drew it grey once the ten
+        //        minutes passed. TakUser.isStale is false for a persistent item now. Shared core:
+        //        taklite-core master first, then this tree. The DJI trees owe it.
+        versionCode 97
+        versionName "2.3.2"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

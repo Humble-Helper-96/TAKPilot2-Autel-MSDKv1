@@ -756,15 +756,12 @@ public class TakManager implements TakClient.TakClientListener {
             TakUser user = takUsers.get(key);
             if (user != null) {
                 if (user.isPersistent()) {
-                    // Still notify while stale so the icon can grey — just never remove.
-                    if (user.isStale()) {
-                        mainHandler.post(() -> {
-                            synchronized (listeners) {
-                                for (TakUserListener l : listeners) l.onTakUserUpdated(user);
-                            }
-                        });
-                    }
-                } else if (user.isExpired()) {
+                    // Never removed here, and never stale: TakUser.isStale is false for a
+                    // persistent item (2026-09-16), so there is no grey repaint to post. A placed
+                    // marker leaves on a delete or on the 72-hour eviction in TakMapMarkers.
+                    continue;
+                }
+                if (user.isExpired()) {
                     takUsers.remove(key);
                     mainHandler.post(() -> {
                         synchronized (listeners) {
