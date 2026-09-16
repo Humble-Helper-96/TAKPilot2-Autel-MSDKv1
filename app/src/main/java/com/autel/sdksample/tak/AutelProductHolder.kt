@@ -214,6 +214,44 @@ object AutelProductHolder {
         }.onFailure { AppLog.w(TAG, "getCurrentRecordTime threw: ${it.message}") }
     }
 
+    /** How often the recording state is re-asked while a camera is attached. SLOW on purpose —
+     *  this is a correction, not a source. See [startRecordingStateWatch]. */
+    private const val RECORD_STATE_POLL_MS = 5000L
+
+    private val recordingStateWatch = object : Runnable {
+        override fun run() {
+            val cam = camera as? AutelXT706 ?: return   // no camera: the watch stops here
+            syncRecordingStateFromCamera(cam)
+            mainHandler.postDelayed(this, RECORD_STATE_POLL_MS)
+        }
+    }
+
+    /**
+     * Re-asks the camera what it is doing, every [RECORD_STATE_POLL_MS], while a camera is
+     * attached.
+     *
+     * ⚠ **THIS EXISTS BECAUSE A WRONG FLAG USED TO BE PERMANENT.** `isRecording` is learned
+     * from pushes, and a recording that is already running has no further RECORD_START to send.
+     * So a flag that went false while the aircraft recorded stayed false for the rest of the
+     * flight: a dark REC pill, and a tap that took the start path and told the pilot the camera
+     * did not confirm (2026-09-16). Every other repair — the re-fire guard, asking instead of
+     * clearing — closes one way IN. This closes the way it stays.
+     *
+     * ⚠ **THE CADENCE IS NOT A SUBSCRIPTION AND MUST NOT BECOME ONE.** `getCurrentRecordTime`
+     * is one call per tick, confirmed in the bytecode (safety rule 1), on the camera channel and
+     * never the fly-controller channel (safety rule 3). 5 s is chosen to be far slower than the
+     * camera's own 2 Hz push: the pushes remain the source and this only catches what they miss.
+     * A failed read changes nothing — see [syncRecordingStateFromCamera].
+     */
+    private fun startRecordingStateWatch() {
+        mainHandler.removeCallbacks(recordingStateWatch)
+        mainHandler.postDelayed(recordingStateWatch, RECORD_STATE_POLL_MS)
+    }
+
+    private fun stopRecordingStateWatch() {
+        mainHandler.removeCallbacks(recordingStateWatch)
+    }
+
     private val mediaStateListener = object : CallbackWithTwoParams<MediaStatus, String> {
         override fun onSuccess(status: MediaStatus?, detail: String?) {
             status ?: return
@@ -456,6 +494,7 @@ object AutelProductHolder {
                 // ⚠ ASK THE CAMERA whether it is recording rather than assume the flag survived.
                 // This is the read-back that makes the pill true again.
                 syncRecordingStateFromCamera(cam as? AutelXT706)
+                startRecordingStateWatch()
                 // The screens still need telling: a flight screen created after this point reads
                 // the camera at this event and nowhere else.
                 (cam as? AutelXT706)?.let { notifyCameraReady() }
@@ -490,6 +529,7 @@ object AutelProductHolder {
             // A cold start into an aircraft that is ALREADY recording has no push to learn from,
             // thus the camera is asked directly here too.
             syncRecordingStateFromCamera(cam as? AutelXT706)
+            startRecordingStateWatch()
             // Storage FIRST among the XT706 calls: until this has run, a REC press against
             // internal flash throws inside the SDK rather than reporting anything. See
             // [armCameraStorage].
@@ -743,6 +783,7 @@ object AutelProductHolder {
                 camera = null
                 armedCamera = null
                 armedCameraType = null
+                stopRecordingStateWatch()
                 isRecording = false
                 // Unknown rather than stale: the mode belongs to a camera that has gone.
                 mediaMode = null
@@ -777,6 +818,7 @@ object AutelProductHolder {
     fun release() {
         AppLog.i(TAG, "releasing aircraft link (listeners + SDK)")
         runCatching { product?.cameraManager?.setCameraChangeListener(null) }
+        stopRecordingStateWatch()
         runCatching { camera?.setMediaStateListener(null) }
         runCatching { Autel.setProductConnectListener(null) }
         runCatching { Autel.destroy() }
