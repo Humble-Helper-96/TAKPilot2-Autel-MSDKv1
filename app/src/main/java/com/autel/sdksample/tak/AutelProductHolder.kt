@@ -193,8 +193,8 @@ object AutelProductHolder {
      * [isRecording] on every HUD tick, so a correction that arrives late still reaches the pilot
      * within a tick and needs no other plumbing.
      */
-    private fun syncRecordingStateFromCamera(cam: AutelXT706?) {
-        cam ?: return
+    private fun syncRecordingStateFromCamera(cam: AutelXT706?, onAnswer: ((Boolean?) -> Unit)? = null) {
+        if (cam == null) { onAnswer?.invoke(null); return }
         runCatching {
             cam.getCurrentRecordTime(object : com.autel.common.CallbackWithOneParam<Int> {
                 override fun onSuccess(seconds: Int?) {
@@ -204,15 +204,34 @@ object AutelProductHolder {
                             "was $isRecording, camera reports ${seconds}s -> $recording")
                     }
                     isRecording = recording
+                    onAnswer?.invoke(recording)
                 }
                 override fun onFailure(error: AutelError?) {
                     // The flag is left alone. An unanswered question is not an answer, and
                     // guessing "not recording" here would put the pill back where it was.
                     AppLog.w(TAG, "getCurrentRecordTime failed: ${error?.description}")
+                    onAnswer?.invoke(null)
                 }
             })
-        }.onFailure { AppLog.w(TAG, "getCurrentRecordTime threw: ${it.message}") }
+        }.onFailure {
+            AppLog.w(TAG, "getCurrentRecordTime threw: ${it.message}")
+            onAnswer?.invoke(null)
+        }
     }
+
+    /**
+     * Asks the camera whether it is recording, and reports the answer — null when it did not
+     * answer, which is NOT the same as "no".
+     *
+     * ⚠ **THE CALLBACK COMES BACK ON THE SDK'S THREAD**, like every callback in this file. A
+     * caller that touches the UI must hop to the main thread itself.
+     *
+     * For a caller that must not act on a stale flag. The REC pill is the case that matters:
+     * the flag is the right thing to PAINT from, on every tick, but the wrong thing to base an
+     * irreversible press on. See FlightActivity.onRecordToggleTapped.
+     */
+    fun askRecordingState(onAnswer: (Boolean?) -> Unit) =
+        syncRecordingStateFromCamera(camera as? AutelXT706, onAnswer)
 
     /** How often the recording state is re-asked while a camera is attached. SLOW on purpose —
      *  this is a correction, not a source. See [startRecordingStateWatch]. */

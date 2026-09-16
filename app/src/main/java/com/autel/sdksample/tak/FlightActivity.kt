@@ -3085,12 +3085,34 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             cam.stopRecordVideo(camCb("stopRecordVideo"))
             return
         }
-        // ⚠ **REC RECORDS FROM ANY MODE** (operator, 2026-09-15). From 2026-09-13 to today the
-        // pill was a SHUTTER while the camera was in stills; the operator's rule now is that
-        // the record button — pill or hardware — puts the camera in video if it is not there,
-        // starts, and leaves it in video; the hardware shutter puts it in stills and leaves it
-        // there. One rule for both buttons, and the pill always reads REC.
-        startRecordFromAnyMode(cam)
+        // ⚠ **REC RECORDS FROM ANY MODE** (operator, 2026-09-15). From 2026-09-13 to
+        // 2026-09-15 the pill was a SHUTTER while the camera was in stills; the operator's
+        // rule now is that the record button — pill or hardware — puts the camera in video if
+        // it is not there, starts, and leaves it in video; the hardware shutter puts it in
+        // stills and leaves it there. One rule for both buttons, and the pill always reads REC.
+        //
+        // ⚠ **THE FLAG PAINTS THE PILL, BUT IT DOES NOT DECIDE THIS PRESS.** The flag is
+        // learned from pushes, and a recording that is already running sends no further
+        // RECORD_START, thus a flag that went false mid-recording used to stay false: the
+        // pilot pressed a dark pill, this took the START path against a camera that was
+        // already recording, and the watchdog answered that the camera did not confirm
+        // (2026-09-16). The camera is asked instead — one call, the same one the correction
+        // cadence uses — and a recording that is really running is STOPPED, which is what the
+        // pilot meant by pressing the only record control on the screen.
+        //
+        // ⚠ An unanswered read is NOT a "no". It falls through to the start path, which is
+        // where this press would have gone anyway, and that path verifies its own outcome.
+        AutelProductHolder.askRecordingState { recording ->
+            runOnUiThread {
+                if (AutelProductHolder.camera == null) return@runOnUiThread
+                if (recording == true) {
+                    AppLog.i(TAG, "REC pressed while the camera was already recording — stopping")
+                    cam.stopRecordVideo(camCb("stopRecordVideo"))
+                } else {
+                    startRecordFromAnyMode(cam)
+                }
+            }
+        }
     }
 
     /**
