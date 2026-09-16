@@ -1468,8 +1468,32 @@ android {
         //        it keeps every placed marker, but the map and the AR drew it grey once the ten
         //        minutes passed. TakUser.isStale is false for a persistent item now. Shared core:
         //        taklite-core master first, then this tree. The DJI trees owe it.
-        versionCode 97
-        versionName "2.3.2"
+        // v2.3.3 — 2026-09-16. THE REC PILL STAYS LIT WHILE THE AIRCRAFT RECORDS. Reproduced
+        //        on the controller: start a recording, leave the flight screen, come back, and
+        //        the pill was dark with the aircraft still rolling; a press then gave "Needs an
+        //        idle status to start recording videos" and only the hardware button recovered
+        //        it.
+        //        ⚠ THE FAULT WAS THE CORRECTION, NOT THE PUSHES. Returning to the screen
+        //        re-fires the camera listener, which asked getCurrentRecordTime to confirm the
+        //        state. At 15:36:09, six seconds into a recording the camera had itself
+        //        confirmed with RECORD_START, THAT CALL ANSWERED -1209991155. The SDK returns
+        //        the seconds through a CallbackWithOneParam<Int> while XT706CameraInfo types
+        //        the same value a LONG; the truncation is what comes out. So "> 0 seconds" read
+        //        a live recording as idle and cleared the flag — and nothing could put it back,
+        //        since a recording already running sends no second RECORD_START.
+        //        ⚠ DO NOT USE getCurrentRecordTime FOR A DECISION. It is not a duration and it
+        //        is not a state. It is left in the aar untouched and unused.
+        //        The correction is XT706CameraInfo.getWorkState() — IDLE / CAPTURE / RECORD /
+        //        RECORD_PHOTO_TAKING — an enum on the ~2 Hz info push that already carries the
+        //        FOV and the card figures. No call of its own, and nothing to truncate. UNKNOWN
+        //        and null are not answers and change nothing.
+        //        Also: the camera-change branch no longer CLEARS the flag before asking (the
+        //        clear ran first and the read is the part that can fail); a REC press checks the
+        //        work state as well as the flag and STOPS a recording the pill did not know
+        //        about; and the UnknownCamera placeholder the listener announces ~3 s before the
+        //        real camera is ignored rather than armed on.
+        versionCode 98
+        versionName "2.3.3"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
