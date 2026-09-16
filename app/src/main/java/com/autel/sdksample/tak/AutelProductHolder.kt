@@ -465,6 +465,25 @@ object AutelProductHolder {
     private val cameraChangeListener = object : CallbackWithTwoParams<CameraProduct, AutelBaseCamera> {
         override fun onSuccess(type: CameraProduct?, cam: AutelBaseCamera?) {
             AppLog.i(TAG, "camera changed: $type (${cam?.javaClass?.simpleName ?: "null"})")
+            // ⚠ THE PLACEHOLDER IS NOT A CAMERA CHANGE, AND IT MUST NOT REACH THE RE-FIRE GUARD.
+            //
+            // This listener announces UnknownCamera / CameraProduct.UNKNOWN before the real one
+            // (measured 3 s ahead — see the note at the foot of this listener). The guard below
+            // compares TYPES, thus a placeholder delivered on a re-fire reads as a DIFFERENT
+            // camera, takes the new-session branch, and re-runs the connect sequence on top of a
+            // live recording. The real camera then arrives, compares against the placeholder's
+            // type, and does it a second time. That is one way the REC pill went dark with the
+            // aircraft still recording (2026-09-16).
+            //
+            // It also must not become [camera]: a placeholder answers no call, so publishing it
+            // would replace a working camera with one that fails everything asked of it for as
+            // long as the gap lasts.
+            //
+            // Nothing is lost by dropping it. It is a null answer with a name.
+            if (type == null || type == CameraProduct.UNKNOWN || cam == null) {
+                AppLog.i(TAG, "camera placeholder ignored — waiting for the real camera")
+                return
+            }
             camera = cam
             // ⚠ THE LISTENER RE-FIRES FOR THE SAME CAMERA ON EVERY SCREEN CHANGE, AND THE APP
             // USED TO TREAT THAT AS A NEW CAMERA.
