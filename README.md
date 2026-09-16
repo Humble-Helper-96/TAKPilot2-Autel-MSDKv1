@@ -1,4 +1,4 @@
-# TAKPilot2 — Autel Mobile SDK v1 port
+# TAKPilot2 — Autel Mobile SDK port
 
 **Written in Simplified Technical English (ASD-STE100).**
 
