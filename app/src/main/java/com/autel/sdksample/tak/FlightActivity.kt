@@ -117,6 +117,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // frame of the new view does, which is what the connect-time resync does.
             codecView?.let { v -> runOnUiThread { applyVideoFill(v) } }
         }
+    private lateinit var blendSlider: BlendRatioSliderView
+    /** Last time the drag wrote to the camera, to throttle the stroke. See [wireBlendSlider]. */
+    private var lastBlendWriteMs = 0L
+
     /**
      * Re-reads the camera the moment a REAL one attaches, not at onResume.
      *
@@ -360,7 +364,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // Measured like everything else here, so a column that gains or loses a pill needs
             // no second value. The obstacle view has had this since 2026-09-15 — see below.
             val column = findViewById<View>(R.id.flightToolbarActions)
-            val columnRight = column.x + column.width
+            // ⚠ THE SLIDER IS PART OF THE LEFT CHROME WHILE IT IS SHOWN. It sits beside the
+            // column and takes touches, so an edge arrow or a proximity label drawn on it is
+            // both hidden and in the way. Gone, it costs nothing — the column's edge again.
+            val columnRight =
+                if (::blendSlider.isInitialized && blendSlider.visibility == View.VISIBLE)
+                    blendSlider.x + blendSlider.width
+                else column.x + column.width
             // ⚠ THE RIGHT TAKES NO INSET, IT TAKES THE COLUMN'S OWN END PADDING (operator,
             // 2026-09-16). A screenshot in flight caught an arrow in the glyphs of "200 ft AGL".
             // The 2026-09-13 decision stands — the column is outlined text and an arrow behind
@@ -383,7 +393,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // And the LEFT inset for the actions column (2026-09-15): its right edge, so the
             // left-face label lands beside the column rather than under it.
             obstacleEdges.setLeftInset(columnRight)
+            // The slider is placed FROM THE COLUMN and matched to its height, in the one pass
+            // that already measures everything else here.
+            if (::blendSlider.isInitialized) {
+                val gap = resources.getDimension(R.dimen.hud_pill_stroke) * 8f
+                val x = column.x + column.width + gap
+                if (blendSlider.x != x) blendSlider.x = x
+                if (blendSlider.layoutParams.height != column.height && column.height > 0) {
+                    blendSlider.layoutParams.height = column.height
+                    blendSlider.requestLayout()
+                }
+            }
         }
+        blendSlider = findViewById(R.id.flightBlendSlider)
+        wireBlendSlider()
         streamToggle = findViewById(R.id.flightStreamButton)
         recordToggle = findViewById(R.id.flightRecordButton)
         toolbarSignal = findViewById(R.id.toolbarSignal)
@@ -2544,6 +2567,49 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      * day; the pill is where the thumb already is. [PipWindowGeometry] still records where the
      * camera draws the window.
      */
+    /**
+     * The blend slider follows the camera's own value into the pilot's hand, and is SHOWN ONLY
+     * IN PIP (operator, 2026-09-16).
+     *
+     * ⚠ **THE WRITE IS THROTTLED DURING THE DRAG AND COMMITTED ON THE LIFT.** A stroke of the
+     * thumb crosses twenty steps; twenty writes to the camera in half a second is the shape of
+     * the keystroke burst that crashed an aircraft on 2026-08-02, even though this is the
+     * camera's channel and not the fly-controller's. So the drag sends at most one write per
+     * [BLEND_WRITE_MS], the pilot sees the picture move as they go, and the lift sends the
+     * final value and STORES it. Only the lift is stored: a value the thumb passed over on the
+     * way is not a decision.
+     */
+    private fun wireBlendSlider() {
+        blendSlider.percent = AutelBlendFormat.percent(this)
+        blendSlider.onPercentChanged = { percent, settled ->
+            val cam = AutelProductHolder.xt706
+            if (settled) {
+                AutelBlendFormat.setPercent(this, percent)
+                AutelBlendFormat.sendPercent(cam, percent)
+                AppLog.i(TAG, "PIP blend set to $percent% thermal")
+            } else {
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastBlendWriteMs >= BLEND_WRITE_MS) {
+                    lastBlendWriteMs = now
+                    AutelBlendFormat.sendPercent(cam, percent)
+                }
+            }
+        }
+    }
+
+    /** Shown only in PIP, where there are two layers to mix. See [BlendRatioSliderView]. */
+    private fun renderBlendSlider() {
+        if (!::blendSlider.isInitialized) return
+        val show = cameraView == CameraView.PIP
+        val want = if (show) View.VISIBLE else View.GONE
+        if (blendSlider.visibility != want) {
+            blendSlider.visibility = want
+            // The left chrome inset changes with it — the AR arrows and the proximity labels
+            // are measured from the slider's edge while it is on screen.
+            findViewById<View>(R.id.flightToolbar).requestLayout()
+        }
+    }
+
     private fun renderPipSizeButton() {
         if (!::pipSizeButton.isInitialized) return
         val target = cameraView.maximised
@@ -2557,6 +2623,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
      *  view like the zoom pill is labelled with its level; palette button shown only then. */
     private fun refreshIrButtons() {
         renderPipSizeButton()
+        renderBlendSlider()
         irButton.text = cameraView.label
         irButton.setBackgroundResource(
             if (cameraView.active) R.drawable.bg_pill_active else R.drawable.bg_zoom_pill
@@ -4205,6 +4272,9 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
         /** How long to wait for the camera's RECORD_START before assuming the start was ignored.
          *  When the camera is ready this arrives in ~1ms, so this is ~1000x margin. */
+        /** Slowest the PIP blend slider may write to the camera WHILE THE THUMB IS MOVING.
+         *  The lift always writes. See wireBlendSlider. */
+        private const val BLEND_WRITE_MS = 250L
         private const val RECORD_CONFIRM_MS = 1200L
 
         /**

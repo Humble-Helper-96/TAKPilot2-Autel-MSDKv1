@@ -96,8 +96,57 @@ object AutelBlendFormat {
      * it in flight; the control is not built yet (a flight-screen slider is a UI change and owes
      * both DJI trees — specification §4). Until it exists, every connect writes this.
      */
-    const val RATIO_IR = 49151
-    const val RATIO_VISIBLE = 16384
+    const val DEFAULT_PERCENT = 75
+
+    /** The pair the camera wants, from a thermal percentage. Explorer's own arithmetic:
+     *  IR = pct/100 × 65536, clamped to the 16-bit range, Visible = 65535 − IR. Pure, so
+     *  [AutelBlendFormatTest] can pin it without a camera. */
+    fun ratioFor(percent: Int): Pair<Int, Int> {
+        val ir = ((percent.coerceIn(0, 100) / 100.0) * 65536).toInt().coerceIn(0, 65535)
+        return ir to (65535 - ir)
+    }
+
+    private const val PREFS = "takpilot2_tak"
+    private const val KEY_PERCENT = "pip_blend_percent"
+
+    /** What the pilot last set with the slider, or [DEFAULT_PERCENT]. */
+    fun percent(context: android.content.Context): Int =
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .getInt(KEY_PERCENT, DEFAULT_PERCENT)
+
+    fun setPercent(context: android.content.Context, percent: Int) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putInt(KEY_PERCENT, percent.coerceIn(0, 100)).apply()
+    }
+
+    /**
+     * Sends a thermal percentage to the camera, for the pilot's slider.
+     *
+     * ⚠ **THIS IS THE ONE WRITE HERE THAT IS NOT AT CONNECT, AND IT IS A BUTTON PRESS, NOT A
+     * TIMER.** Safety rule 3 is about the fly-controller channel; this is the camera's, the
+     * same channel the zoom and the palette already use from a tap. The caller throttles the
+     * drag — see FlightActivity — so a stroke of the thumb is a few writes and not one per
+     * pixel.
+     *
+     * No read-back: the pilot is looking at the result. A verify that lands 1.5 s after a
+     * control the pilot is still moving would be arguing with them.
+     */
+    fun sendPercent(camera: AutelXT706?, percent: Int) {
+        camera ?: return
+        if (AutelProductHolder.isRecording) {
+            AppLog.i(TAG, "blend ratio $percent% not sent: the camera is recording")
+            return
+        }
+        val (ir, vis) = ratioFor(percent)
+        runCatching {
+            camera.setPipBlenderRatio(ir, vis, object : CallbackWithNoParam {
+                override fun onSuccess() { AppLog.i(TAG, "blend ratio -> $percent% ($ir/$vis)") }
+                override fun onFailure(error: AutelError?) {
+                    AppLog.w(TAG, "blend ratio $percent% failed: ${error?.description}")
+                }
+            })
+        }.onFailure { AppLog.w(TAG, "setPipBlenderRatio threw: ${it.message}") }
+    }
 
     /** The same settle as the recording format and the lens verify. */
     const val VERIFY_SETTLE_MS = 1500L
@@ -114,7 +163,13 @@ object AutelBlendFormat {
      * verify depends on can be tested without an aircraft. A null field is NOT a match.
      */
     fun agrees(base: String?, ratioIr: Int?, ratioVisible: Int?): Boolean =
-        base == BASE && ratioIr == RATIO_IR && ratioVisible == RATIO_VISIBLE
+        base == BASE && ratioIr == wanted.first && ratioVisible == wanted.second
+
+    /** The pair the last [applyAtConnect] asked for — what [agrees] compares against. The
+     *  pilot's slider moves it, so it cannot be a constant. */
+    @Volatile
+    var wanted: Pair<Int, Int> = ratioFor(DEFAULT_PERCENT)
+        private set
 
     /** What the camera held the last time this object looked, BEFORE any write of ours.
      *  Null until a camera has answered once. Shown on the Debug screen. */
@@ -141,6 +196,9 @@ object AutelBlendFormat {
      */
     fun applyAtConnect(camera: AutelXT706?) {
         camera ?: return
+        val pct = com.autel.sdksample.TestApplication.getInstance()?.let { percent(it) }
+            ?: DEFAULT_PERCENT
+        wanted = ratioFor(pct)
         if (AutelProductHolder.isRecording) {
             AppLog.i(TAG, "not applying the blend format: the camera is recording")
             return
@@ -178,7 +236,8 @@ object AutelBlendFormat {
     }
 
     private fun applyAfterRead(camera: AutelXT706) {
-        AppLog.i(TAG, "applying blend format: base=$BASE ratio=$RATIO_IR/$RATIO_VISIBLE")
+        AppLog.i(TAG, "applying blend format: base=$BASE " +
+            "ratio=${wanted.first}/${wanted.second}")
         camera.setPipBlenderBase(BASE, object : CallbackWithNoParam {
             override fun onSuccess() {
                 AppLog.i(TAG, "setPipBlenderBase($BASE): OK")
@@ -192,9 +251,9 @@ object AutelBlendFormat {
     }
 
     private fun setRatio(camera: AutelXT706) {
-        camera.setPipBlenderRatio(RATIO_IR, RATIO_VISIBLE, object : CallbackWithNoParam {
+        camera.setPipBlenderRatio(wanted.first, wanted.second, object : CallbackWithNoParam {
             override fun onSuccess() {
-                AppLog.i(TAG, "setPipBlenderRatio($RATIO_IR, $RATIO_VISIBLE): OK")
+                AppLog.i(TAG, "setPipBlenderRatio(${wanted.first}, ${wanted.second}): OK")
                 handler.postDelayed({ verify(camera) }, VERIFY_SETTLE_MS)
             }
             override fun onFailure(error: AutelError?) {
@@ -217,7 +276,8 @@ object AutelBlendFormat {
                             "ratio=${r?.IR}/${r?.Visible} agrees=$ok")
                         if (!ok) {
                             AppLog.w(TAG, "THE CAMERA DID NOT TAKE THE BLEND FORMAT. Asked for " +
-                                "$BASE $RATIO_IR/$RATIO_VISIBLE, it holds $base ${r?.IR}/${r?.Visible}")
+                                "$BASE ${wanted.first}/${wanted.second}, " +
+                                "it holds $base ${r?.IR}/${r?.Visible}")
                         }
                     }
                     override fun onFailure(error: AutelError?) {

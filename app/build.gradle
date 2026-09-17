@@ -1554,8 +1554,31 @@ android {
         //        percentage. 49151/16384 is 75 %, the operator's chosen default.
         //        ⚠ A PILOT-FACING SLIDER IS WANTED and is not built. It is a flight-screen
         //        control, thus specification §4 and both DJI trees — not a bolt-on.
-        versionCode 102
-        versionName "2.3.7"
+        // v2.3.8 — 2026-09-16. THE PILOT SETS THE PIP BLEND (operator). A vertical slider
+        //        parallel to the actions column's right edge, the column's own height, SHOWN
+        //        ONLY IN PIP — in visible there is no thermal layer and in full thermal there is
+        //        nothing to mix it with, thus the control would move and change nothing.
+        //        It is EvSliderView turned on its side: same track, ticks, thumb and black
+        //        double-pass outline, so the HUD keeps one weight of edge (specification §4.3).
+        //        UP IS MORE THERMAL, matching Explorer's percentage. 20 steps of 5 %.
+        //        ⚠ THE WRITE IS THROTTLED ON THE DRAG (250 ms) AND COMMITTED ON THE LIFT. A
+        //        stroke crosses twenty steps and twenty writes in half a second is the shape of
+        //        the 2026-08-02 keystroke burst, even on the camera's channel rather than the
+        //        fly-controller's. Only the lift is STORED: a value the thumb passed over is not
+        //        a decision. The stored value is what the next connect writes.
+        //        ⚠ THE SLIDER IS LEFT CHROME WHILE IT IS SHOWN. The AR overlay and the obstacle
+        //        view take their left inset from its right edge, or an edge arrow and a
+        //        proximity label are drawn on the thumb. Its x and its height come from the
+        //        MEASURED column in the same layout pass, never from a dp in the layout file.
+        //        ⚠ THE RATIO ARITHMETIC IS EXPLORER'S: IR = pct/100 x 65536, Visible = 65535 -
+        //        IR, pinned in AutelBlendFormatTest. v2.3.7's hand-computed 75 % pair was
+        //        49151/16384, one count low; the formula gives 49152/16383.
+        //        ⚠ AUTEL LEADS AND THE DJI TREES FOLLOW ONLY IF THE OPERATOR WANTS IT
+        //        (2026-09-16). This is a flight-screen control that deliberately does NOT land
+        //        in all three applications — the rule is suspended for it by the operator's
+        //        decision, as it was for the flight-screen refresh on 2026-09-12.
+        versionCode 103
+        versionName "2.3.8"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

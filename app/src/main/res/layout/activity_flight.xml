@@ -220,6 +220,24 @@
          capsules are children of the one horizontal band, thus the gap between them is a
          view and not a gravity. Making them separate children of the outer FrameLayout,
          anchored to their own corners, would also work and is NOT what is built here. -->
+    <!-- HOW MUCH THERMAL SHOWS IN THE PIP WINDOW (operator, 2026-09-16). A vertical slider
+         parallel to the actions column's right edge, the SAME HEIGHT as the column, shown only
+         while PIP is on screen.
+
+         ⚠ ITS X AND ITS HEIGHT ARE SET FROM THE MEASURED COLUMN, not from this file — see
+         FlightActivity's layout listener. A margin in dp here would be a second copy of the
+         column's width, and the column gains and loses pills.
+
+         ⚠ IT ALSO MOVES THE LEFT CHROME INSET of the AR overlay and the obstacle view while it
+         is shown, or an edge arrow and a proximity label are drawn on the thumb. -->
+    <com.autel.sdksample.tak.BlendRatioSliderView
+        android:id="@+id/flightBlendSlider"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="68dp"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/flightToolbarActions"
         android:layout_width="wrap_content"
