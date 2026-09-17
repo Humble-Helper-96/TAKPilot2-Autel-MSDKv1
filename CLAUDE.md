@@ -93,13 +93,12 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.3.8 IS BUILT, NOT RELEASED** — versionCode 103, 2026-09-16. PIP is `base=None` at 75 %
-thermal by default, and **THE PILOT SETS THE BLEND WITH A SLIDER**. v2.3.5 (100) measured the
-base, v2.3.6 (101) set it and v2.3.7 (102) took the ratio to 75 %; none of the three shipped.
-⚠ **THE SLIDER IS NOT BENCH TESTED** — it went on the controller and was not reported back on.
-The two parts built blind are the 250 ms drag throttle and the slider's height, which is set
-from the measured column and could come up short if the layout pass runs before the column has
-measured.
+**v2.3.8 IS RELEASED** — tag `v2.3.8`, versionCode 103, 2026-09-16, signed APK and notes in
+`../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. PIP is `base=None` at
+75 % thermal by default, and **THE PILOT SETS THE BLEND WITH A SLIDER**. v2.3.5 (100) measured
+the base, v2.3.6 (101) set it and v2.3.7 (102) took the ratio to 75 %; none of the three
+shipped. Bench tested on the controller by the operator — the outlines, the default and the
+slider. **NOT FLOWN.**
 
 **The slider** is vertical, parallel to the actions column's right edge, the column's own
 height, and **SHOWN ONLY IN PIP** — in visible there is no thermal layer and in full thermal
