@@ -93,9 +93,10 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.3.6 IS BUILT AND BENCH TESTED, NOT RELEASED** — versionCode 101, 2026-09-16. The PIP
-thermal window is plain thermal; the edge outlines are gone. v2.3.5 (versionCode 100) was the
-development build that measured it and shipped nowhere.
+**v2.3.7 IS BUILT AND BENCH TESTED, NOT RELEASED** — versionCode 102, 2026-09-16. PIP is
+`base=None` at 75 % thermal: no edge outlines, and the window is white-hot thermal with the
+scene still readable. v2.3.5 (versionCode 100) was the build that measured the base and v2.3.6
+(101) set it; both shipped nowhere.
 
 ⚠ **THE APPLICATION HAD BEEN TURNING THE EDGE OUTLINES ON AT EVERY CONNECT SINCE v2.3.0, AND
 NOTHING COULD SEE IT.** `AutelBlendFormat.applyAtConnect` wrote first and read back afterwards,
@@ -115,10 +116,19 @@ control above its blend slider), then TAKPilot2 was opened:
 ⚠ **`None` IS THE PLAIN THERMAL WINDOW AND `IR` IS THE EDGE LOOK. THE v2.2.0 BENCH NOTE HAS THE
 TWO BASES THE WRONG WAY ROUND** — it calls `Visible` the edge look and `IR` the plain window.
 ⚠ **`Visible` IS UNMEASURED ON THIS FIRMWARE.** Do not describe it from that note either.
-⚠ **THE RATIO IS NOT PART OF THIS.** The flame moves the BASE alone: the camera held this
-application's own pair in the state the pilot chose, thus the pair is unchanged. Explorer's
-SLIDER is the ratio (it writes IR = pct/100 × 65536, Visible = 65535 − IR); what it does under
-`None` is not measured.
+⚠ **THE RATIO IS AN OPACITY MIX AND IT IS LIVE UNDER `None`** (measured 2026-09-16, and it
+CORRECTS an earlier line here that said the ratio was not part of this). `None` is a BLEND, not
+blending switched off — the window carries visible-lens detail a 640x512 thermal cannot draw.
+The pair is Explorer's slider: IR = pct/100 × 65536, Visible = 65535 − IR, and Explorer reads
+back whatever this application last wrote. At 50 % (`32768/32767`, v2.3.6 and earlier) the
+window was half visible: gravel sharp enough to count the stones. At 75 % (`49151/16384`,
+v2.3.7) it is white-hot thermal with the scene still readable — **the operator's default**.
+⚠ The FLAME control in Explorer moves the BASE alone; the SLIDER is the ratio. Two different
+controls, and the outlines were the base.
+⚠ **A PILOT-FACING SLIDER IS WANTED** (operator, 2026-09-16) and is NOT built. It is a
+flight-screen control, thus specification §4 and both DJI trees — not a bolt-on. Until it
+exists the default goes to the camera at every connect. ⚠ 25 % and 100 % are unmeasured, so 75
+is a chosen value and not the best of a sweep.
 
 **PIP IS NOW THE APPLICATION'S DEFAULT, NOT EXPLORER'S LEFTOVERS** (operator, 2026-09-16). Base
 and ratio are written at every connect, so the picture is the same on every aircraft in the
