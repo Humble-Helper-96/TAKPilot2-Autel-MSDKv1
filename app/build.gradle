@@ -1546,8 +1546,16 @@ android {
         //        edge look. `Visible` is still unmeasured; do not describe it from that note.
         //        This is written at every connect, as before, so the picture is the same on
         //        every aircraft in the fleet whatever Explorer was last set to.
-        versionCode 101
-        versionName "2.3.6"
+        // v2.3.7 — 2026-09-16. THE PIP BLEND IS 75 % THERMAL. The ratio is an OPACITY MIX and
+        //        it is LIVE UNDER `None` — both of the earlier claims in AutelBlendFormat were
+        //        wrong. The window under `None` carries VISIBLE-lens detail (gravel sharp enough
+        //        to count the stones), which a 640x512 thermal cannot draw, and Explorer's
+        //        slider reads back 50 % after this application connects, which is this pair as a
+        //        percentage. 49151/16384 is 75 %, the operator's chosen default.
+        //        ⚠ A PILOT-FACING SLIDER IS WANTED and is not built. It is a flight-screen
+        //        control, thus specification §4 and both DJI trees — not a bolt-on.
+        versionCode 102
+        versionName "2.3.7"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

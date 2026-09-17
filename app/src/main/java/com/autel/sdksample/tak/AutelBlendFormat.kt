@@ -79,10 +79,25 @@ object AutelBlendFormat {
      */
     val BASE: String = PipBlenderBaseType.None.value()
 
-    /** An even weight. Over an `IR` base it does not change the look; it is written so the
-     *  pair is a known value. The two sum to 65535, the scale Explorer uses. */
-    const val RATIO_IR = 32768
-    const val RATIO_VISIBLE = 32767
+    /**
+     * How much of the THERMAL layer shows in the window, as Explorer's own slider writes it:
+     * IR = pct/100 × 65536, Visible = 65535 − IR. 49151/16384 is 75 %.
+     *
+     * ⚠ **IT IS AN OPACITY MIX, AND IT IS LIVE UNDER `None`** (operator, 2026-09-16). Two
+     * earlier claims in this file were wrong and are corrected here: that the ratio "does not
+     * change the look over an IR base", and that `None` means no blending. The operator moved
+     * Explorer's slider and watched the window go from no thermal at all, through the mixed
+     * look, to saturated at the top; and the window under `None` plainly carries VISIBLE-lens
+     * detail — gravel sharp enough to count the stones — which a 640x512 thermal cannot
+     * produce. Explorer's slider also reads back 50 % after this application connects, which is
+     * this pair rendered as a percentage.
+     *
+     * ⚠ **THIS IS A DEFAULT, NOT A CONSTANT IN SPIRIT.** The operator wants the pilot to adjust
+     * it in flight; the control is not built yet (a flight-screen slider is a UI change and owes
+     * both DJI trees — specification §4). Until it exists, every connect writes this.
+     */
+    const val RATIO_IR = 49151
+    const val RATIO_VISIBLE = 16384
 
     /** The same settle as the recording format and the lens verify. */
     const val VERIFY_SETTLE_MS = 1500L
