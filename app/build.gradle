@@ -1492,8 +1492,29 @@ android {
         //        work state as well as the flag and STOPS a recording the pill did not know
         //        about; and the UnknownCamera placeholder the listener announces ~3 s before the
         //        real camera is ignored rather than armed on.
-        versionCode 98
-        versionName "2.3.3"
+        // v2.3.4 — 2026-09-16. AR EDGE ARROWS KEEP OFF THE CHROME, both edges, both confirmed
+        //        by a screenshot in flight that day.
+        //        LEFT: the actions column (v2.3.0) was never handed to ArOverlayView, and an
+        //        arrow was drawn ON the AR pill. It is now a real inset, off the same measured
+        //        right edge the obstacle view has used since 2026-09-15 — one measurement,
+        //        both views. Excluded by INSET and never by corner: the column runs the full
+        //        height of the picture, so there is no "above it" to lift an arrow to.
+        //        RIGHT: an arrow drew hard against the glyphs of "200 ft AGL".
+        //        ⚠ THE RIGHT EDGE STILL TAKES NO INSET, AND MUST NOT (operator, 2026-09-13 and
+        //        again 2026-09-16). The readouts lost their panels in v1.7.7: the column is
+        //        outlined text over live video and an arrow behind it is visible. The old
+        //        full-width inset cost ~208dp — a fifth of this screen — on the edge a pilot
+        //        scans most. So the ARROW MOVES OUTBOARD instead, into the strip the column
+        //        already leaves clear: the right margin is the column's own paddingEnd, HALVED,
+        //        because the margin places the arrow's CENTRE and the arrow has a radius. 14dp
+        //        of padding against a 7dp radius fits exactly on this controller. A gap too
+        //        narrow for the whole arrow keeps the ordinary margin and overlaps visibly,
+        //        rather than hiding the cue.
+        //        Projected markers are untouched: they stay pinned to their true position even
+        //        under chrome. Only drawEdgeArrow reads any of this.
+        //        Specification §4.2 amended the same day; both DJI trees owe the left inset.
+        versionCode 99
+        versionName "2.3.4"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
