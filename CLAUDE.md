@@ -93,6 +93,41 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.3.3 IS BUILT AND BENCH TESTED, NOT RELEASED** — versionCode 98, 2026-09-16, signed APK and
+notes in `../../../signedReleases/Autel-MSDKv1/`, six commits on master, no tag and no GitHub
+release. The REC pill stays lit while the aircraft records.
+
+⚠ **THE FAULT WAS IN THE CODE WRITTEN TO PREVENT IT, AND THE v2.1.9 NOTES ALREADY CLAIMED IT
+FIXED.** Start a recording, leave the flight screen, come back: the pill was dark with the
+aircraft still rolling, a press gave "Needs an idle status to start recording videos", and only
+the hardware button recovered it. Returning re-fires the camera listener; the 2026-09-14 re-fire
+guard worked correctly and called the read-back that confirms the state. **At 15:36:09, six
+seconds into a recording the camera had itself confirmed with RECORD_START,
+`getCurrentRecordTime` answered `-1209991155`.** The SDK returns the seconds through a
+`CallbackWithOneParam<Int>` while `XT706CameraInfo` types the same value a LONG; the truncation
+is what comes out. So `> 0 seconds` read a live recording as idle and cleared the flag.
+
+⚠ **DO NOT USE `getCurrentRecordTime` FOR A DECISION.** It is not a duration and it is not a
+state. It is left in the aar, unused.
+
+⚠ **A WRONG FLAG WAS PERMANENT, AND THAT IS THE HALF THAT MADE IT A FAULT.** `isRecording` is
+learned from MediaStatus pushes, and a recording already running sends no second `RECORD_START`.
+The correction is now `XT706CameraInfo.getWorkState()` — IDLE / CAPTURE / RECORD /
+RECORD_PHOTO_TAKING — an enum on the ~2 Hz info push that already carries the FOV and the card
+figures. No call of its own, and nothing to truncate. UNKNOWN and null are not answers and
+change nothing. Also: the camera-change branch no longer CLEARS the flag before asking (the
+clear ran first and the read is the part that can fail); a REC press checks the work state as
+well as the flag and STOPS a recording the pill did not know about; and the `UnknownCamera`
+placeholder the listener announces ~3 s before the real camera is ignored rather than armed on.
+
+⚠ **THE LESSON IS ABOUT THE LOG, NOT THE CAMERA.** An audit of the recording path found three
+plausible causes and fixed two of them; none was this one. The operator's repro with Detailed
+logging on put the impossible number on the screen in one run. **A camera question is settled by
+a log line, not by reading the path** — the same rule the SD card taught on 12 September.
+
+⚠ **BOTH DJI TREES OWE A CHECK, NOT A PORT.** This is an Autel SDK shape. Confirm what their
+SDKs return for a record time before assuming either is affected.
+
 **v2.3.2 IS RELEASED** — tag `v2.3.2`, versionCode 97, 2026-09-16, on the operator's controller.
 A persistent item never reports stale (`TakUser.isStale`), so a marker shared through TAK Aware
 keeps its colour instead of going grey when the sender's ten-minute window passes. Shared core:
@@ -110,8 +145,15 @@ Debug screen, and the AR fixes flown that day. Bench-tested and one test flight;
 the test pilots.
 
 **v2.2.0 was the development line (versionCode 94, 2026-09-14).** PIP: the thermal image in
-the centre of the visible image, drawn by the CAMERA. A tap on the IR pill or the C1 key CYCLES visible → PIP → thermal; the
-long-press menu was tried and rejected (operator).
+the centre of the visible image, drawn by the CAMERA.
+⚠ **THE TAP IS A TWO-WAY TOGGLE, visible ↔ PIP, and from full thermal it goes back to PIP.**
+The C1 key does the same. **Full thermal is reached from a SECOND PILL in the actions column,
+directly under the PIP pill, shown only while thermal is on screen** (`⤢` / `⤡`). **The pill
+reads `PIP` in all three views** — unlit in visible, lit in PIP and in full thermal alike; the
+"IR" label is gone. Two other shapes were tried and REJECTED that week: a long-press menu (the
+14th) and a three-step cycle visible → PIP → thermal (the 15th, "a chore"). This paragraph
+carried that cycle as fact until 2026-09-16; `CameraView.next` and specification §4.2 are what
+shipped.
 The measurements are in `app/build.gradle` under v2.2.0 and every one came off the camera's own
 JSON-RPC API with a read-back. The five that must not be re-derived:
 
@@ -141,8 +183,10 @@ matching the record format does not change it — measured, do not retry.
 Also on 2026-09-15: `DEBUG LOG ON` is a banner warning the ✕ does not close; the Debug screen's
 log control is a switch with its three options under it; the Explorer watchdog is always on and
 has no control; the RF power write and probe are gone (Autel limit, operator); Cancel Landing is
-removed (flown, the aircraft did not obey). The PiP tap-cycle may become a two-way toggle with a
-maximise control on the window — proposed, not decided.
+removed (flown, the aircraft did not obey). **The PIP tap-cycle BECAME the two-way toggle and
+shipped that way** — see v2.2.0 above. The maximise control is a PILL IN THE COLUMN, not a
+control on the window: five placements on the picture were tried and rejected.
+`PipWindowGeometry` stays as the record of where the camera draws the window.
 
 v1.5.9 is on the fleet (tag `v1.5.9`). v1.6.0 is open on master and waits for flight-test
 feedback from the test users. The v1.6.0 finding list is in `REVIEW_2026-08-07_AUDIT.md`
