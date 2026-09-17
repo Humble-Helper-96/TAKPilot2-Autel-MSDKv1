@@ -93,6 +93,40 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.3.6 IS BUILT AND BENCH TESTED, NOT RELEASED** — versionCode 101, 2026-09-16. The PIP
+thermal window is plain thermal; the edge outlines are gone. v2.3.5 (versionCode 100) was the
+development build that measured it and shipped nowhere.
+
+⚠ **THE APPLICATION HAD BEEN TURNING THE EDGE OUTLINES ON AT EVERY CONNECT SINCE v2.3.0, AND
+NOTHING COULD SEE IT.** `AutelBlendFormat.applyAtConnect` wrote first and read back afterwards,
+thus its read could only ever confirm OUR OWN VALUE to us: every log said
+`base=IR ratio=32768/32767 agrees=true` while the picture was wrong. The operator saw white
+outlines on every panel gap and wheel arch in PIP, in TAKPilot2 AND in Autel Explorer, because
+the setting belongs to the CAMERA and both applications share it.
+
+⚠ **NEVER OVERWRITE A CAMERA SETTING WITHOUT RECORDING WHAT WAS THERE.** That is the defect;
+the wrong constant is only what it concealed. `applyAtConnect` now READS the base and the ratio
+before it writes, and the held values go in the log. That read stays in.
+
+**The measurement, in one line.** The outlines were switched off by hand in Explorer (the flame
+control above its blend slider), then TAKPilot2 was opened:
+`the camera HELD, before this write: base=None ratio=32768/32767`.
+
+⚠ **`None` IS THE PLAIN THERMAL WINDOW AND `IR` IS THE EDGE LOOK. THE v2.2.0 BENCH NOTE HAS THE
+TWO BASES THE WRONG WAY ROUND** — it calls `Visible` the edge look and `IR` the plain window.
+⚠ **`Visible` IS UNMEASURED ON THIS FIRMWARE.** Do not describe it from that note either.
+⚠ **THE RATIO IS NOT PART OF THIS.** The flame moves the BASE alone: the camera held this
+application's own pair in the state the pilot chose, thus the pair is unchanged. Explorer's
+SLIDER is the ratio (it writes IR = pct/100 × 65536, Visible = 65535 − IR); what it does under
+`None` is not measured.
+
+**PIP IS NOW THE APPLICATION'S DEFAULT, NOT EXPLORER'S LEFTOVERS** (operator, 2026-09-16). Base
+and ratio are written at every connect, so the picture is the same on every aircraft in the
+fleet whatever Explorer was last set to. ⚠ What is still INHERITED, because nothing here writes
+it: the thermal palette (read at connect, cycled by the pilot), the IR position trim
+(deliberately read-only — see `AutelBlendFormat`), and the other thermal image settings
+(`IrEnhance`, denoise, gain, isotherm).
+
 **v2.3.4 IS RELEASED** — tag `v2.3.4`, versionCode 99, 2026-09-16, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. It carries the REC fix
 below AND the AR edge arrows of the same day: the arrow keeps clear of the actions column on the
