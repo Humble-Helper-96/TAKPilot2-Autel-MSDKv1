@@ -93,10 +93,39 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.3.7 IS BUILT AND BENCH TESTED, NOT RELEASED** — versionCode 102, 2026-09-16. PIP is
-`base=None` at 75 % thermal: no edge outlines, and the window is white-hot thermal with the
-scene still readable. v2.3.5 (versionCode 100) was the build that measured the base and v2.3.6
-(101) set it; both shipped nowhere.
+**v2.3.8 IS BUILT, NOT RELEASED** — versionCode 103, 2026-09-16. PIP is `base=None` at 75 %
+thermal by default, and **THE PILOT SETS THE BLEND WITH A SLIDER**. v2.3.5 (100) measured the
+base, v2.3.6 (101) set it and v2.3.7 (102) took the ratio to 75 %; none of the three shipped.
+⚠ **THE SLIDER IS NOT BENCH TESTED** — it went on the controller and was not reported back on.
+The two parts built blind are the 250 ms drag throttle and the slider's height, which is set
+from the measured column and could come up short if the layout pass runs before the column has
+measured.
+
+**The slider** is vertical, parallel to the actions column's right edge, the column's own
+height, and **SHOWN ONLY IN PIP** — in visible there is no thermal layer and in full thermal
+nothing to mix it with, thus the control would move and change nothing. It is `EvSliderView`
+turned on its side: same track, ticks, thumb and black double-pass outline, so the HUD keeps one
+weight of edge (specification §4.3). UP IS MORE THERMAL, matching Explorer's percentage; 20
+steps of 5 %.
+⚠ **THE WRITE IS THROTTLED ON THE DRAG (250 ms) AND COMMITTED ON THE LIFT.** A stroke crosses
+twenty steps, and twenty writes in half a second is the shape of the 2026-08-02 keystroke burst
+— on the camera's channel rather than the fly-controller's, but the same shape. **Only the lift
+is STORED**: a value the thumb passed over is not a decision. The stored value is what the next
+connect writes, thus the pilot's choice survives a session and the camera still gets a known
+value.
+⚠ **THE SLIDER IS LEFT CHROME WHILE IT IS SHOWN.** The AR overlay and the obstacle view take
+their left inset from ITS right edge, or an edge arrow and a proximity label are drawn on the
+thumb. Its x and its height come from the MEASURED column in the same layout pass — never a dp
+in the layout file, which would be a second copy of a width that changes with the pills.
+⚠ **THE RATIO ARITHMETIC IS EXPLORER'S** and is pinned in `AutelBlendFormatTest`: IR = pct/100 ×
+65536, Visible = 65535 − IR, the pair always summing to 65535. v2.3.7's hand-computed 75 % pair
+was `49151/16384`, one count low; the formula gives `49152/16383`.
+
+⚠ **AUTEL LEADS AND THE DJI TREES FOLLOW ONLY IF THE OPERATOR WANTS IT** (2026-09-16). The
+slider is a flight-screen control that deliberately does NOT land in all three applications. The
+rule is SUSPENDED for it by the operator's decision, as it was for the flight-screen refresh on
+2026-09-12 — read it as a decision and not as drift. ⚠ Specification §4 still owes the slider a
+line.
 
 ⚠ **THE APPLICATION HAD BEEN TURNING THE EDGE OUTLINES ON AT EVERY CONNECT SINCE v2.3.0, AND
 NOTHING COULD SEE IT.** `AutelBlendFormat.applyAtConnect` wrote first and read back afterwards,
