@@ -93,9 +93,28 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.3.3 IS BUILT AND BENCH TESTED, NOT RELEASED** — versionCode 98, 2026-09-16, signed APK and
-notes in `../../../signedReleases/Autel-MSDKv1/`, six commits on master, no tag and no GitHub
-release. The REC pill stays lit while the aircraft records.
+**v2.3.4 IS RELEASED** — tag `v2.3.4`, versionCode 99, 2026-09-16, signed APK and notes in
+`../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. It carries the REC fix
+below AND the AR edge arrows of the same day: the arrow keeps clear of the actions column on the
+left, and rides outboard of the readouts on the right. Bench tested on the controller by the
+operator — the pill through the leave-and-return repro, the arrows by eye. Not flown.
+
+⚠ **v2.3.3 SHIPPED NOWHERE.** It was built, bench tested and its APK put in `signedReleases/`,
+then 2.3.4 took its place the same day; there is no `v2.3.3` tag and no GitHub release. The
+2.3.3 APK and notes are still in that folder, superseded. Do not read the gap as a lost release.
+
+⚠ **THE RIGHT EDGE OF THE AR VIEW TAKES NO INSET, AND MUST NOT** (operator, 2026-09-13, again
+2026-09-16). The readouts lost their panels in v1.7.7, thus the HUD column is outlined text and
+an arrow behind it is visible; the old full-width inset cost about 208dp, a fifth of this
+screen, on the edge a pilot scans most. The 16 September fault was an arrow IN the glyphs of
+"200 ft AGL", and the fix is the ARROW MOVING OUTBOARD into the strip the column already leaves
+clear — its own paddingEnd, halved, because the margin places the arrow's CENTRE. The LEFT is a
+real inset: the actions column is the same 70 % fill as the band, it runs the full height of the
+picture, and an arrow was drawn on the AR pill. Specification §4.2 carries both; both DJI trees
+owe the left inset. ⚠ Projected markers stay pinned under chrome — only `drawEdgeArrow` reads an
+inset, and that must not change.
+
+The REC pill stays lit while the aircraft records.
 
 ⚠ **THE FAULT WAS IN THE CODE WRITTEN TO PREVENT IT, AND THE v2.1.9 NOTES ALREADY CLAIMED IT
 FIXED.** Start a recording, leave the flight screen, come back: the pill was dark with the
