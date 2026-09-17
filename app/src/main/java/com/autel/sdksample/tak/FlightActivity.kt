@@ -361,9 +361,17 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // no second value. The obstacle view has had this since 2026-09-15 — see below.
             val column = findViewById<View>(R.id.flightToolbarActions)
             val columnRight = column.x + column.width
+            // ⚠ THE RIGHT TAKES NO INSET, IT TAKES THE COLUMN'S OWN END PADDING (operator,
+            // 2026-09-16). A screenshot in flight caught an arrow in the glyphs of "200 ft AGL".
+            // The 2026-09-13 decision stands — the column is outlined text and an arrow behind
+            // it is visible — so the arrow moves OUTBOARD into the strip the column already
+            // leaves clear, and costs no width at all. Read from the view, thus a padding change
+            // carries across on its own.
+            val hudColumn = findViewById<View>(R.id.flightHudColumn)
             arOverlay.setChromeInsets(
                 top = toolbarView.height.toFloat(),
                 left = columnRight,
+                rightGap = hudColumn.paddingEnd.toFloat(),
                 mapLeft = (mapOnScreen[0] - arOnScreen[0]).toFloat(),
                 mapTop = (mapOnScreen[1] - arOnScreen[1]).toFloat(),
             )

@@ -116,6 +116,13 @@ class ArOverlayView @JvmOverloads constructor(
      * fifth of the screen's width in which the direction cue could never be drawn — on the one
      * edge a pilot scans most, since the contacts list and the map both sit there.
      *
+     * ⚠ **AND THE RIGHT STILL TAKES NO INSET — [rightGap] IS NOT ONE** (operator, 2026-09-16).
+     * A screenshot in flight caught an arrow hard against the glyphs of "200 ft AGL". The fix
+     * is NOT to give the column back the width it lost: the arrow is moved OUTBOARD, into the
+     * clear strip the column already leaves between its text and the edge of the picture, so it
+     * costs nothing and the 2026-09-13 decision stands. An arrow may still pass BEHIND a wider
+     * readout, which is the intended trade — outlined text hides nothing.
+     *
      * What remains genuinely opaque, and is still excluded:
      *
      *  - **the toolbar band** ([top]), whose two capsules are a 70 % black fill;
@@ -133,11 +140,12 @@ class ArOverlayView @JvmOverloads constructor(
      * Fed from the flight screen's real measured view bounds rather than hardcoded dp, so this
      * cannot drift out of step with a toolbar or HUD layout change.
      */
-    fun setChromeInsets(top: Float, left: Float, mapLeft: Float, mapTop: Float) {
-        if (chromeInsetTop == top && chromeInsetLeft == left &&
+    fun setChromeInsets(top: Float, left: Float, rightGap: Float, mapLeft: Float, mapTop: Float) {
+        if (chromeInsetTop == top && chromeInsetLeft == left && chromeRightGap == rightGap &&
             chromeMapLeft == mapLeft && chromeMapTop == mapTop) return
         chromeInsetTop = top
         chromeInsetLeft = left
+        chromeRightGap = rightGap
         chromeMapLeft = mapLeft
         chromeMapTop = mapTop
         // ⚠ SAID OUT LOUD, because these decide where an edge arrow may be drawn and a wrong
@@ -145,13 +153,16 @@ class ArOverlayView @JvmOverloads constructor(
         // arrows vanished after this method changed shape and there was nothing in the log to
         // say what it had been handed. Gated by the change guard above, so it writes once per
         // real layout change and not per frame.
-        AppLog.i(TAG, "chrome insets: top=%.0f left=%.0f map=%.0f,%.0f"
-            .format(top, left, mapLeft, mapTop))
+        AppLog.i(TAG, "chrome insets: top=%.0f left=%.0f rightGap=%.0f map=%.0f,%.0f"
+            .format(top, left, rightGap, mapLeft, mapTop))
         invalidate()
     }
 
     private var chromeInsetTop = 0f
     private var chromeInsetLeft = 0f
+    /** The HUD column's own end padding — the clear strip between the readouts' glyphs and the
+     *  right edge of the picture. NOT an inset: see [setChromeInsets]. */
+    private var chromeRightGap = 0f
     /** Left and top of the mini-map in this view's coordinates; [Float.MAX_VALUE] = not known
      *  yet, which excludes nothing. See [setChromeInsets]. */
     private var chromeMapLeft = Float.MAX_VALUE
@@ -749,7 +760,15 @@ class ArOverlayView @JvmOverloads constructor(
         // field 2026-07-27: air traffic directly overhead produced an above-frame arrow the
         // pilot could never see, which is the one case the indicator matters most.
         val visLeft = maxOf(videoRect.left, 0f, chromeInsetLeft) + margin
-        val visRight = minOf(videoRect.right, width.toFloat()) - margin
+        // ⚠ THE RIGHT-HAND MARGIN IS THE COLUMN'S OWN PADDING, HALVED — the arrow rides in the
+        // clear strip beside the readouts rather than in their glyphs. Halved because the
+        // margin places the arrow's CENTRE and the arrow has a radius: centre at half the gap
+        // puts both of its edges inside the strip. A gap too narrow to hold the whole arrow
+        // would push it back into the text, thus the ordinary margin is kept in that case and
+        // the arrow overlaps as it did before — visibly, rather than hidden.
+        val rightMargin = if (chromeRightGap >= 2f * ARROW_RADIUS_DP * d) chromeRightGap / 2f
+                          else margin
+        val visRight = minOf(videoRect.right, width.toFloat()) - rightMargin
         val visTop = maxOf(videoRect.top, 0f) + chromeInsetTop + margin
         val visBottom = minOf(videoRect.bottom, height.toFloat()) - margin
         // A view too small to hold the margins would make coerceIn throw (min > max). Nothing
@@ -770,7 +789,7 @@ class ArOverlayView @JvmOverloads constructor(
         lastArrowY = y
 
         val angle = atan2((y - cy).toDouble(), (x - cx).toDouble())
-        val r = 7f * d
+        val r = ARROW_RADIUS_DP * d
         arrowPath.reset()
         arrowPath.moveTo(
             x + (r * kotlin.math.cos(angle)).toFloat(),
@@ -881,6 +900,9 @@ class ArOverlayView @JvmOverloads constructor(
 
         private const val REFRESH_MS = 100L
         private const val ICON_DP = 26f
+        /** The edge arrow's radius. Named because the right-hand clearance is sized from it —
+         *  see the right margin in [drawEdgeArrow]. */
+        private const val ARROW_RADIUS_DP = 7f
         private const val LABEL_SP = 11f
         /** Slant range below which the pin is effectively at the camera and the angles stop
          *  meaning anything. Deliberately compared against slant range, not ground distance —
