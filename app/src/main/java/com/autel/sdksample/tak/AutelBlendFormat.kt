@@ -59,8 +59,25 @@ object AutelBlendFormat {
 
     private const val TAG = "TP2Blend"
 
-    /** Thermal, whole, in the centre window (operator, 2026-09-14). */
-    val BASE: String = PipBlenderBaseType.IR.value()
+    /**
+     * Thermal, whole, in the centre window — which on this firmware is `None`, NOT `IR`
+     * (measured with the operator 2026-09-16).
+     *
+     * ⚠ **`IR` IS THE EDGE-OUTLINE LOOK HERE, AND THIS CONSTANT HELD IT FROM v2.3.0 TO
+     * v2.3.5.** The v2.2.0 bench note describes `Visible` as the base that "lays the thermal
+     * picture's EDGES over it as bright outlines" and `IR` as the plain thermal window. On the
+     * aircraft that is the wrong way round: `IR` put white outlines on every panel gap, badge
+     * and wheel arch, and the pilot saw it in Autel Explorer too, because the setting belongs
+     * to the CAMERA and both applications share it.
+     *
+     * `None` is what the camera's own control selects when the outlines are switched off — read
+     * straight off the camera the moment before this object overwrote it, which is the only
+     * reason it is known. It is also the factory value.
+     *
+     * ⚠ **THE RATIO IS NOT PART OF THIS.** The camera held `ratio=32768/32767` — this object's
+     * own pair — in the state the pilot chose, thus the pair below reproduces it unchanged.
+     */
+    val BASE: String = PipBlenderBaseType.None.value()
 
     /** An even weight. Over an `IR` base it does not change the look; it is written so the
      *  pair is a known value. The two sum to 65535, the scale Explorer uses. */

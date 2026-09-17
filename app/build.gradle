@@ -1534,8 +1534,20 @@ android {
         //        What this build is FOR: turn the outlines off in Explorer, open TAKPilot2, and
         //        the log line "the camera HELD, before this write: base=… ratio=…/…" names the
         //        value the pilot wanted. That becomes the app's default for PIP.
-        versionCode 100
-        versionName "2.3.5"
+        // v2.3.6 — 2026-09-16. THE PIP DEFAULT IS `None`, AND THE APPLICATION OWNS IT. The
+        //        thermal window is plain thermal again; the edge outlines are gone.
+        //        The read added in v2.3.5 answered it in one line, with the outlines switched
+        //        off by hand in Explorer first: "the camera HELD, before this write: base=None
+        //        ratio=32768/32767". So `None` is the plain window, `IR` is the edge look, and
+        //        the ratio was never part of it — the camera held this object's own pair in the
+        //        state the pilot chose, thus the pair is unchanged.
+        //        ⚠ THE v2.2.0 BENCH NOTE HAS THE BASES THE WRONG WAY ROUND. It calls `Visible`
+        //        the edge look and `IR` the plain thermal window. On the aircraft `IR` is the
+        //        edge look. `Visible` is still unmeasured; do not describe it from that note.
+        //        This is written at every connect, as before, so the picture is the same on
+        //        every aircraft in the fleet whatever Explorer was last set to.
+        versionCode 101
+        versionName "2.3.6"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾
