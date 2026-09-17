@@ -119,6 +119,12 @@ class ArOverlayView @JvmOverloads constructor(
      * What remains genuinely opaque, and is still excluded:
      *
      *  - **the toolbar band** ([top]), whose two capsules are a 70 % black fill;
+     *  - **the actions column** ([left]), which takes the same 70 % fill and holds the pills
+     *    the pilot presses. It arrived in v2.3.0 and this view was not told about it until
+     *    2026-09-16, when a screenshot in flight caught an edge arrow drawn ON the AR pill.
+     *    ⚠ It is excluded by INSET and not by corner, unlike the map: the column runs the full
+     *    height of the picture, so there is no "above it" to lift an arrow to. It costs one
+     *    pill's width on an edge that holds no readouts;
      *  - **the mini-map** ([mapLeft], [mapTop]), which is a real map and hides anything under
      *    it completely. It is excluded by CORNER rather than by inset: an arrow that would land
      *    on it is lifted to just above it and keeps its place on the right edge, so the cue
@@ -127,9 +133,11 @@ class ArOverlayView @JvmOverloads constructor(
      * Fed from the flight screen's real measured view bounds rather than hardcoded dp, so this
      * cannot drift out of step with a toolbar or HUD layout change.
      */
-    fun setChromeInsets(top: Float, mapLeft: Float, mapTop: Float) {
-        if (chromeInsetTop == top && chromeMapLeft == mapLeft && chromeMapTop == mapTop) return
+    fun setChromeInsets(top: Float, left: Float, mapLeft: Float, mapTop: Float) {
+        if (chromeInsetTop == top && chromeInsetLeft == left &&
+            chromeMapLeft == mapLeft && chromeMapTop == mapTop) return
         chromeInsetTop = top
+        chromeInsetLeft = left
         chromeMapLeft = mapLeft
         chromeMapTop = mapTop
         // ⚠ SAID OUT LOUD, because these decide where an edge arrow may be drawn and a wrong
@@ -137,11 +145,13 @@ class ArOverlayView @JvmOverloads constructor(
         // arrows vanished after this method changed shape and there was nothing in the log to
         // say what it had been handed. Gated by the change guard above, so it writes once per
         // real layout change and not per frame.
-        AppLog.i(TAG, "chrome insets: top=%.0f map=%.0f,%.0f".format(top, mapLeft, mapTop))
+        AppLog.i(TAG, "chrome insets: top=%.0f left=%.0f map=%.0f,%.0f"
+            .format(top, left, mapLeft, mapTop))
         invalidate()
     }
 
     private var chromeInsetTop = 0f
+    private var chromeInsetLeft = 0f
     /** Left and top of the mini-map in this view's coordinates; [Float.MAX_VALUE] = not known
      *  yet, which excludes nothing. See [setChromeInsets]. */
     private var chromeMapLeft = Float.MAX_VALUE
@@ -738,7 +748,7 @@ class ArOverlayView @JvmOverloads constructor(
         // So: intersect with the view first, then apply the chrome rules. Reported from the
         // field 2026-07-27: air traffic directly overhead produced an above-frame arrow the
         // pilot could never see, which is the one case the indicator matters most.
-        val visLeft = maxOf(videoRect.left, 0f) + margin
+        val visLeft = maxOf(videoRect.left, 0f, chromeInsetLeft) + margin
         val visRight = minOf(videoRect.right, width.toFloat()) - margin
         val visTop = maxOf(videoRect.top, 0f) + chromeInsetTop + margin
         val visBottom = minOf(videoRect.bottom, height.toFloat()) - margin

@@ -355,8 +355,15 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             // map is covered with no second value to keep in step.
             val mapOnScreen = IntArray(2).also { mapContainer.getLocationOnScreen(it) }
             val arOnScreen = IntArray(2).also { arOverlay.getLocationOnScreen(it) }
+            // The actions column is the SAME 70 % fill as the band and was never handed over:
+            // a screenshot in flight on 2026-09-16 caught an edge arrow drawn on the AR pill.
+            // Measured like everything else here, so a column that gains or loses a pill needs
+            // no second value. The obstacle view has had this since 2026-09-15 — see below.
+            val column = findViewById<View>(R.id.flightToolbarActions)
+            val columnRight = column.x + column.width
             arOverlay.setChromeInsets(
                 top = toolbarView.height.toFloat(),
+                left = columnRight,
                 mapLeft = (mapOnScreen[0] - arOnScreen[0]).toFloat(),
                 mapTop = (mapOnScreen[1] - arOnScreen[1]).toFloat(),
             )
@@ -367,8 +374,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             obstacleEdges.setTopInset(toolbarView.height.toFloat())
             // And the LEFT inset for the actions column (2026-09-15): its right edge, so the
             // left-face label lands beside the column rather than under it.
-            val column = findViewById<View>(R.id.flightToolbarActions)
-            obstacleEdges.setLeftInset(column.x + column.width)
+            obstacleEdges.setLeftInset(columnRight)
         }
         streamToggle = findViewById(R.id.flightStreamButton)
         recordToggle = findViewById(R.id.flightRecordButton)
