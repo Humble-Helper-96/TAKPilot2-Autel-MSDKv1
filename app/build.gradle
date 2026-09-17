@@ -1513,8 +1513,29 @@ android {
         //        Projected markers are untouched: they stay pinned to their true position even
         //        under chrome. Only drawEdgeArrow reads any of this.
         //        Specification §4.2 amended the same day; both DJI trees owe the left inset.
-        versionCode 99
-        versionName "2.3.4"
+        // v2.3.5 — 2026-09-16. DEVELOPMENT BUILD, for one measurement. The PIP blend is READ
+        //        BEFORE IT IS WRITTEN, and what the camera held goes in the log.
+        //        ⚠ THE BLEND WRITE HAS BEEN TURNING THE THERMAL EDGE OUTLINES ON SINCE v2.3.0,
+        //        and nothing could see it. applyAtConnect wrote first and read back afterwards,
+        //        thus the read could only ever confirm our own value to us: every log since has
+        //        said "base=IR ratio=32768/32767 agrees=true" while the picture was wrong.
+        //        Measured with the operator that evening: the outlines were switched OFF by
+        //        hand in Autel Explorer (the flame control above its blend slider), TAKPilot2
+        //        was opened, it wrote base=IR at 17:31:43, read back agrees=true at 17:31:47 —
+        //        and the outlines were back on the screen. Explorer showed the same picture
+        //        afterwards, which is what proves the setting is the CAMERA's and shared.
+        //        ⚠ SO `IR` IS THE EDGE LOOK ON THIS FIRMWARE, and the v2.2.0 bench note has the
+        //        two bases the wrong way round. That note also says the ratio makes no
+        //        difference over an IR base; the operator moved Explorer's slider and the
+        //        overlay went from absent to worse, so that is wrong as well. Do not trust
+        //        either line until this build has answered.
+        //        ⚠ NEVER OVERWRITE A CAMERA SETTING WITHOUT RECORDING WHAT WAS THERE. That is
+        //        the general lesson and the reason the read stays in after this is settled.
+        //        What this build is FOR: turn the outlines off in Explorer, open TAKPilot2, and
+        //        the log line "the camera HELD, before this write: base=… ratio=…/…" names the
+        //        value the pilot wanted. That becomes the app's default for PIP.
+        versionCode 100
+        versionName "2.3.5"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

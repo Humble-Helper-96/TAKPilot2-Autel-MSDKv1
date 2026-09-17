@@ -84,12 +84,68 @@ object AutelBlendFormat {
     fun agrees(base: String?, ratioIr: Int?, ratioVisible: Int?): Boolean =
         base == BASE && ratioIr == RATIO_IR && ratioVisible == RATIO_VISIBLE
 
+    /** What the camera held the last time this object looked, BEFORE any write of ours.
+     *  Null until a camera has answered once. Shown on the Debug screen. */
+    @Volatile
+    var heldBase: String? = null
+        private set
+    @Volatile
+    var heldRatio: Pair<Int?, Int?>? = null
+        private set
+
+    /**
+     * Applies the blend format, and READS THE CAMERA FIRST.
+     *
+     * ⚠ **THE READ IS NOT DECORATION. IT IS THE THING THIS CODE LACKED** (2026-09-16). The
+     * write worked perfectly from the day it landed; it wrote the WRONG VALUE, and neither the
+     * log nor the read-back could show it, because the only read happened AFTER the write and
+     * so could only ever confirm our own value back to us. Measured that evening: the outlines
+     * were switched off by hand in Autel Explorer, this application connected, wrote
+     * `base=IR ratio=32768/32767`, read back `agrees=true` — and the outlines were on the
+     * screen again. Every connect since v2.3.0 had done the same, invisibly.
+     *
+     * So: never overwrite a camera setting without recording what was there. The line below is
+     * what tells the next person which value the pilot actually wanted.
+     */
     fun applyAtConnect(camera: AutelXT706?) {
         camera ?: return
         if (AutelProductHolder.isRecording) {
             AppLog.i(TAG, "not applying the blend format: the camera is recording")
             return
         }
+        readHeld(camera) { applyAfterRead(camera) }
+    }
+
+    /** Reads the base and the ratio the camera is holding, then runs [then] whatever happened.
+     *  Both are single POSTs, not subscriptions — safety rule 1, same as the verify. */
+    private fun readHeld(camera: AutelXT706, then: () -> Unit) {
+        camera.getPipBlenderBase(object : CallbackWithOneParam<PipBlenderBase> {
+            override fun onSuccess(b: PipBlenderBase?) {
+                heldBase = b?.Base
+                camera.getPipBlenderRatio(object : CallbackWithOneParam<PipBlenderRatio> {
+                    override fun onSuccess(r: PipBlenderRatio?) {
+                        heldRatio = r?.IR to r?.Visible
+                        AppLog.i(TAG, "the camera HELD, before this write: " +
+                            "base=$heldBase ratio=${r?.IR}/${r?.Visible}")
+                        then()
+                    }
+                    override fun onFailure(error: AutelError?) {
+                        heldRatio = null
+                        AppLog.w(TAG, "the camera HELD base=$heldBase; " +
+                            "getPipBlenderRatio failed: ${error?.description}")
+                        then()
+                    }
+                })
+            }
+            override fun onFailure(error: AutelError?) {
+                heldBase = null; heldRatio = null
+                AppLog.w(TAG, "getPipBlenderBase failed before the write: ${error?.description}")
+                then()
+            }
+        })
+    }
+
+    private fun applyAfterRead(camera: AutelXT706) {
         AppLog.i(TAG, "applying blend format: base=$BASE ratio=$RATIO_IR/$RATIO_VISIBLE")
         camera.setPipBlenderBase(BASE, object : CallbackWithNoParam {
             override fun onSuccess() {
