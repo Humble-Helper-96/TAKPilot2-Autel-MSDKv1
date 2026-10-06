@@ -189,11 +189,19 @@ class TakConnectActivity : AppCompatActivity() {
             runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
             runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
             channelsStatusIsEmptyNotice = false
+            // clearEnrollment() above already cleared cert B's files/prefs and disconnected it —
+            // this just resets THIS screen's video-channel fields to match.
+            runCatching { findViewById<android.widget.Switch>(R.id.takVideoChannelEnabled).isChecked = false }
+            runCatching { findViewById<EditText>(R.id.takVideoUsername).setText("") }
+            runCatching { findViewById<EditText>(R.id.takVideoPassword).setText("") }
+            runCatching { findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList).removeAllViews() }
+            setVideoChannelStatus("", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             setStatus("Logged out. Enter host, username and password to sign in as another user.",
                 androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
         }
 
         setupVideoControls(prefs)
+        setupVideoChannelSection(prefs, host, enrollPort, cotPort)
 
         // LAST, deliberately: every other setup call above populates or rebinds these fields,
         // and the lock has to be the final word on whether they are editable. Applying it
@@ -711,7 +719,9 @@ class TakConnectActivity : AppCompatActivity() {
         Thread { connectWithCerts(uid, username, "$uid-DRONE", droneCallsign, host, cotPort, ts, cc) }.start()
     }
 
-    /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean. */
+    /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean.
+     *  Also clears cert B (the video channel, v2.3.9) — a logout must not leave a second,
+     *  more-privileged certificate behind for the next person to sign in on top of. */
     private fun clearEnrollment(prefs: android.content.SharedPreferences) {
         val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
         val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
@@ -733,6 +743,7 @@ class TakConnectActivity : AppCompatActivity() {
             .putBoolean(KEY_LOGGED_OUT, true)   // block auto-reconnect until a fresh enroll
             .apply()
         AppLog.i(TAG, "enrollment cleared")
+        clearVideoEnrollment(prefs)
     }
 
     /** True if we have saved cert files on disk from a previous enrollment. */
@@ -741,6 +752,216 @@ class TakConnectActivity : AppCompatActivity() {
         val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
         return ts.isNotEmpty() && cc.isNotEmpty() &&
             java.io.File(ts).exists() && java.io.File(cc).exists()
+    }
+
+    // ---- Video channel (cert B) — v2.3.9 ----
+    //
+    // Cert B enrolls under its OWN TAK Server username/password (see TakCertEnroller's doc: the
+    // username/password authenticate a CSR signing request, there is no cert file to "upload"),
+    // so it lands in a different channel/group than cert A. It reuses cert A's host/enroll
+    // port/CoT port — one aircraft, one controller, two certificates — only the username,
+    // password and file-name prefix differ.
+
+    /** Enroll cert B and, on success, connect the video channel. Mirrors [enrollAndConnect]. */
+    private fun enrollAndConnectVideo(
+        host: String, enrollPort: Int, cotPort: Int, username: String, password: String,
+    ) {
+        AppLog.v(TAG, "enrollAndConnectVideo: host=$host enrollPort=$enrollPort cotPort=$cotPort user=$username")
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        var uid = prefs.getString(KEY_CHB_UID, "") ?: ""
+        if (uid.isEmpty()) {
+            uid = "TAKPilot2-" + UUID.randomUUID().toString().substring(0, 8) + "-VIDEO"
+            prefs.edit().putString(KEY_CHB_UID, uid).apply()
+        }
+        setVideoChannelStatus("Enrolling video channel with $host:$enrollPort …",
+            androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+        Thread {
+            TakCertEnroller.enroll(host, enrollPort, username, password, uid, filesDir, "tak_video_",
+                object : TakCertEnroller.EnrollmentCallback {
+                    override fun onSuccess(trustStorePath: String, clientCertPath: String) {
+                        prefs.edit()
+                            .putString(KEY_CHB_TRUSTSTORE, trustStorePath)
+                            .putString(KEY_CHB_CLIENTCERT, clientCertPath)
+                            .putString(KEY_CHB_USERNAME, username)
+                            .putBoolean(KEY_CHB_LOGGED_OUT, false)
+                            .apply()
+                        runOnUiThread {
+                            setVideoChannelStatus("Enrolled. Connecting …",
+                                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+                        }
+                        connectVideoChannelWithCerts(host, cotPort, trustStorePath, clientCertPath)
+                    }
+
+                    override fun onError(error: String) {
+                        AppLog.w(TAG, "video channel enrollment failed: $error")
+                        runOnUiThread {
+                            setVideoChannelStatus("Error: $error",
+                                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                        }
+                    }
+                })
+        }.start()
+    }
+
+    /** Connect cert B using already-enrolled files. Mirrors [connectWithCerts]. */
+    private fun connectVideoChannelWithCerts(host: String, cotPort: Int, trustStorePath: String, clientCertPath: String) {
+        val certPw = "atakatak"
+        TakManager.getInstance().connectVideoChannel(host, cotPort, trustStorePath, certPw, clientCertPath, certPw)
+        runOnUiThread {
+            setVideoChannelStatus("Video channel connected.",
+                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
+            refreshVideoChannels()
+        }
+    }
+
+    /** Reconnect cert B using saved certs, no UI entry needed. Mirrors [reconnectFromSaved]. */
+    private fun reconnectVideoFromSaved(prefs: android.content.SharedPreferences) {
+        val host = prefs.getString(KEY_HOST, "") ?: ""
+        val cotPort = prefs.getInt(KEY_COT_PORT, 8089)
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) return
+        Thread { connectVideoChannelWithCerts(host, cotPort, ts, cc) }.start()
+    }
+
+    /** True if cert B has saved cert files on disk from a previous enrollment. Mirrors
+     *  [hasSavedCerts]. */
+    private fun hasSavedVideoCerts(prefs: android.content.SharedPreferences): Boolean {
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+        return ts.isNotEmpty() && cc.isNotEmpty() &&
+            java.io.File(ts).exists() && java.io.File(cc).exists()
+    }
+
+    /** Deletes cert B's files + prefs and disconnects it. Called from [clearEnrollment] (full
+     *  logout) and also usable on its own if the pilot turns the video-channel switch off. */
+    private fun clearVideoEnrollment(prefs: android.content.SharedPreferences) {
+        runCatching { TakManager.getInstance().disconnectVideoChannel() }
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+        if (ts.isNotEmpty()) { val f = java.io.File(ts); runCatching { f.delete() } }
+        if (cc.isNotEmpty()) { val f = java.io.File(cc); runCatching { f.delete() } }
+        listOf("tak_video_clientcert.p12", "tak_video_truststore.p12").forEach {
+            val f = java.io.File(filesDir, it); if (f.exists()) runCatching { f.delete() }
+        }
+        prefs.edit()
+            .remove(KEY_CHB_TRUSTSTORE)
+            .remove(KEY_CHB_CLIENTCERT)
+            .remove(KEY_CHB_UID)
+            .remove(KEY_CHB_USERNAME)
+            .putBoolean(KEY_CHB_LOGGED_OUT, true)
+            .apply()
+        AppLog.i(TAG, "video channel enrollment cleared")
+    }
+
+    private fun setVideoChannelStatus(text: String, color: Int) {
+        findViewById<TextView>(R.id.takVideoChannelStatus)?.let {
+            it.text = text
+            it.setTextColor(color)
+        }
+    }
+
+    /** Read-only — cert B never writes activebits. Mirrors [refreshChannels]/[renderChannels]
+     *  but with no checkboxes: nothing here can change what B is a member of. */
+    private fun refreshVideoChannels() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val host = prefs.getString(KEY_HOST, "") ?: return
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: return
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: return
+        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) return
+        Thread {
+            // 8443 matches TakMissionManager.API_PORT — the Mission API port cert A already uses.
+            val mission = TakMissionClient.fromCert(host, 8443, ts, "atakatak", cc, "atakatak")
+            val channels = mission?.listChannels() ?: emptyList()
+            runOnUiThread { renderVideoChannels(channels) }
+        }.start()
+    }
+
+    /**
+     * Wires the "Video Channel" section (cert B, v2.3.9) — OFF by default. [host]/[enrollPort]/
+     * [cotPort] are cert A's already-on-screen fields, reused as-is (one aircraft, one
+     * controller, two certificates — only the username/password/file-prefix differ).
+     */
+    private fun setupVideoChannelSection(
+        prefs: android.content.SharedPreferences,
+        host: EditText, enrollPort: EditText, cotPort: EditText,
+    ) {
+        val enabledSwitch = findViewById<android.widget.Switch>(R.id.takVideoChannelEnabled)
+        val fields = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelFields)
+        val connectButton = findViewById<Button>(R.id.takVideoConnectButton)
+        val channelsLabel = findViewById<TextView>(R.id.takVideoChannelsLabel)
+        val videoUsername = findViewById<EditText>(R.id.takVideoUsername)
+        val videoPassword = findViewById<EditText>(R.id.takVideoPassword)
+
+        videoUsername.setText(prefs.getString(KEY_CHB_USERNAME, ""))
+
+        fun paintEnabled(on: Boolean) {
+            fields.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+            connectButton.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+            channelsLabel.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        }
+
+        val enabled = prefs.getBoolean(KEY_CHB_ENABLED, false)
+        enabledSwitch.isChecked = enabled
+        paintEnabled(enabled)
+        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)) {
+            setVideoChannelStatus("Reconnecting video channel …",
+                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            reconnectVideoFromSaved(prefs)
+        }
+
+        enabledSwitch.setOnCheckedChangeListener { _, isOn ->
+            AppLog.v(TAG, "video channel enable toggle -> $isOn")
+            prefs.edit().putBoolean(KEY_CHB_ENABLED, isOn).apply()
+            paintEnabled(isOn)
+            if (!isOn) {
+                // Turning the switch off pauses the connection — it does NOT delete the saved
+                // enrollment (that's clearVideoEnrollment's job, on full Log Out). Turning it
+                // back on later reconnects from the same saved certs with no re-enrollment.
+                runCatching { TakManager.getInstance().disconnectVideoChannel() }
+                setVideoChannelStatus("Video channel disabled.",
+                    androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            } else if (hasSavedVideoCerts(prefs)) {
+                reconnectVideoFromSaved(prefs)
+            }
+        }
+
+        connectButton.setOnClickListener {
+            val h = host.text.toString().trim()
+            val ep = enrollPort.text.toString().trim().toIntOrNull() ?: 8446
+            val cp = cotPort.text.toString().trim().toIntOrNull() ?: 8089
+            val u = videoUsername.text.toString().trim()
+            val p = videoPassword.text.toString()
+            if (h.isEmpty() || u.isEmpty() || p.isEmpty()) {
+                setVideoChannelStatus("Host (above), video username and password are required.",
+                    androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
+                return@setOnClickListener
+            }
+            enrollAndConnectVideo(h, ep, cp, u, p)
+        }
+    }
+
+    private fun renderVideoChannels(channels: List<TakMissionClient.Channel>) {
+        val list = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList) ?: return
+        list.removeAllViews()
+        if (channels.isEmpty()) {
+            setVideoChannelStatus("This server has no channels for the video account.",
+                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+            return
+        }
+        for (ch in channels) {
+            val row = TextView(this).apply {
+                text = when {
+                    ch.canSend && ch.canReceive -> ch.name
+                    ch.canReceive -> "${ch.name} - Rx Only"
+                    ch.canSend -> "${ch.name} - Tx Only"
+                    else -> "${ch.name} - no direction"
+                } + if (ch.active) "" else " (off)"
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    applicationContext, R.color.tp_text_primary))
+            }
+            list.addView(row)
+        }
     }
 
     private fun setStatus(text: String, color: Int) {
@@ -1766,6 +1987,18 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_UID = "uid"
         private const val KEY_TRUSTSTORE = "truststore_path"
         private const val KEY_CLIENTCERT = "clientcert_path"
+
+        // ---- Video channel (cert B) — v2.3.9. "CHB" = "channel B", distinct from the KEY_V_*
+        // family above, which means "video STREAM config" (RTSP/SRT host/port/codec), a
+        // completely different concept. Cert B reuses KEY_HOST/KEY_ENROLL_PORT/KEY_COT_PORT/
+        // KEY_CALLSIGN from cert A above — one aircraft, one controller, two certificates. ----
+        internal const val KEY_CHB_ENABLED = "chb_enabled"
+        private const val KEY_CHB_USERNAME = "chb_username"
+        private const val KEY_CHB_UID = "chb_uid"
+        private const val KEY_CHB_TRUSTSTORE = "chb_truststore_path"
+        private const val KEY_CHB_CLIENTCERT = "chb_clientcert_path"
+        private const val KEY_CHB_LOGGED_OUT = "chb_logged_out"
+
         private const val KEY_V_HOST = "video_host"
         private const val KEY_V_PORT = "video_port"
         private const val KEY_V_USER = "video_user"

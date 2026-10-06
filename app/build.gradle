@@ -1577,8 +1577,26 @@ android {
         //        (2026-09-16). This is a flight-screen control that deliberately does NOT land
         //        in all three applications — the rule is suspended for it by the operator's
         //        decision, as it was for the flight-screen refresh on 2026-09-12.
-        versionCode 103
-        versionName "2.3.8"
+        // v2.3.9 — 2026-10-05. UASNoVideo/UASVideo video split, plus Emergency Broadcast.
+        //        A second TAK certificate (cert B), connected alongside the first with its own
+        //        TAK Server username, so one controller can advertise the live-video link on a
+        //        smaller, more restricted channel while every other channel still gets the
+        //        aircraft's position, FOV, SPI and markers with no video. TakManager.videoFor is
+        //        the one place that decides it; see VideoSplitPolicyTest.
+        //        ⚠ FIXED, as a side effect: sendDronePLI and sendCameraPoint called
+        //        client.sendMessage directly since the v1.2 baseline, bypassing the
+        //        logged/redacted send path and any per-connection video policy. Both now route
+        //        through sendCotToBoth like every other outbound message.
+        //        Emergency Broadcast: a pilot-operated, audited, 15-minute override (EMER pill,
+        //        flight screen) that pushes video to every channel at once, for the case where
+        //        withholding it could cost someone a life-saving piece of information. A second
+        //        tap cancels it early; it always resets to OFF on a reconnect. Every enable/
+        //        cancel/expire is recorded by EmergencyBroadcastLog, separate from the normal
+        //        debug log.
+        //        NOT FLOWN. Phase 0 (the server-side channel layout) must pass first — see
+        //        CHANNELS-FINDINGS.md.
+        versionCode 104
+        versionName "2.3.9"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

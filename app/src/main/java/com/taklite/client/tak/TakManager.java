@@ -34,6 +34,30 @@ public class TakManager implements TakClient.TakClientListener {
     private boolean initialPliSent = false;
     private String activeAlertId;
 
+    // ---- Video-channel split (cert B) ----
+    // A second, independent TAK connection, enrolled under its own TAK Server username so it
+    // lands in a different channel/group than `client` above. Everything this class sends goes
+    // out on BOTH connections identically, except the __video element — see videoFor(). B's
+    // inbound traffic is discarded: it exists only to advertise video to a smaller audience, not
+    // to feed this controller's own contact map (that stays A's job, see connectVideoChannel's
+    // no-op TakClientListener).
+    private TakClient videoClient;
+    private volatile boolean videoConnected = false;
+    /** True once connectVideoChannel() has ever been called successfully this session. Stays
+     *  true across a later disconnectVideoChannel() — fail closed: cert A must never regain
+     *  video just because B dropped. */
+    private volatile boolean splitConfigured = false;
+
+    // ---- Emergency Broadcast override ----
+    // A pilot-operated, time-limited override that makes EVERY connection carry video, bypassing
+    // the split above for a bounded window. See TakManager.videoFor() for the one place this
+    // takes effect, and CLAUDE.md / CHANNELS-FINDINGS.md for why this exists (withholding video
+    // from the wider audience could cost someone a life-saving piece of information).
+    private static final long EMERGENCY_BROADCAST_MS = 15 * 60 * 1000L; // 15 minutes
+    private volatile boolean emergencyBroadcastActive = false;
+    private volatile long emergencyExpiresAtEpochMs = 0L;
+    private Runnable emergencyExpireRunnable;
+
     // Client identity for CoT's <takv> block — what a TAK server's "Connected Users" panel shows
     // as this client's type/device/version. Defaults are deliberately generic (never a specific
     // app name): this class is shared with the DJI sibling port, and hardcoding an identity
@@ -95,6 +119,42 @@ public class TakManager implements TakClient.TakClientListener {
     public interface TakAlertListener {
         void onAlertReceived(String senderUid, String senderCallsign, String alertType, double lat, double lon);
         void onAlertCancelled(String senderUid, String senderCallsign);
+    }
+
+    /**
+     * Told when the Emergency Broadcast override starts or ends.
+     *
+     * {@code reason} is one of {@code "enabled"}, {@code "cancelled"}, {@code "expired"} or
+     * {@code "reset-on-reconnect"} — the four events an audit trail needs to distinguish. This
+     * class deliberately does not write that audit record itself (it has no Android/MediaStore
+     * dependency and is shared by every sibling app — see the "no SDK import" rule this package
+     * follows); a listener in the application layer is the one that persists it.
+     */
+    public interface EmergencyBroadcastListener {
+        void onEmergencyBroadcastChanged(boolean active, long expiresAtEpochMs, String reason,
+                                         String triggeredByCallsign);
+    }
+
+    private final List<EmergencyBroadcastListener> emergencyListeners = new ArrayList<>();
+
+    public void addEmergencyBroadcastListener(EmergencyBroadcastListener l) {
+        synchronized (emergencyListeners) { if (!emergencyListeners.contains(l)) emergencyListeners.add(l); }
+    }
+
+    public void removeEmergencyBroadcastListener(EmergencyBroadcastListener l) {
+        synchronized (emergencyListeners) { emergencyListeners.remove(l); }
+    }
+
+    private void notifyEmergencyBroadcastChanged(boolean active, String reason, String callsign) {
+        long expiresAt = active ? emergencyExpiresAtEpochMs : 0L;
+        mainHandler.post(() -> {
+            synchronized (emergencyListeners) {
+                for (EmergencyBroadcastListener l : emergencyListeners) {
+                    try { l.onEmergencyBroadcastChanged(active, expiresAt, reason, callsign); }
+                    catch (Exception e) { AppLog.w(TAG, "emergency broadcast listener failed: " + e.getMessage()); }
+                }
+            }
+        });
     }
 
     private TakManager() {}
@@ -196,6 +256,10 @@ public class TakManager implements TakClient.TakClientListener {
     }
 
     public void disconnect() {
+        // A reconnect/logout must never leave the override silently running — see
+        // EmergencyBroadcastListener's doc. This also covers connect(), which calls disconnect()
+        // first.
+        endEmergencyBroadcast("reset-on-reconnect");
         mainHandler.removeCallbacks(staleCheckRunnable);
         if (client != null) {
             try { client.stopClient(); } catch (Throwable t) { AppLog.w(TAG, "stopClient: " + t.getMessage()); }
@@ -207,11 +271,146 @@ public class TakManager implements TakClient.TakClientListener {
     }
 
     /**
+     * Connects the SECOND certificate — the video channel. Independent lifecycle from
+     * {@link #connect}/{@link #disconnect}: this never touches cert A's socket, and a caller may
+     * connect/disconnect this one repeatedly while A stays up throughout.
+     *
+     * Uses the SAME {@code uid} as cert A (both represent this one aircraft/controller) so a
+     * server-side admin can tell at a glance that A and B are the same airframe under two
+     * certificates. Inbound traffic on this connection is discarded — a no-op listener — per the
+     * design: B exists only to advertise video to a smaller audience, never to feed this
+     * controller's own contact map (that stays A's job).
+     */
+    public void connectVideoChannel(String address, int port, String trustStorePath,
+                                    String trustStorePassword, String clientCertPath,
+                                    String clientCertPassword) {
+        endEmergencyBroadcast("reset-on-reconnect");
+        disconnectVideoChannel();
+        videoClient = new TakClient(address, port, trustStorePath, trustStorePassword,
+                clientCertPath, clientCertPassword, new TakClient.TakClientListener() {
+                    @Override public void onConnected() {
+                        videoConnected = true;
+                        AppLog.d(TAG, "Video channel connected");
+                    }
+                    @Override public void onDisconnected() {
+                        videoConnected = false;
+                        AppLog.d(TAG, "Video channel disconnected");
+                    }
+                    @Override public void onCotReceived(String xml) {
+                        // Discarded by design — see the class doc above. Not even logged at
+                        // info level: this connection can carry the same traffic volume as A,
+                        // and there is nothing useful to do with it here.
+                    }
+                });
+        videoClient.start();
+        splitConfigured = true;
+    }
+
+    /** Tears down the video channel only. {@code splitConfigured} stays true — fail closed: cert
+     *  A must never regain video just because B dropped. See videoFor(). */
+    public void disconnectVideoChannel() {
+        if (videoClient != null) {
+            try { videoClient.stopClient(); } catch (Throwable t) { AppLog.w(TAG, "stopClient (video): " + t.getMessage()); }
+            videoClient = null;
+        }
+        videoConnected = false;
+    }
+
+    /** True once connectVideoChannel() has ever succeeded this session, whether or not it is
+     *  connected RIGHT NOW. This is what videoFor() reads to decide whether A should ever be
+     *  stripped of video — see its doc for why that must not flip back off on a mere drop. */
+    public boolean isVideoChannelConfigured() {
+        return splitConfigured;
+    }
+
+    /** True only while the video channel's socket is actually up right now. */
+    public boolean isVideoChannelConnected() {
+        return videoConnected;
+    }
+
+    /**
+     * Decides whether ONE outbound message, bound for connection {@code path} ("A" or "B"),
+     * should carry {@code url} as its {@code __video} value.
+     *
+     * Pure and socket-free on purpose — this is the one place the whole split/override policy
+     * lives, and it is exercised directly by VideoSplitPolicyTest with no TakClient at all.
+     *
+     * @param path "A" (the always-present, no-video-by-default connection) or "B" (the video
+     *             connection) — a plain string rather than a boolean so a future third path
+     *             cannot silently invert the sense of an existing boolean parameter.
+     * @param splitConfigured whether a video channel has ever been configured this session
+     *                        ({@link #isVideoChannelConfigured()}).
+     * @param emergencyActive whether the Emergency Broadcast override is active RIGHT NOW.
+     * @param url the video URL this message would carry if nothing restricted it.
+     * @return {@code url} if this path should carry it, else {@code null}.
+     */
+    static String videoFor(String path, boolean splitConfigured, boolean emergencyActive, String url) {
+        // Checked FIRST, and returns unconditionally on every path: the override exists
+        // specifically to bypass the split below, so nothing after this line may re-narrow it.
+        if (emergencyActive) return url;
+        if (!splitConfigured) return url; // today's single-connection behaviour, unchanged
+        return "B".equals(path) ? url : null; // split active: A never carries video
+    }
+
+    /**
+     * Starts, or (on a second call while already active) CANCELS, the Emergency Broadcast
+     * override — see the class-level note above {@link #EMERGENCY_BROADCAST_MS} for what this is
+     * for. Safe to call whether or not the video channel is configured, though the UI should only
+     * expose the control when {@link #isVideoChannelConfigured()} — with no split, there is
+     * nothing to override.
+     *
+     * @param triggeredByCallsign the pilot/operator's callsign, for the audit record a listener
+     *                            writes in response to {@link EmergencyBroadcastListener}.
+     */
+    public void toggleEmergencyBroadcast(String triggeredByCallsign) {
+        if (emergencyBroadcastActive) {
+            endEmergencyBroadcast("cancelled");
+            return;
+        }
+        emergencyBroadcastActive = true;
+        emergencyExpiresAtEpochMs = System.currentTimeMillis() + EMERGENCY_BROADCAST_MS;
+        if (emergencyExpireRunnable != null) mainHandler.removeCallbacks(emergencyExpireRunnable);
+        emergencyExpireRunnable = () -> endEmergencyBroadcast("expired");
+        mainHandler.postDelayed(emergencyExpireRunnable, EMERGENCY_BROADCAST_MS);
+        AppLog.i(TAG, "Emergency Broadcast ENABLED by " + triggeredByCallsign
+                + " — video on every connection until " + emergencyExpiresAtEpochMs);
+        notifyEmergencyBroadcastChanged(true, "enabled", triggeredByCallsign);
+    }
+
+    public boolean isEmergencyBroadcastActive() {
+        return emergencyBroadcastActive;
+    }
+
+    /** 0 when inactive. */
+    public long emergencyBroadcastExpiresAtEpochMs() {
+        return emergencyBroadcastActive ? emergencyExpiresAtEpochMs : 0L;
+    }
+
+    /**
+     * The one place that clears Emergency Broadcast state, whatever ended it — a manual cancel,
+     * the timer firing, or a reconnect that must not inherit it. A no-op when already inactive,
+     * so {@link #connect}/{@link #disconnect}/{@link #connectVideoChannel} can call this
+     * unconditionally without checking state first.
+     */
+    private void endEmergencyBroadcast(String reason) {
+        if (!emergencyBroadcastActive) return;
+        emergencyBroadcastActive = false;
+        emergencyExpiresAtEpochMs = 0L;
+        if (emergencyExpireRunnable != null) {
+            mainHandler.removeCallbacks(emergencyExpireRunnable);
+            emergencyExpireRunnable = null;
+        }
+        AppLog.i(TAG, "Emergency Broadcast ENDED (" + reason + ")");
+        notifyEmergencyBroadcastChanged(false, reason, callsign);
+    }
+
+    /**
      * CHANNEL SELECTION IS REMOVED (operator, 2026-08-15), and this note is why.
      *
      * This class used to hold the channels a pilot picked on TAK Setup and inject
-     * {@code <marti><dest group="…" send="true"/></marti>} into every CoT that went through
-     * {@link #sendCot}. IT SILENTLY DESTROYED MARKERS. With channels selected, the server would
+     * {@code <marti><dest group="…" send="true"/></marti>} into every CoT that went through what
+     * was then called {@code sendCot} (now {@link #sendOn}/{@link #sendCotToBoth}).
+     * IT SILENTLY DESTROYED MARKERS. With channels selected, the server would
      * not route them and simply dropped them; with none selected they arrived at once. Proved on
      * the fleet controller 2026-08-15 by watching one marker with the block and one without.
      *
@@ -221,11 +420,13 @@ public class TakManager implements TakClient.TakClientListener {
      * bug claimed alerts were being dropped; that was wrong, and it reached the v1.6.1 release
      * notes before it was caught. If an alert control is ever added, this path is what it uses.
      *
-     * It was also never applied evenly. The drone PLI and the camera point call
+     * It was also never applied evenly. The drone PLI and the camera point called
      * {@link TakClient#sendMessage} directly, so they ignored the selection entirely — a pilot
      * who picked channels to LIMIT who saw this aircraft still broadcast its position to
      * everyone. The feature failed in both directions at once, and had done so since the v1.2
-     * baseline.
+     * baseline. ⚠ **FIXED in the v2.3.9 video-split work**: both methods now build their CoT
+     * through {@link #sendCotToBoth}/{@link #videoFor} like everything else in this class, so a
+     * video restriction on one connection can no longer be silently ignored by these two.
      *
      * Routing is now left to the certificate's group membership, which is what the server does
      * with no marti block, and what every working message in this application already relied on.
@@ -236,16 +437,15 @@ public class TakManager implements TakClient.TakClientListener {
      */
 
     /**
-     * Sends one CoT to the server.
-     *
-     * The event goes out exactly as the builder made it. Routing is the server's job, decided by
-     * the group membership on this client's certificate — see the note on channel selection above
-     * for why this method no longer rewrites the destination.
+     * Sends one CoT on ONE specific connection — the guarded, logged, redacted single-connection
+     * send every outbound message goes through, generalized from what used to be {@code sendCot}
+     * so it can run against either cert A's {@code client} or cert B's {@code videoClient}.
      */
-    private void sendCot(String xml) {
-        if (client == null || !connected) {
-            AppLog.w(TAG, "CoT NOT SENT — client=" + (client == null ? "null" : "present")
-                    + " connected=" + connected);
+    private void sendOn(TakClient target, String xml) {
+        boolean targetConnected = target == client ? connected : videoConnected;
+        if (target == null || !targetConnected) {
+            AppLog.w(TAG, "CoT NOT SENT — client=" + (target == null ? "null" : "present")
+                    + " connected=" + targetConnected);
             return;
         }
         String wire = xml;
@@ -258,7 +458,26 @@ public class TakManager implements TakClient.TakClientListener {
         // in Debug Log to diagnose, which is the convention the flight-test checklist already
         // uses. AppLog.v only reaches the file when that is set.
         AppLog.v(TAG, "CoT OUT: " + redactCredentials(wire));
-        client.sendMessage(wire);
+        target.sendMessage(wire);
+    }
+
+    /**
+     * Sends one CoT on EVERY configured connection: always on cert A, and on cert B too iff a
+     * video channel is configured AND currently connected. {@code xmlForA}/{@code xmlForB} are
+     * built by the caller (typically identical strings, or differing only in whether they carry
+     * {@code __video} — see {@link #videoFor}) so this method stays a pure dispatcher with no
+     * video-policy knowledge of its own.
+     *
+     * Every outbound CoT in this class goes through here now — see the class's safety note on
+     * why {@code sendDronePLI}/{@code sendCameraPoint} calling {@code client.sendMessage}
+     * directly (bypassing the logged/redacted path, and bypassing this fan-out) was the bug that
+     * let a pilot who restricted an aircraft's audience still broadcast its position to everyone.
+     */
+    private void sendCotToBoth(String xmlForA, String xmlForB) {
+        sendOn(client, xmlForA);
+        if (videoClient != null && videoConnected) {
+            sendOn(videoClient, xmlForB);
+        }
     }
 
     /**
@@ -318,23 +537,32 @@ public class TakManager implements TakClient.TakClientListener {
     public void sendPilotPLI(Location location, String callsign, String role,
                              int battery, String videoUrl) {
         if (client == null || !connected) return;
-        String xml;
+        String urlA = videoFor("A", splitConfigured, emergencyBroadcastActive, videoUrl);
+        String urlB = videoFor("B", splitConfigured, emergencyBroadcastActive, videoUrl);
+        String xmlA, xmlB;
         String where;
         if (location != null) {
             lastLat = location.getLatitude();
             lastLon = location.getLongitude();
             double ce = location.hasAccuracy() ? location.getAccuracy() : 0;
-            xml = CotBuilder.buildPLI(uid, pilotCallsign(callsign), PILOT_TEAM, role, true,
+            xmlA = CotBuilder.buildPLI(uid, pilotCallsign(callsign), PILOT_TEAM, role, true,
                     location.getLatitude(), location.getLongitude(), location.getAltitude(), ce,
                     location.getBearing(), location.getSpeed(), battery,
-                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion, videoUrl);
+                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion, urlA);
+            xmlB = java.util.Objects.equals(urlA, urlB) ? xmlA : CotBuilder.buildPLI(uid, pilotCallsign(callsign),
+                    PILOT_TEAM, role, true, location.getLatitude(), location.getLongitude(),
+                    location.getAltitude(), ce, location.getBearing(), location.getSpeed(), battery,
+                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion, urlB);
             where = lastLat + "," + lastLon;
         } else {
-            xml = CotBuilder.buildPLINoFix(uid, pilotCallsign(callsign), PILOT_TEAM, role, battery,
-                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion, videoUrl);
+            xmlA = CotBuilder.buildPLINoFix(uid, pilotCallsign(callsign), PILOT_TEAM, role, battery,
+                    takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion, urlA);
+            xmlB = java.util.Objects.equals(urlA, urlB) ? xmlA : CotBuilder.buildPLINoFix(uid, pilotCallsign(callsign),
+                    PILOT_TEAM, role, battery, takvPlatform, deviceWithCallsign(callsign), takvOs,
+                    takvVersion, urlB);
             where = "position not known";
         }
-        sendCot(xml);
+        sendCotToBoth(xmlA, xmlB);
         AppLog.d(TAG, "Pilot PLI sent: " + pilotCallsign(callsign) + " @ " + where
                 + (videoUrl != null && !videoUrl.isEmpty() ? " (+video)" : ""));
     }
@@ -362,7 +590,7 @@ public class TakManager implements TakClient.TakClientListener {
                     location.getLatitude(), location.getLongitude(), location.getAltitude(),
                     location.getBearing(), location.getSpeed(), battery,
                     takvPlatform, deviceWithCallsign(callsign), takvOs, takvVersion);
-            sendCot(xml);
+            sendCotToBoth(xml, xml);
             AppLog.d(TAG, "PLI sent: " + callsign + " @ " + lastLat + "," + lastLon);
             AppLog.d(TAG, "PLI XML: " + xml);
             if (!initialPliSent) {
@@ -387,15 +615,30 @@ public class TakManager implements TakClient.TakClientListener {
                              boolean isFlying, int flightTimeSec,
                              int batteryMaxMah, int batteryRemainMah, double voltage) {
         if (client != null && connected) {
-            String xml = CotBuilder.buildDronePLI(droneUid, droneCallsign,
+            String urlA = videoFor("A", splitConfigured, emergencyBroadcastActive, videoUrl);
+            String urlB = videoFor("B", splitConfigured, emergencyBroadcastActive, videoUrl);
+            String xmlA = CotBuilder.buildDronePLI(droneUid, droneCallsign,
                     lat, lon, hae, heading, speed, battery,
-                    videoUrl, spiUid,
+                    urlA, spiUid,
                     sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, northRef,
                     gimbalRoll, gimbalPitch, gimbalYaw,
                     isFlying, flightTimeSec,
                     batteryMaxMah, batteryRemainMah, voltage,
                     this.uid);
-            client.sendMessage(xml);
+            String xmlB = java.util.Objects.equals(urlA, urlB) ? xmlA : CotBuilder.buildDronePLI(
+                    droneUid, droneCallsign,
+                    lat, lon, hae, heading, speed, battery,
+                    urlB, spiUid,
+                    sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, northRef,
+                    gimbalRoll, gimbalPitch, gimbalYaw,
+                    isFlying, flightTimeSec,
+                    batteryMaxMah, batteryRemainMah, voltage,
+                    this.uid);
+            // Was client.sendMessage(xml) directly — bypassed the logged/redacted path AND sent
+            // identically to every connection regardless of video policy. See the incident note
+            // on sendCotToBoth/sendOn above: that bypass is why a pilot who restricted this
+            // aircraft's audience still broadcast its position to everyone.
+            sendCotToBoth(xmlA, xmlB);
             AppLog.d(TAG, "Drone PLI sent: " + droneCallsign + " @ " + lat + "," + lon
                     + " alt=" + hae + " hdg=" + heading);
         }
@@ -409,7 +652,10 @@ public class TakManager implements TakClient.TakClientListener {
                                 double lat, double lon, double rangeM) {
         if (client != null && connected) {
             String xml = CotBuilder.buildSensorPoint(spiUid, droneUid, callsign, lat, lon, rangeM);
-            client.sendMessage(xml);
+            // Was client.sendMessage(xml) directly — see the incident note on sendCotToBoth/
+            // sendOn above. This message carries no video element either way, so the same string
+            // goes to both connections.
+            sendCotToBoth(xml, xml);
             AppLog.d(TAG, "Camera point sent: " + callsign + " @ " + lat + "," + lon
                     + " range=" + Math.round(rangeM) + "m");
         }
@@ -419,7 +665,7 @@ public class TakManager implements TakClient.TakClientListener {
     public void sendFootprint(String uid, String callsign, double[][] corners) {
         if (client != null && connected && corners != null && corners.length >= 3) {
             String xml = CotBuilder.buildFootprintPolygon(uid, callsign, corners);
-            sendCot(xml);
+            sendCotToBoth(xml, xml);
             AppLog.d(TAG, "Footprint sent: " + callsign + " (" + corners.length + " corners)");
         }
     }
@@ -428,7 +674,7 @@ public class TakManager implements TakClient.TakClientListener {
         if (client == null || !connected) return;
         String xml = CotBuilder.buildAlert(uid, callsign, team, role,
                 location.getLatitude(), location.getLongitude(), location.getAltitude(), alertType);
-        sendCot(xml);
+        sendCotToBoth(xml, xml);
         int uidStart = xml.indexOf("uid=\"") + 5;
         int uidEnd = xml.indexOf("\"", uidStart);
         activeAlertId = xml.substring(uidStart, uidEnd);
@@ -438,7 +684,7 @@ public class TakManager implements TakClient.TakClientListener {
     public void cancelAlert() {
         if (client == null || !connected || activeAlertId == null) return;
         String xml = CotBuilder.buildAlertCancel(uid, callsign, activeAlertId);
-        sendCot(xml);
+        sendCotToBoth(xml, xml);
         AppLog.d(TAG, "Alert cancelled: " + activeAlertId);
         activeAlertId = null;
     }
@@ -504,8 +750,8 @@ public class TakManager implements TakClient.TakClientListener {
         if (client == null || !connected) return null;
         String xml = CotBuilder.buildMarkerWithType(uid, callsign, markerUid, cotType,
                 lat, lon, alt, name, remarks, missionName, affiliationForLog);
-        sendCot(xml);
-        // "QUEUED", not "sent". sendCot hands the message to a fire-and-forget writer thread and
+        sendCotToBoth(xml, xml);
+        // "QUEUED", not "sent". sendCotToBoth hands the message to a fire-and-forget writer thread and
         // this line runs whatever that thread then does with it. Saying "sent" here cost an hour
         // on 2026-08-15: the log said every marker was sent while none arrived. The truth about
         // the wire is in the CoT OUT line above and in TakClient's failure lines.

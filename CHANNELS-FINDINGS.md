@@ -227,3 +227,42 @@ same error: **an absence in our own data was reported as a fact about the server
 4. *"Send one message for each channel."* Not necessary. It was a way to live with bad channel
    names, and the correct method has none.
 5. *"Poll the server each few minutes."* Not necessary. The server pushes `t-x-g-c`.
+
+## 12. UASNoVideo / UASVideo — two certificates, one aircraft (v2.3.9)
+
+A channel is scoped to the CERTIFICATE, not to one message. `<dest group>` cannot do what
+command staff asked for — see section 8 above on why that attribute must never come back. So a
+controller that must show video to one audience and not to another needs TWO certificates, each
+enrolled under its own TAK Server username, each in its own channel.
+
+- **Channel A (no video)** — the default. Every user in it. Gets the aircraft's position, FOV,
+  SPI, and any markers it drops. No `__video` element, ever.
+- **Channel B (video)** — a smaller, admin-assigned audience. Gets everything channel A gets,
+  plus the `__video` element with the live-stream URL.
+
+The two certificates send the SAME uid. The server is expected to keep both connections and
+apply each certificate's own channel scope, exactly as it already does for one certificate — see
+section 5/6 above (receive-only proven with ADS-B).
+
+**Phase 0 results (server-side, admin):** [fill in after the test-server run — confirm a
+Main-only test user gets only channel A's copy and a video-channel test user gets only channel
+B's copy, both on a live connection and after a reconnect; confirm the server keeps BOTH
+connections when they share one uid; confirm a marker a video-channel user sends reaches the
+controller through channel A, not channel B.]
+
+**Each controller needs TWO TAK Server user accounts**, one per certificate — channel membership
+is tied to the enrolling user, not a flag an admin can set on one account.
+
+### Emergency Broadcast
+
+A pilot-operated override (the EMER pill, flight screen): for 15 minutes, EVERY channel gets the
+video link, not just channel B's audience. This exists because withholding video from channel A
+could cost someone a life-saving piece of information in a fast-moving incident. A second tap
+cancels it early. It always resets to OFF on a reconnect — never silently inherited across a
+restart. Every enable, cancel, and expiry is recorded with a timestamp and the callsign that
+triggered it, in its own audit file — see `EmergencyBroadcastLog` — separate from the normal
+debug log, specifically so this override leaves a record a reviewer can find after the fact.
+
+**Rollback:** with the "Enable video channel" switch left off, nothing in this section changes
+behaviour. `TakManager.videoFor` falls straight through to today's single-connection behaviour —
+pinned by `VideoSplitPolicyTest`.

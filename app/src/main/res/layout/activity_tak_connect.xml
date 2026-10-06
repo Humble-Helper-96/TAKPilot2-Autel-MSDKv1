@@ -735,6 +735,108 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
+        <!-- Video channel (cert B) — v2.3.9. OFF by default. A second certificate, enrolled
+             under its own TAK Server username, that carries the live-video URL in addition to
+             everything cert A already sends. The channel list below is READ-ONLY: nothing here
+             writes activebits for this certificate — see TakConnectActivity.refreshVideoChannels. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Video Channel"
+            android:textColor="@color/tp_text_primary"
+            android:textStyle="bold"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="A second TAK account for this aircraft. Only the channel(s) it belongs to receive the live-video link — every other channel still gets position and markers with no video."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="8dp"
+            android:gravity="center_vertical">
+            <Switch
+                android:id="@+id/takVideoChannelEnabled"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Enable video channel"
+                android:textColor="@color/tp_text_primary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/takVideoChannelFields"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="8dp"
+            android:visibility="gone">
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Video channel username" />
+                <EditText
+                    android:id="@+id/takVideoUsername"
+                    style="@style/takFieldStyle"
+                    android:inputType="text" />
+            </LinearLayout>
+            <LinearLayout style="@style/takColumn">
+                <TextView style="@style/takLabelStyle" android:text="Video channel password" />
+                <EditText
+                    android:id="@+id/takVideoPassword"
+                    style="@style/takFieldStyle"
+                    android:inputType="textPassword" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <Button
+            style="@style/TakButton.Primary"
+            android:id="@+id/takVideoConnectButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            android:text="Enroll &amp; Connect Video Channel" />
+
+        <TextView
+            android:id="@+id/takVideoChannelStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="13sp"
+            android:text="" />
+
+        <TextView
+            android:id="@+id/takVideoChannelsLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Video channel's channels (read-only)"
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/takVideoChannelsList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="4dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="20dp"
+            android:background="@color/tp_border" />
+
         <!-- 4. Elevation Data (DTED) — imported terrain regions for the local flight area.
              Feeds TerrainAgl + CameraSlantPoint's terrain-corrected SPoI. -->
         <TextView

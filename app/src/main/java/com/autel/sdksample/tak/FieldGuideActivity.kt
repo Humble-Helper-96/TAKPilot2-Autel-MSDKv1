@@ -182,6 +182,12 @@ class FieldGuideActivity : AppCompatActivity() {
             "callsign of the aircraft. Then touch Enroll & Connect.")
         body("Select the active channels here, or in flight with a touch and hold on the TAK " +
             "connection icon.")
+        body("Video Channel (optional): a second TAK account for this aircraft. Only the " +
+            "channel it belongs to gets the live-video link; every other channel still gets " +
+            "the position and the markers. Its channel list here is read-only.")
+        body("Emergency Broadcast (EMER pill, flight screen): pushes the live-video link to " +
+            "every channel for 15 minutes, then stops it automatically. Touch again to stop " +
+            "it early. Every use is recorded with the time and the callsign.")
 
         sub("4. Elevation Data (DTED)")
         body("The terrain data for your area. Import one file for each region. It improves " +

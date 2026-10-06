@@ -25,6 +25,14 @@ object TakAutoConnect {
     private const val KEY_CAMERA_POINT = "camera_point"
     private const val KEY_LOGGED_OUT = "logged_out"
 
+    // ---- Video channel (cert B) — v2.3.9. This file keeps its OWN copy of these keys rather
+    // than sharing TakConnectActivity's (that's the existing convention here — see KEY_HOST et
+    // al. above, already duplicated from that Activity). ----
+    private const val KEY_CHB_ENABLED = "chb_enabled"
+    private const val KEY_CHB_TRUSTSTORE = "chb_truststore_path"
+    private const val KEY_CHB_CLIENTCERT = "chb_clientcert_path"
+    private const val KEY_CHB_LOGGED_OUT = "chb_logged_out"
+
     /** Reconnect in the background if we have saved certs and aren't already connected. */
     fun tryReconnect(context: Context) {
         if (TakManager.getInstance().isConnected) return
@@ -76,6 +84,7 @@ object TakAutoConnect {
         if (TakManager.getInstance().isConnected) {
             Log.i(TAG, "TAK icon tap — disconnecting")
             runCatching { TakManager.getInstance().disconnect() }
+            runCatching { TakManager.getInstance().disconnectVideoChannel() }
             // NOT stop(): disconnecting TAK does not mean the app is done. The aircraft may
             // still be connected — AutelProductHolder started this service precisely so a swipe
             // tears the aircraft down — and an Explorer restore may be owed.
@@ -99,6 +108,15 @@ object TakAutoConnect {
         val host = prefs.getString(KEY_HOST, "") ?: ""
         val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
         val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
+        return host.isNotEmpty() && ts.isNotEmpty() && cc.isNotEmpty() &&
+            File(ts).exists() && File(cc).exists()
+    }
+
+    /** Same check for cert B (the video channel, v2.3.9). Mirrors [hasSavedCerts]. */
+    private fun hasSavedVideoCerts(prefs: android.content.SharedPreferences): Boolean {
+        val host = prefs.getString(KEY_HOST, "") ?: "" // cert B reuses cert A's host
+        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
         return host.isNotEmpty() && ts.isNotEmpty() && cc.isNotEmpty() &&
             File(ts).exists() && File(cc).exists()
     }
@@ -129,6 +147,20 @@ object TakAutoConnect {
                 uid, callsign, "Cyan", "Team Member",
                 host, cotPort, ts, "atakatak", cc, "atakatak",
             )
+            // Cert B (the video channel, v2.3.9) — only if enabled, not logged out, and its own
+            // certs are still on disk. Reuses cert A's host/cotPort (one aircraft, one
+            // controller, two certificates). See TakConnectActivity's equivalent reconnect path.
+            if (prefs.getBoolean(KEY_CHB_ENABLED, false)
+                && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)
+                && hasSavedVideoCerts(prefs)
+            ) {
+                val videoTs = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
+                val videoCc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
+                TakManager.getInstance().connectVideoChannel(
+                    host, cotPort, videoTs, "atakatak", videoCc, "atakatak",
+                )
+                Log.i(TAG, "Auto-connected video channel")
+            }
             // NOTHING IS RE-APPLIED, and no channel list is read. A controller that ran
             // v1.6.0 or older can still hold one, and feeding it to the old setChannels path
             // would put <dest group> back on every message and destroy the markers again. The

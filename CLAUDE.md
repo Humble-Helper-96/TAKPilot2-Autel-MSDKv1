@@ -93,6 +93,24 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.3.9 IN PROGRESS** — 2026-10-05. The UASNoVideo/UASVideo video split, plus Emergency
+Broadcast. A second TAK certificate (cert B) in `TakManager`, connected alongside the first
+(`client`) under its own TAK Server username, so one controller can advertise the live-video
+link to a smaller, admin-assigned channel while every other channel still gets the aircraft's
+position, FOV, SPI and markers with no video. `TakManager.videoFor` is the one place that
+decides it — see `VideoSplitPolicyTest`. New "Video Channel" section in `TakConnectActivity`
+(cert B's own enroll/connect, read-only channel list), `TakAutoConnect` reconnects it silently
+like cert A, and the EMER pill on the flight screen runs the 15-minute Emergency Broadcast
+override (own audit file, `EmergencyBroadcastLog`, separate from the normal debug log). See
+`SplitVideoScope.md` and `CHANNELS-FINDINGS.md` §12 for the full design and the Phase 0 server
+prerequisite. **NOT FLOWN. Phase 0 (the server-side channel layout, with two TAK Server
+accounts per controller) must pass before any of this is useful.**
+
+⚠ **FIXED as a side effect of this work**: `sendDronePLI` and `sendCameraPoint` had called
+`client.sendMessage` directly since the v1.2 baseline, bypassing the logged/redacted send path
+documented in the channel-selection removal note in `TakManager.java`. Both now route through
+`sendCotToBoth` like every other outbound message in that class.
+
 **v2.3.8 IS RELEASED** — tag `v2.3.8`, versionCode 103, 2026-09-16, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. PIP is `base=None` at
 75 % thermal by default, and **THE PILOT SETS THE BLEND WITH A SLIDER**. v2.3.5 (100) measured

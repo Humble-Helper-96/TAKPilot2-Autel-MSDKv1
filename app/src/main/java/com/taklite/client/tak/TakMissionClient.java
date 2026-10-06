@@ -51,7 +51,8 @@ public class TakMissionClient {
         this.host = host; this.port = port; this.sslFactory = f;
     }
 
-    /** Build from the certs/host TakManager retained at connect(). Returns null if not enrolled. */
+    /** Build from the certs/host TakManager retained at connect() — cert A. Returns null if not
+     *  enrolled. Thin wrapper over {@link #fromCert} so there is one TLS-setup implementation. */
     public static TakMissionClient fromTakManager(int apiPort) {
         TakManager tm = TakManager.getInstance();
         String host = tm.getServerAddress();
@@ -63,19 +64,37 @@ public class TakMissionClient {
             AppLog.w(TAG, "Not enrolled — no host/certs to build Mission client");
             return null;
         }
+        return fromCert(host, apiPort, trust, trustPw, cert, certPw);
+    }
+
+    /**
+     * Build a Mission client from EXPLICIT cert material rather than reading the
+     * {@link TakManager} singleton. This is what lets a caller stand up a Mission client for a
+     * SECOND certificate (e.g. a video-channel cert) that TakManager's own getters never expose,
+     * without disturbing cert A's state.
+     *
+     * @return null if the TLS material could not be loaded.
+     */
+    public static TakMissionClient fromCert(String host, int apiPort,
+            String trustStorePath, String trustStorePassword,
+            String clientCertPath, String clientCertPassword) {
+        if (host == null || clientCertPath == null || trustStorePath == null) {
+            AppLog.w(TAG, "fromCert: missing host/certs — cannot build Mission client");
+            return null;
+        }
         try {
             KeyStore trustStore = KeyStore.getInstance("PKCS12");
-            try (FileInputStream in = new FileInputStream(trust)) {
-                trustStore.load(in, trustPw.toCharArray());
+            try (FileInputStream in = new FileInputStream(trustStorePath)) {
+                trustStore.load(in, trustStorePassword.toCharArray());
             }
             KeyStore clientStore = KeyStore.getInstance("PKCS12");
-            try (FileInputStream in = new FileInputStream(cert)) {
-                clientStore.load(in, certPw.toCharArray());
+            try (FileInputStream in = new FileInputStream(clientCertPath)) {
+                clientStore.load(in, clientCertPassword.toCharArray());
             }
             TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             tmf.init(trustStore);
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            kmf.init(clientStore, certPw.toCharArray());
+            kmf.init(clientStore, clientCertPassword.toCharArray());
             SSLContext ctx = SSLContext.getInstance("TLSv1.3");
             ctx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
             return new TakMissionClient(host, apiPort, ctx.getSocketFactory());

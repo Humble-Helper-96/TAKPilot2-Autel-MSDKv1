@@ -40,8 +40,33 @@ public class TakCertEnroller {
         void onError(String error);
     }
 
+    /**
+     * Enrolls with the TAK server and saves the resulting cert pair under the default
+     * {@code tak_} file names. Forwards to the prefixed overload so there is one enrollment
+     * implementation — see that overload's doc for what a second, differently-prefixed call is
+     * for (a second certificate on the same device, e.g. a video-channel cert alongside this
+     * one, each enrolled under its own TAK Server username/password).
+     */
     public static void enroll(String serverAddress, int enrollPort, String username, String password,
                               String uid, File filesDir, EnrollmentCallback callback) {
+        enroll(serverAddress, enrollPort, username, password, uid, filesDir, "tak_", callback);
+    }
+
+    /**
+     * Enrolls with the TAK server and saves the resulting cert pair as
+     * {@code <fileNamePrefix>clientcert.p12} / {@code <fileNamePrefix>truststore.p12} in
+     * {@code filesDir}.
+     *
+     * The prefix is what lets one device hold TWO enrolled certificates side by side — e.g.
+     * {@code "tak_"} for a device's normal certificate and {@code "tak_video_"} for a second
+     * certificate enrolled under a different TAK Server username, without one enrollment
+     * overwriting the other's files. Each certificate still needs its own username/password at
+     * call time: this method does not split one account into two certs, it enrolls once per call
+     * exactly as before, just under a caller-chosen file name.
+     */
+    public static void enroll(String serverAddress, int enrollPort, String username, String password,
+                              String uid, File filesDir, String fileNamePrefix,
+                              EnrollmentCallback callback) {
         try {
             SSLContext sslCtx = createEnrollmentSSLContext();
             String basicAuth = "Basic " + Base64.encodeToString((username + ":" + password).getBytes(), Base64.NO_WRAP);
@@ -89,12 +114,12 @@ public class TakCertEnroller {
             X509Certificate caCert1 = ca1B64.isEmpty() ? null : decodeCert(ca1B64);
 
             // Build client .p12
-            File clientP12 = new File(filesDir, "tak_clientcert.p12");
+            File clientP12 = new File(filesDir, fileNamePrefix + "clientcert.p12");
             buildClientP12(keyPair, signedCert, caCert0, caCert1, clientP12);
             AppLog.d(TAG, "Client .p12 saved: " + clientP12.getAbsolutePath());
 
             // Build trust store
-            File trustP12 = new File(filesDir, "tak_truststore.p12");
+            File trustP12 = new File(filesDir, fileNamePrefix + "truststore.p12");
             boolean trustBuilt = false;
             try {
                 String trustUrl = "https://" + serverAddress + ":" + enrollPort + "/api/truststore";

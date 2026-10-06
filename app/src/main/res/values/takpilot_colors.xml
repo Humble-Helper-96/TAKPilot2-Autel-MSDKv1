@@ -193,4 +193,12 @@
     <color name="tp_pill_live_fill">#4DE53935</color>
     <color name="tp_pill_sync_fill">#4DFFB74D</color>
 
+    <!-- Emergency Broadcast (v2.3.9) — the pilot-operated override that pushes video to every
+         TAK channel for a bounded window, bypassing the video-channel split. Deliberately its
+         OWN hue, not a reuse of red (LIVE: "going out to the team"), amber (caution/retrying)
+         or green (connected/on): this is a distinct, audited override action, not a feature
+         toggle or a connection state, and must not be mistaken for any of those at a glance. -->
+    <color name="tp_state_emergency">#7C4DFF</color>
+    <color name="tp_pill_emergency_fill">#4D7C4DFF</color>
+
 </resources>

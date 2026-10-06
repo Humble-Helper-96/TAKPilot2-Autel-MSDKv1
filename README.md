@@ -11,6 +11,9 @@ The application does these functions:
 - It sends the position, the attitude and the battery state to a TAK server as CoT.
 - It sends the flight screen to a media server as RTSP or SRT.
 - It puts TAK markers on the map and controls them.
+- It can send its live-video link to one TAK channel only, while every other channel still gets
+  its position and markers with no video. A pilot-operated, audited, time-limited override can
+  push the video link to every channel for an emergency.
 - It draws markers on the live video as an augmented-reality (AR) overlay.
 - It shows the visible camera, the thermal camera, or the thermal picture in a window on the
   visible picture (PIP). The camera makes the composite.

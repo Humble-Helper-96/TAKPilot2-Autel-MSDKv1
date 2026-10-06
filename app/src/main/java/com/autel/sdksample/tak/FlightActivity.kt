@@ -93,6 +93,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var irPaletteButton: TextView
     /** The ⤢ / ⤡ on the thermal window's corner — see [renderPipSizeButton]. */
     private lateinit var pipSizeButton: android.widget.ImageButton
+    private lateinit var emergencyBroadcastButton: TextView
+    private lateinit var emergencyBroadcastBanner: TextView
     /** The whole video frame's rect in view space, as last handed to the AR overlay. */
     private var lastVideoRect: android.graphics.RectF? = null
 
@@ -242,6 +244,10 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     // FAA cell lookup cache — see updateFaaCeiling.
     private var lastFaaGridRow = Int.MIN_VALUE
     private var lastFaaGridCol = Int.MIN_VALUE
+    /** Fires the "Video link down" notice on a CHANGE only — same rule as announcedMediaMode —
+     *  never on the first read, so connecting with the video channel not yet up does not
+     *  immediately show a notice for something the pilot did not just do. */
+    private var lastVideoChannelDown: Boolean? = null
     private var cachedFaaCeilingFt: Int? = null
     private var cachedFaaWithinDownloadedArea = false
 
@@ -423,6 +429,23 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.v(TAG, "tap: PIP size control -> $target")
             selectCameraView(target)
         }
+        emergencyBroadcastButton = findViewById(R.id.flightEmergencyBroadcastButton)
+        emergencyBroadcastBanner = findViewById(R.id.flightEmergencyBroadcastBanner)
+        emergencyBroadcastButton.setOnClickListener {
+            val callsign = TakManager.getInstance().callsign ?: "unknown"
+            AppLog.v(TAG, "tap: Emergency Broadcast control (callsign=$callsign)")
+            TakManager.getInstance().toggleEmergencyBroadcast(callsign)
+        }
+        // Only shown when a video channel is configured — with no split there is nothing to
+        // override. Set once here; the active/inactive PAINT (colour, banner) is driven by the
+        // listener below and by the HUD tick's countdown refresh.
+        emergencyBroadcastButton.visibility =
+            if (TakManager.getInstance().isVideoChannelConfigured()) View.VISIBLE else View.GONE
+        TakManager.getInstance().addEmergencyBroadcastListener(emergencyBroadcastListener)
+        paintEmergencyBroadcast(
+            TakManager.getInstance().isEmergencyBroadcastActive(),
+            TakManager.getInstance().emergencyBroadcastExpiresAtEpochMs(),
+        )
         map = findViewById(R.id.flightMap)
         mapContainer = findViewById(R.id.flightMapContainer)
         // ROUND THE MAP ITSELF, not just its frame (operator, 2026-09-12).
@@ -1048,6 +1071,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
                 getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
             )
         }
+        runCatching { TakManager.getInstance().removeEmergencyBroadcastListener(emergencyBroadcastListener) }
         arOverlay.stop()
         VideoStreamerHolder.onStateChanged = null
         TakMapMarkers.onMapDestroyed()
@@ -1183,6 +1207,25 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         // video", so it does not claim more than it knows.
         findViewById<View>(R.id.flightNoVideoCover).visibility =
             if (acOk) View.GONE else View.VISIBLE
+
+        // Video channel (cert B, v2.3.9) health. Only meaningful once configured — an
+        // unconfigured split has no video channel to be "down". Fires the amber notice on a
+        // CHANGE only (see lastVideoChannelDown's doc), and only while the stream is actually
+        // LIVE — a down video channel with nothing streaming has nothing to warn about yet.
+        if (TakManager.getInstance().isVideoChannelConfigured()) {
+            val videoChannelDown = !TakManager.getInstance().isVideoChannelConnected()
+                    && VideoStreamerHolder.state == VideoStreamerHolder.State.LIVE
+            if (lastVideoChannelDown != null && videoChannelDown && lastVideoChannelDown == false) {
+                showNotice("Video link down — feed not advertised", refused = true)
+            }
+            lastVideoChannelDown = videoChannelDown
+        }
+        // Emergency Broadcast countdown (v2.3.9) — the listener paints on start/stop; this
+        // keeps the banner's mm:ss moving while it is active, on the same tick as everything
+        // else on this screen.
+        if (TakManager.getInstance().isEmergencyBroadcastActive()) {
+            paintEmergencyBroadcast(true, TakManager.getInstance().emergencyBroadcastExpiresAtEpochMs())
+        }
 
         // Debug-only memory/CPU/GPU/contact overlay — see AppLog.resourceMonitor. Piggybacks on
         // the same slow cadence the old exposure poll used (500ms * 4 = ~2s): frequent enough to
@@ -3365,6 +3408,35 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     private val hideNotice = Runnable { fpvNotice.visibility = View.GONE }
+
+    /**
+     * Told by [TakManager] whenever the Emergency Broadcast override starts or ends. This is
+     * also the ONE place that writes [EmergencyBroadcastLog]'s audit record — see that class's
+     * doc for why TakManager (vendor-neutral, shared with the DJI siblings) does not write it
+     * itself and only fires this callback.
+     */
+    private val emergencyBroadcastListener =
+        TakManager.EmergencyBroadcastListener { active, expiresAtEpochMs, reason, callsign ->
+            runOnUiThread { paintEmergencyBroadcast(active, expiresAtEpochMs) }
+            EmergencyBroadcastLog.record(applicationContext, reason, callsign, expiresAtEpochMs)
+        }
+
+    /** Paints the pill (lit/unlit) and the persistent banner (shown/hidden + countdown text).
+     *  Called from the listener above on every state change, and from [updateHud]'s tick while
+     *  active so the countdown keeps moving. */
+    private fun paintEmergencyBroadcast(active: Boolean, expiresAtEpochMs: Long) {
+        emergencyBroadcastButton.background = androidx.core.content.ContextCompat.getDrawable(
+            this, if (active) R.drawable.bg_pill_emergency else R.drawable.bg_zoom_pill)
+        if (!active) {
+            emergencyBroadcastBanner.visibility = View.GONE
+            return
+        }
+        val remainingSec = ((expiresAtEpochMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0)
+        val mm = remainingSec / 60
+        val ss = remainingSec % 60
+        emergencyBroadcastBanner.text = "EMERGENCY BROADCAST ACTIVE — video visible on all channels (%d:%02d)".format(mm, ss)
+        emergencyBroadcastBanner.visibility = View.VISIBLE
+    }
 
     /**
      * Gimbal look angle, coloured as a marker-accuracy cue. Ground error scales as
