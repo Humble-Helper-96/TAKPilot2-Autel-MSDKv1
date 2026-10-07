@@ -93,6 +93,28 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+**v2.3.9 IS OPEN ON A BRANCH, NOT RELEASED, NOT BENCH TESTED** — versionCode 104, 2026-10-06,
+branch `randomize-stream-path`. RANDOMIZE STREAM PATH: a toggle on each Video Servers card, OFF
+by default. ON puts a random token in the stream path, between the broadcast id and the `-Low`
+suffix: `ANC-EVO2-B2-7f3a9c2d-Low`. The server keys on the `-Low` ending and the agency prefix,
+thus the token goes between them and not at either end.
+⚠ **ONE TOKEN PER PROCESS, IN MEMORY ONLY.** `StreamPath.sessionToken` is eight lowercase hex
+characters from `SecureRandom`, made on first use and never written to a preference. It does not
+change on a stream stop and start, an SRT reconnect, a landing or an activity recreate. It
+changes only when the application is relaunched. A token that changed mid-session would leave
+the team holding a CoT that names a feed which no longer exists.
+⚠ **THE PATH IS COMPOSED IN ONE PLACE,** `StreamPath.compose`, reached only through
+`VideoConfig.streamPath()`. The SRT stream id, the RTSP push, the CoT url (and so the
+`ConnectionEntry` path the shared core parses out of it), the masked preview and the two
+pre-flight readouts all take it from there. Do not build a path a second time.
+⚠ **THE CoT VIDEO UID DOES NOT FOLLOW THE TOKEN.** `CotBuilder.videoUidFor` strips the
+`-<8 hex>-Low` segment before it hashes the url, so ATAK keeps one alias per aircraft and not
+one per flight, and the uid is identical with the toggle off. This is a SHARED-CORE change: the
+taklite-core master moved first. **Both DJI trees owe the `CotBuilder` sync** (they also still
+owe the 14 and 16 September moves — `check-taklite.sh` lists them).
+⚠ The `-Low` suffix and the `[0-9a-f]{8}` token shape are now pinned in two places, the composer
+and the uid rule. A change to one is a change to both.
+
 **v2.3.8 IS RELEASED** — tag `v2.3.8`, versionCode 103, 2026-09-16, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. PIP is `base=None` at
 75 % thermal by default, and **THE PILOT SETS THE BLEND WITH A SLIDER**. v2.3.5 (100) measured

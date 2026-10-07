@@ -581,7 +581,8 @@ public class CotBuilder {
      * <p>The video uid is derived from the URL, so it is stable across restarts and IDENTICAL on
      * the aircraft and the operator marker. That is deliberate: it is one stream, and two markers
      * advertising it under one uid give a client one video entry referenced twice, not two
-     * competing entries for the same feed.
+     * competing entries for the same feed. ⚠ A per-session token in the path is NOT part of the
+     * uid — see {@link #videoUidFor}.
      *
      * <p>⚠ {@code url} keeps whatever the caller passed, credentials included — that is how the
      * stream authenticates today and removing them would break playback on a server that needs
@@ -633,10 +634,30 @@ public class CotBuilder {
      *
      * <p>Must not be random: a fresh uid on every position report (one every 2 seconds) would
      * have a client either create a new video entry each time or churn the existing one.
+     *
+     * <p>⚠ <b>A per-session token in the path is stripped before the hash.</b> A TAKPilot2
+     * application can put a random token in the stream path, so that only a client holding the
+     * current CoT can open the feed: {@code <id>-<8 lowercase hex>-Low}. The token changes at
+     * every application launch. If it reached the uid, a client would accumulate a new video
+     * alias per flight. The uid is therefore computed from the url WITHOUT that segment, which
+     * also makes it identical to the uid of the same feed with no token at all. The rule is
+     * shared by the three applications and is pinned in {@code CotBuilderTest}. The
+     * {@code url} and {@code path} attributes keep the token — they are what a client plays.
      */
     static String videoUidFor(String videoUrl) {
-        return UUID.nameUUIDFromBytes(videoUrl.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        return UUID.nameUUIDFromBytes(
+                videoUidKey(videoUrl).getBytes(java.nio.charset.StandardCharsets.UTF_8))
                 .toString();
+    }
+
+    /** `-<8 lowercase hex>` directly before `-Low` at the end of the path (a query or a
+     *  further segment may follow). Case-sensitive on purpose: callsigns are upper case. */
+    private static final java.util.regex.Pattern VIDEO_PATH_TOKEN =
+            java.util.regex.Pattern.compile("-[0-9a-f]{8}(-Low)(?=[?/#]|$)");
+
+    /** The url with any per-session path token removed — what {@link #videoUidFor} hashes. */
+    static String videoUidKey(String videoUrl) {
+        return VIDEO_PATH_TOKEN.matcher(videoUrl).replaceFirst("$1");
     }
 
     private static String escapeXml(String s) {

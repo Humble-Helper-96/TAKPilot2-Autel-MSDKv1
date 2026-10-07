@@ -1577,8 +1577,25 @@ android {
         //        (2026-09-16). This is a flight-screen control that deliberately does NOT land
         //        in all three applications — the rule is suspended for it by the operator's
         //        decision, as it was for the flight-screen refresh on 2026-09-12.
-        versionCode 103
-        versionName "2.3.8"
+        // v2.3.9 — 2026-10-06. RANDOMIZE STREAM PATH, a toggle on the Video Servers screen,
+        //        OFF by default. ON puts a random token in the stream path, between the
+        //        broadcast id and the -Low suffix: ANC-EVO2-B2-7f3a9c2d-Low. The server keys on
+        //        the -Low ending and the agency prefix; both survive. A fixed name is guessable
+        //        by anyone with any valid credential on the server; the token means only a
+        //        client holding the CURRENT CoT can open the feed.
+        //        ⚠ ONE TOKEN PER PROCESS, IN MEMORY ONLY (StreamPath.sessionToken, SecureRandom).
+        //        It does not change on a stream stop/start, an SRT reconnect, a landing or an
+        //        activity recreate — only on a relaunch of the application. Never persisted.
+        //        ⚠ THE PATH IS COMPOSED IN ONE PLACE, StreamPath.compose, reached only through
+        //        VideoConfig.streamPath(): the SRT stream id, the RTSP push, the CoT url (and so
+        //        the ConnectionEntry path) and the masked preview all take it from there.
+        //        ⚠ THE CoT VIDEO UID DOES NOT FOLLOW THE TOKEN. CotBuilder.videoUidFor strips
+        //        the -<8 hex>-Low segment before the hash (shared core, taklite-core master
+        //        first), so ATAK keeps one alias per aircraft and not one per flight, and the
+        //        uid is identical with the toggle off. Both DJI trees owe the CotBuilder sync.
+        //        versionName moves because the wire changes when the toggle is on.
+        versionCode 104
+        versionName "2.3.9"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

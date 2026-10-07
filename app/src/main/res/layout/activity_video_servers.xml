@@ -98,6 +98,29 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- The random token makes the stream name unguessable, so only a client holding
+                 the current CoT can open the feed. The token is made once per application
+                 launch and is never stored — see StreamPath. -->
+            <CheckBox android:id="@+id/vs1RandomPath"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:buttonTint="@color/tp_btn_info"
+                android:textColor="@color/tp_text_primary" android:textSize="13sp"
+                android:text="Randomize stream path (new token each app launch)" />
+            <TextView
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:paddingStart="32dp" android:paddingEnd="0dp"
+                android:text="The path gets a random token that changes each time the app is launched. It stays the same for the whole session."
+                android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
+
+            <TextView style="@style/takLabelStyle" android:text="Stream path (touch to copy)" android:paddingTop="6dp" />
+            <TextView android:id="@+id/vs1StreamPath"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@color/tp_bg_screen"
+                android:padding="8dp"
+                android:textColor="@color/tp_state_go" android:textSize="12sp"
+                android:textIsSelectable="true" android:fontFamily="monospace"
+                android:text="…" />
+
             <LinearLayout style="@style/takFormRow">
                 <LinearLayout style="@style/takColumn">
                     <TextView style="@style/takLabelStyle" android:text="Username" />
@@ -246,6 +269,29 @@
                         android:hint="UAS-CALLSIGN" android:inputType="text" />
                 </LinearLayout>
             </LinearLayout>
+
+            <!-- The random token makes the stream name unguessable, so only a client holding
+                 the current CoT can open the feed. The token is made once per application
+                 launch and is never stored — see StreamPath. -->
+            <CheckBox android:id="@+id/vs2RandomPath"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:buttonTint="@color/tp_btn_info"
+                android:textColor="@color/tp_text_primary" android:textSize="13sp"
+                android:text="Randomize stream path (new token each app launch)" />
+            <TextView
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:paddingStart="32dp" android:paddingEnd="0dp"
+                android:text="The path gets a random token that changes each time the app is launched. It stays the same for the whole session."
+                android:textColor="@color/tp_text_secondary" android:textSize="11sp" />
+
+            <TextView style="@style/takLabelStyle" android:text="Stream path (touch to copy)" android:paddingTop="6dp" />
+            <TextView android:id="@+id/vs2StreamPath"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@color/tp_bg_screen"
+                android:padding="8dp"
+                android:textColor="@color/tp_state_go" android:textSize="12sp"
+                android:textIsSelectable="true" android:fontFamily="monospace"
+                android:text="…" />
 
             <LinearLayout style="@style/takFormRow">
                 <LinearLayout style="@style/takColumn">

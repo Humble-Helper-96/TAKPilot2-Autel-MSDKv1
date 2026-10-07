@@ -490,7 +490,13 @@ class TakConnectActivity : AppCompatActivity() {
             else -> "team plays from $host:" +
                     prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort)
         }
-        summary.text = "${slotName(prefs, slot)} · $host · ${transport.label} $port · $team"
+        // The path on its own line: it is the name the server sees, and with the random token
+        // on it cannot be read from the broadcast id alone.
+        val path = StreamPath.compose(
+            prefs.getString(vKey(slot, "streamid"), "") ?: "",
+            prefs.getBoolean(vKey(slot, "random_path"), false))
+        summary.text = "${slotName(prefs, slot)} · $host · ${transport.label} $port · $team" +
+            "\nStream path $path"
     }
 
     /**
@@ -527,6 +533,8 @@ class TakConnectActivity : AppCompatActivity() {
                 prefs.getInt(vKey(src, "rtsp_port"), VideoTransport.RTSP.defaultPort))
             .putString(KEY_V_ADV_USER, prefs.getString(vKey(src, "user"), "") ?: "")
             .putString(KEY_V_ADV_PASS, prefs.getString(vKey(src, "pass"), "") ?: "")
+            .putBoolean(StreamPath.PREF_RANDOMIZE,
+                prefs.getBoolean(vKey(slot, "random_path"), false))
             .apply()
     }
 

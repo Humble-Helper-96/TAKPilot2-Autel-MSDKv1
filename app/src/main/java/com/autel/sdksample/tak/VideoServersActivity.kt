@@ -3,6 +3,7 @@ package com.autel.sdksample.tak
 import android.content.Context
 import android.os.Bundle
 import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -78,6 +79,8 @@ class VideoServersActivity : AppCompatActivity() {
         val name: EditText = v("Name")
         val host: EditText = v("Host")
         val streamId: EditText = v("StreamId")
+        val randomPath: CheckBox = v("RandomPath")
+        val streamPath: TextView = v("StreamPath")
         val user: EditText = v("User")
         val pass: EditText = v("Pass")
         val codecGroup: RadioGroup = v("CodecGroup")
@@ -129,6 +132,7 @@ class VideoServersActivity : AppCompatActivity() {
                 srtPassphrase = passphrase.text.toString(),
                 codec = selectedCodec().prefValue,
                 profile = prefs.getString(vKey(slot, "profile"), "standard") ?: "standard",
+                randomizePath = randomPath.isChecked,
             )
             // The advertised address, resolved from the OTHER slot's stored values — never
             // from the other card's live fields. Both cards are on screen, so reading prefs
@@ -178,6 +182,10 @@ class VideoServersActivity : AppCompatActivity() {
                 if (cfg.host.isEmpty() || cfg.streamId.isEmpty())
                     "${cfg.transport.scheme}://…  (enter host + identifier)"
                 else cfg.urlSafe()
+            // The name the server will see, from the same function that builds every address.
+            // With the token on, this is the one place a pilot can read the token before LIVE.
+            streamPath.text =
+                if (cfg.streamId.isEmpty()) "…  (enter a broadcast id)" else cfg.streamPath()
             title.text = slotName(slot)
         }
 
@@ -200,6 +208,7 @@ class VideoServersActivity : AppCompatActivity() {
                 .putString(vKey(slot, "srt_phrase"), cfg.srtPassphrase)
                 .putString(vKey(slot, "codec"), cfg.codec)
                 .putString(vKey(slot, "advertise"), selectedAdvertise())
+                .putBoolean(vKey(slot, "random_path"), cfg.randomizePath)
                 .apply()
             mirrorActiveSlot()
             refreshDerived()
@@ -212,6 +221,7 @@ class VideoServersActivity : AppCompatActivity() {
         name.setText(prefs.getString(vKey(slot, "name"), "") ?: "")
         host.setText(prefs.getString(vKey(slot, "host"), "") ?: "")
         streamId.setText(prefs.getString(vKey(slot, "streamid"), "") ?: "")
+        randomPath.isChecked = prefs.getBoolean(vKey(slot, "random_path"), false)
         user.setText(prefs.getString(vKey(slot, "user"), "") ?: "")
         pass.setText(prefs.getString(vKey(slot, "pass"), "") ?: "")
         rtspPort.setText(prefs.getInt(vKey(slot, "rtsp_port"),
@@ -235,6 +245,17 @@ class VideoServersActivity : AppCompatActivity() {
         loading = false
         refreshDerived()
 
+        // Copy the path on a touch. The path is what the pilot checks against the server, and
+        // with the token on it is not typeable from memory. Reading it works locked or not.
+        streamPath.setOnClickListener {
+            val text = streamPath.text?.toString() ?: return@setOnClickListener
+            if (text.startsWith("…")) return@setOnClickListener
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("stream path", text))
+            android.widget.Toast.makeText(this, "Stream path copied", android.widget.Toast.LENGTH_SHORT)
+                .show()
+        }
+
         if (locked) {
             // The lock stops a CHANGE, not the reading: the fields keep full contrast and stop
             // taking touches, exactly as they did on Pre-Flight.
@@ -242,6 +263,7 @@ class VideoServersActivity : AppCompatActivity() {
                 passphrase)) {
                 view.isEnabled = false
             }
+            randomPath.apply { isClickable = false; isFocusable = false }
             for (group in listOf(codecGroup, transportGroup, advGroup)) {
                 for (i in 0 until group.childCount) {
                     group.getChildAt(i).apply { isClickable = false; isFocusable = false }
@@ -262,6 +284,10 @@ class VideoServersActivity : AppCompatActivity() {
                 refreshDerived()
                 if (!loading) save()
             }
+        }
+        randomPath.setOnCheckedChangeListener { _, _ ->
+            refreshDerived()
+            if (!loading) save()
         }
     }
 
@@ -312,6 +338,8 @@ class VideoServersActivity : AppCompatActivity() {
                 prefs.getString(vKey(if (fromOther) other else slot, "user"), "") ?: "")
             .putString("video_adv_pass",
                 prefs.getString(vKey(if (fromOther) other else slot, "pass"), "") ?: "")
+            .putBoolean(StreamPath.PREF_RANDOMIZE,
+                prefs.getBoolean(vKey(slot, "random_path"), false))
             .apply()
     }
 

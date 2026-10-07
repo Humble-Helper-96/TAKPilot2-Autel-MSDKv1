@@ -121,6 +121,12 @@ class AutelVideoStreamer(
         /** Pilot-selected codec: "h264" | "h265". See [VideoCodec] for why this is a field
          *  decision rather than a build-time constant. */
         val codec: String = "h264",
+        /**
+         * Put the per-process random token in the stream path. OFF keeps the path exactly as
+         * every earlier version built it. See [StreamPath] for the shape, the token's lifetime
+         * and the reason. Read from [StreamPath.PREF_RANDOMIZE].
+         */
+        val randomizePath: Boolean = false,
     ) {
         val transcodeProfile: TranscodeProfile
             get() = TranscodeProfile.fromPref(profile)
@@ -128,12 +134,13 @@ class AutelVideoStreamer(
         val videoCodec: VideoCodec
             get() = VideoCodec.fromPref(codec)
 
-        // -Low suffix flows through push/advertise/display URLs alike, so the CoT always
-        // points at whichever stream is actually live — full-res and -Low are never both up.
-        // Kept for every profile (not just "low") to match the blueprint: the suffix tells the
-        // media server this path is already transcoded and should be passed through rather
-        // than re-encoded, which is true of all three tiers.
-        private fun path(): String = streamId.trim('/') + "-Low"
+        /**
+         * THE path. One name flows through the push, the advertisement and the masked preview
+         * alike, so the CoT always points at the stream that is live. It is composed in ONE
+         * place, [StreamPath.compose] — the `-Low` suffix, the sanitizing and the optional token
+         * are all there. Nothing in this class builds a path by hand.
+         */
+        fun streamPath(): String = StreamPath.compose(streamId, randomizePath)
 
         /**
          * Where the video goes OUT. The two transports do not agree on where the credentials
@@ -151,10 +158,10 @@ class AutelVideoStreamer(
          * warning; the stream will be refused by the server. RTSP is unaffected.
          */
         fun pushUrl(): String = when (transport) {
-            VideoTransport.RTSP -> "rtsp://$host:$rtspPort/${path()}"
+            VideoTransport.RTSP -> "rtsp://$host:$rtspPort/${streamPath()}"
             VideoTransport.SRT ->
-                if (username.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                else "srt://$host:$srtPort/publish:${path()}:$username:$password"
+                if (username.isEmpty()) "srt://$host:$srtPort/publish:${streamPath()}"
+                else "srt://$host:$srtPort/publish:${streamPath()}:$username:$password"
         }
 
         /** The port the PUSH uses. The login is [username] either way. */
@@ -178,7 +185,7 @@ class AutelVideoStreamer(
             val h = advertiseHost.ifEmpty { host }
             val cred = if (advertiseUser.isNotEmpty())
                 "${enc(advertiseUser)}:${enc(advertisePass)}@" else ""
-            return "rtsp://$cred$h:$advertisePort/${path()}?tcp"
+            return "rtsp://$cred$h:$advertisePort/${streamPath()}?tcp"
         }
 
         /**
@@ -204,11 +211,11 @@ class AutelVideoStreamer(
             return when (transport) {
                 VideoTransport.RTSP -> {
                     val who = if (username.isEmpty()) "" else "$username:$secret@"
-                    "rtsp://$who$host:$rtspPort/${path()}?tcp"
+                    "rtsp://$who$host:$rtspPort/${streamPath()}?tcp"
                 }
                 VideoTransport.SRT ->
-                    if (username.isEmpty()) "srt://$host:$srtPort/publish:${path()}"
-                    else "srt://$host:$srtPort/publish:${path()}:$username:$secret"
+                    if (username.isEmpty()) "srt://$host:$srtPort/publish:${streamPath()}"
+                    else "srt://$host:$srtPort/publish:${streamPath()}:$username:$secret"
             }
         }
         private fun enc(s: String): String =
@@ -657,6 +664,7 @@ object VideoStreamerHolder {
             profile = p.getString("video_profile", "standard") ?: "standard",
             codec = p.getString("video_codec", VideoCodec.H264.prefValue)
                 ?: VideoCodec.H264.prefValue,
+            randomizePath = p.getBoolean(StreamPath.PREF_RANDOMIZE, false),
         )
         // Advertise the CONFIGURED address once a start is attempted.
         //
