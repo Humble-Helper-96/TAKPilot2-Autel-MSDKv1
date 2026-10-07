@@ -95,9 +95,13 @@ notes file, which is where the fleet takes it from.
 
 **v2.3.9 IS RELEASED** — tag `v2.3.9`, versionCode 104, 2026-10-07, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. Installed on the
-operator's controller over adb. ⚠ **NOT BENCH TESTED AND NOT FLOWN** at release (operator's call,
-2026-10-07): the device checks in the branch's PR description — stop/start, SRT reconnect, rotate,
-relaunch — are still owed. RANDOMIZE STREAM PATH: a toggle on each Video Servers card, OFF
+operator's controller over adb. **BENCH TESTED by the operator on 2026-10-07, after the release
+went out**: live stream to the server with the toggle on; a LIVE stop and restart kept the token;
+a close and reopen of the application rotated it (`2eadb0f8` to `602b0736`) while the CoT video
+uid stayed `0655ed70-…` — one alias on the client, as designed. Read off the wire in logcat, 44 and
+34 PLIs with one token each. **NOT FLOWN.** The SRT reconnect and the rotate are not separately
+checked; both are the same process and the same `lazy`, so neither has a path to a new token.
+RANDOMIZE STREAM PATH: a toggle on each Video Servers card, OFF
 by default. ON puts a random token in the stream path, between the broadcast id and the `-Low`
 suffix: `ANC-EVO2-B2-7f3a9c2d-Low`. The server keys on the `-Low` ending and the agency prefix,
 thus the token goes between them and not at either end.
