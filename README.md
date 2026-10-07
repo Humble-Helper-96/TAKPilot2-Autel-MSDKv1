@@ -155,7 +155,9 @@ This repository contains no server addresses, no certificates and no credentials
 Configure these items in the application under **Pre-Flight Setup**: the TAK enrollment, the server
 address, the channels, the video servers (RTSP or SRT, two servers, a port and a passphrase for
 each), the DTED terrain tiles and the FAA airspace data. The application keeps them on the device. A
-new installation starts with no data.
+new installation starts with no data. A video server can randomize its stream path (v2.3.9): the
+name then carries a random part that changes at each start of the application, thus only a team
+member with the current CoT can open the video. The random part is never stored.
 
 ## 7. Hardware notes
 

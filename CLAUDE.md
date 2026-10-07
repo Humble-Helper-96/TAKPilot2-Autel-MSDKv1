@@ -93,8 +93,11 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.3.9 IS OPEN ON A BRANCH, NOT RELEASED, NOT BENCH TESTED** — versionCode 104, 2026-10-06,
-branch `randomize-stream-path`. RANDOMIZE STREAM PATH: a toggle on each Video Servers card, OFF
+**v2.3.9 IS RELEASED** — tag `v2.3.9`, versionCode 104, 2026-10-07, signed APK and notes in
+`../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. Installed on the
+operator's controller over adb. ⚠ **NOT BENCH TESTED AND NOT FLOWN** at release (operator's call,
+2026-10-07): the device checks in the branch's PR description — stop/start, SRT reconnect, rotate,
+relaunch — are still owed. RANDOMIZE STREAM PATH: a toggle on each Video Servers card, OFF
 by default. ON puts a random token in the stream path, between the broadcast id and the `-Low`
 suffix: `ANC-EVO2-B2-7f3a9c2d-Low`. The server keys on the `-Low` ending and the agency prefix,
 thus the token goes between them and not at either end.
