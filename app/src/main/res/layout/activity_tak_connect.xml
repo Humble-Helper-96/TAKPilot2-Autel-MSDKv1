@@ -735,7 +735,7 @@
             android:layout_marginTop="20dp"
             android:background="@color/tp_border" />
 
-        <!-- Video channel (cert B) — v2.3.9. OFF by default. A second certificate, enrolled
+        <!-- Video channel (cert B) — v2.4.0. OFF by default. A second certificate, enrolled
              under its own TAK Server username, that carries the live-video URL in addition to
              everything cert A already sends. The channel list below is READ-ONLY: nothing here
              writes activebits for this certificate — see TakConnectActivity.refreshVideoChannels. -->

@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Pins the flight-record line for each Emergency Broadcast event (v2.3.9). This is what a
+ * Pins the flight-record line for each Emergency Broadcast event (v2.4.0). This is what a
  * reviewer reads after the fact, so the words and the shape must not drift.
  */
 class EmergencyBroadcastPolicyFormatTest {

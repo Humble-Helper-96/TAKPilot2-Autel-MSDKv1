@@ -72,6 +72,13 @@ public class TestApplication extends Application {
         // hardware 2026-08-03. (This replaced the earlier device-owner design, which required a
         // forbidden permanent change to the controller.) See ExplorerWatchdog.
         com.autel.sdksample.tak.ExplorerWatchdog.INSTANCE.onAppStart(this);
+        // The stream path this process will publish under, once. This is also where the
+        // per-process token is made when the random path is on — see StreamPath.
+        com.autel.sdksample.tak.StreamPath.INSTANCE.logSessionPath(this);
+        // What the application does when an Emergency Broadcast starts, renews or ends — the
+        // flight-record line and the stream-path take-back. Here, not on a screen, so it runs
+        // whichever screen is open, or none. See EmergencyBroadcastPolicy.
+        com.autel.sdksample.tak.EmergencyBroadcastPolicy.install(this);
 
         initXlog();
         initAutelSdkLog();

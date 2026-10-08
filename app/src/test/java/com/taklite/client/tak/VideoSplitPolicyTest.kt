@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Pins the video-split/Emergency-Broadcast policy (v2.3.9): [TakManager.videoFor] is the one
+ * Pins the video-split/Emergency-Broadcast policy (v2.4.0): [TakManager.videoFor] is the one
  * place that decides whether a given outbound connection carries the `__video` element. It is
  * pure and socket-free so this test needs no [TakClient], no [TakManager] instance, and no
  * sockets — see that method's doc.

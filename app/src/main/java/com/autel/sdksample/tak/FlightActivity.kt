@@ -1209,7 +1209,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         findViewById<View>(R.id.flightNoVideoCover).visibility =
             if (acOk) View.GONE else View.VISIBLE
 
-        // Video channel (cert B, v2.3.9) health. Only meaningful once configured — an
+        // Video channel (cert B, v2.4.0) health. Only meaningful once configured — an
         // unconfigured split has no video channel to be "down". Fires the amber notice on a
         // CHANGE only (see lastVideoChannelDown's doc), and only while the stream is actually
         // LIVE — a down video channel with nothing streaming has nothing to warn about yet.
@@ -1221,7 +1221,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             }
             lastVideoChannelDown = videoChannelDown
         }
-        // Emergency Broadcast countdown (v2.3.9) — the listener paints on start/stop; this
+        // Emergency Broadcast countdown (v2.4.0) — the listener paints on start/stop; this
         // keeps the banner's mm:ss moving while it is active, on the same tick as everything
         // else on this screen.
         if (TakManager.getInstance().isEmergencyBroadcastActive()) {
@@ -3443,7 +3443,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     }
 
     /**
-     * The Emergency Broadcast rows of the LIVE long-press menu (v2.3.9). Shown only when an
+     * The Emergency Broadcast rows of the LIVE long-press menu (v2.4.0). Shown only when an
      * Elevated account (video channel) is configured — with no split there is nothing to
      * override. No confirm step (operator, 2026-10-08): the long-press and a button that says
      * what it does are the friction. While one runs, the flight-screen notice is the control

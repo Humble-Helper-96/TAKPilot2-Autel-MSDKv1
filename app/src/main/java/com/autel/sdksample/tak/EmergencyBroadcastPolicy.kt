@@ -9,7 +9,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * What the APPLICATION does when an Emergency Broadcast starts, renews or ends (v2.3.9).
+ * What the APPLICATION does when an Emergency Broadcast starts, renews or ends (v2.4.0).
  *
  * Installed once at application start, so it runs whichever screen is open, or none — a
  * broadcast that expires while the pilot is on Pre-Flight Setup must still be recorded and

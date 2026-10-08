@@ -25,7 +25,7 @@ object TakAutoConnect {
     private const val KEY_CAMERA_POINT = "camera_point"
     private const val KEY_LOGGED_OUT = "logged_out"
 
-    // ---- Video channel (cert B) — v2.3.9. This file keeps its OWN copy of these keys rather
+    // ---- Video channel (cert B) — v2.4.0. This file keeps its OWN copy of these keys rather
     // than sharing TakConnectActivity's (that's the existing convention here — see KEY_HOST et
     // al. above, already duplicated from that Activity). ----
     private const val KEY_CHB_ENABLED = "chb_enabled"
@@ -114,7 +114,7 @@ object TakAutoConnect {
             File(ts).exists() && File(cc).exists()
     }
 
-    /** Same check for cert B (the video channel, v2.3.9). Mirrors [hasSavedCerts]. */
+    /** Same check for cert B (the video channel, v2.4.0). Mirrors [hasSavedCerts]. */
     private fun hasSavedVideoCerts(prefs: android.content.SharedPreferences): Boolean {
         val host = prefs.getString(KEY_HOST, "") ?: "" // cert B reuses cert A's host
         val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
@@ -149,7 +149,7 @@ object TakAutoConnect {
                 uid, callsign, "Cyan", "Team Member",
                 host, cotPort, ts, "atakatak", cc, "atakatak",
             )
-            // Cert B (the video channel, v2.3.9) — only if enabled, not logged out, and its own
+            // Cert B (the video channel, v2.4.0) — only if enabled, not logged out, and its own
             // certs are still on disk. Reuses cert A's host/cotPort (one aircraft, one
             // controller, two certificates). See TakConnectActivity's equivalent reconnect path.
             if (prefs.getBoolean(KEY_CHB_ENABLED, false)

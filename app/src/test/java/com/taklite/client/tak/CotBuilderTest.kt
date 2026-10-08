@@ -137,6 +137,35 @@ class CotBuilderTest {
         assertTrue("<__video uid=\"$uid\"" in drone)
     }
 
+    /**
+     * ⚠ A per-session token in the path (`-<8 lowercase hex>-Low`) is NOT part of the uid. An
+     * application that randomizes its path gets a new token at every launch; a uid that followed
+     * it would give every client a new video alias per flight. The url and the ConnectionEntry
+     * path keep the token — they are what a client plays.
+     */
+    @Test
+    fun aPathTokenDoesNotChangeTheVideoUid() {
+        val plain = "rtsp://tak:pw@anchortak.link:8554/Feed-B-Low?tcp"
+        val tokened = "rtsp://tak:pw@anchortak.link:8554/Feed-B-7f3a9c2d-Low?tcp"
+        val other = "rtsp://tak:pw@anchortak.link:8554/Feed-B-0badcafe-Low?tcp"
+        val uid = CotBuilder.videoUidFor(plain)
+        assertTrue(uid == CotBuilder.videoUidFor(tokened))
+        assertTrue(uid == CotBuilder.videoUidFor(other))
+        // The same holds for a path with no query, and a different feed is still different.
+        assertTrue(CotBuilder.videoUidFor("rtsp://h/Feed-B-Low") ==
+            CotBuilder.videoUidFor("rtsp://h/Feed-B-7f3a9c2d-Low"))
+        assertFalse(uid == CotBuilder.videoUidFor("rtsp://tak:pw@anchortak.link:8554/Feed-C-Low?tcp"))
+
+        val xml = CotBuilder.buildPLI(
+            "PILOT-1", "EVO2-B2-Pilot", "Cyan", "Team Member",
+            61.1, -149.9, 35.0, 180.0, 0.0, 77,
+            "TAKPilot2", "SmartController", "Android", "2.3.9", tokened)
+        assertTrue("<__video uid=\"$uid\"" in xml)
+        assertTrue("<ConnectionEntry uid=\"$uid\"" in xml)
+        assertTrue("path=\"/Feed-B-7f3a9c2d-Low\"" in xml)
+        assertTrue("url=\"$tokened\"" in xml)
+    }
+
     /** No url, no element — an absent feed must not advertise an empty one. */
     @Test
     fun noVideoUrlMeansNoVideoElement() {

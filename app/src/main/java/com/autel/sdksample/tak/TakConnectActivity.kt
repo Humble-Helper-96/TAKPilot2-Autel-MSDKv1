@@ -498,7 +498,13 @@ class TakConnectActivity : AppCompatActivity() {
             else -> "team plays from $host:" +
                     prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort)
         }
-        summary.text = "${slotName(prefs, slot)} · $host · ${transport.label} $port · $team"
+        // The path on its own line: it is the name the server sees, and with the random token
+        // on it cannot be read from the broadcast id alone.
+        val path = StreamPath.compose(
+            prefs.getString(vKey(slot, "streamid"), "") ?: "",
+            prefs.getBoolean(vKey(slot, "random_path"), false))
+        summary.text = "${slotName(prefs, slot)} · $host · ${transport.label} $port · $team" +
+            "\nStream path $path"
     }
 
     /**
@@ -535,6 +541,8 @@ class TakConnectActivity : AppCompatActivity() {
                 prefs.getInt(vKey(src, "rtsp_port"), VideoTransport.RTSP.defaultPort))
             .putString(KEY_V_ADV_USER, prefs.getString(vKey(src, "user"), "") ?: "")
             .putString(KEY_V_ADV_PASS, prefs.getString(vKey(src, "pass"), "") ?: "")
+            .putBoolean(StreamPath.PREF_RANDOMIZE,
+                prefs.getBoolean(vKey(slot, "random_path"), false))
             .apply()
     }
 
@@ -720,7 +728,7 @@ class TakConnectActivity : AppCompatActivity() {
     }
 
     /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean.
-     *  Also clears cert B (the video channel, v2.3.9) — a logout must not leave a second,
+     *  Also clears cert B (the video channel, v2.4.0) — a logout must not leave a second,
      *  more-privileged certificate behind for the next person to sign in on top of. */
     private fun clearEnrollment(prefs: android.content.SharedPreferences) {
         val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
@@ -754,7 +762,7 @@ class TakConnectActivity : AppCompatActivity() {
             java.io.File(ts).exists() && java.io.File(cc).exists()
     }
 
-    // ---- Video channel (cert B) — v2.3.9 ----
+    // ---- Video channel (cert B) — v2.4.0 ----
     //
     // Cert B enrolls under its OWN TAK Server username/password (see TakCertEnroller's doc: the
     // username/password authenticate a CSR signing request, there is no cert file to "upload"),
@@ -879,7 +887,7 @@ class TakConnectActivity : AppCompatActivity() {
     }
 
     /**
-     * Wires the "Video Channel" section (cert B, v2.3.9) — OFF by default. [host]/[enrollPort]/
+     * Wires the "Video Channel" section (cert B, v2.4.0) — OFF by default. [host]/[enrollPort]/
      * [cotPort] are cert A's already-on-screen fields, reused as-is (one aircraft, one
      * controller, two certificates — only the username/password/file-prefix differ).
      */
@@ -1065,7 +1073,7 @@ class TakConnectActivity : AppCompatActivity() {
     private var latestVideoChannels: List<TakMissionClient.Channel> = emptyList()
 
     /**
-     * The one server mistake this screen can see (v2.3.9): a channel ACTIVE on BOTH accounts.
+     * The one server mistake this screen can see (v2.4.0): a channel ACTIVE on BOTH accounts.
      * Everyone in it would get the Elevated copy of the aircraft, video included — the split
      * fails open and nothing on the server says so. Checked whenever either list is painted.
      * The fix is on the server, so the line says that and offers no control.
@@ -2014,7 +2022,7 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_TRUSTSTORE = "truststore_path"
         private const val KEY_CLIENTCERT = "clientcert_path"
 
-        // ---- Video channel (cert B) — v2.3.9. "CHB" = "channel B", distinct from the KEY_V_*
+        // ---- Video channel (cert B) — v2.4.0. "CHB" = "channel B", distinct from the KEY_V_*
         // family above, which means "video STREAM config" (RTSP/SRT host/port/codec), a
         // completely different concept. Cert B reuses KEY_HOST/KEY_ENROLL_PORT/KEY_COT_PORT/
         // KEY_CALLSIGN from cert A above — one aircraft, one controller, two certificates. ----

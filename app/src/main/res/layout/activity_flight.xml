@@ -352,7 +352,7 @@
         android:layout_height="42dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="Start/stop recording to the aircraft SD card" />
-    <!-- Emergency Broadcast (v2.3.9) has NO pill here, on purpose: it starts from the LIVE
+    <!-- Emergency Broadcast (v2.4.0) has NO pill here, on purpose: it starts from the LIVE
          pill's long-press menu, and the running notice at the top of the screen is its control
          (tap renews, touch-and-hold stops). The column keeps its six pills, two widths. -->
 
@@ -472,7 +472,7 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- Emergency Broadcast notice (v2.3.9) — PERSISTENT, not the transient fpvNotice above
+    <!-- Emergency Broadcast notice (v2.4.0) — PERSISTENT, not the transient fpvNotice above
          (that auto-hides after NOTICE_MS; this stays up for the whole window, so it is its own
          view, toggled by TakManager.EmergencyBroadcastListener). It is also the CONTROL while a
          broadcast runs: tap renews for 15 minutes, touch-and-hold stops (operator, 2026-10-08).

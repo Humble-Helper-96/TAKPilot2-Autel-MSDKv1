@@ -24,7 +24,7 @@
         style="@style/takFormRow"
         android:orientation="horizontal" />
 
-    <!-- Emergency Broadcast (v2.3.9) — FlightActivity.wireEmergencyBroadcastRow. All three stay
+    <!-- Emergency Broadcast (v2.4.0) — FlightActivity.wireEmergencyBroadcastRow. All three stay
          GONE unless an Elevated account (video channel) is configured; the text and which of the
          two buttons show follow the running state. It lives in this menu, not in the actions
          column, on purpose (operator, 2026-10-08): a long-press and a button that says what it

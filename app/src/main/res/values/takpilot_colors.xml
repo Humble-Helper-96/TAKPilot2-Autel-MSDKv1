@@ -193,7 +193,7 @@
     <color name="tp_pill_live_fill">#4DE53935</color>
     <color name="tp_pill_sync_fill">#4DFFB74D</color>
 
-    <!-- Emergency Broadcast (v2.3.9) — the text of the running notice at the top of the flight
+    <!-- Emergency Broadcast (v2.4.0) — the text of the running notice at the top of the flight
          screen (the pilot-operated override that pushes video to every TAK channel for a bounded
          window). Deliberately its OWN hue, not a reuse of red (LIVE: "going out to the team"),
          amber (caution/retrying) or green (connected/on): a distinct, recorded override, not a

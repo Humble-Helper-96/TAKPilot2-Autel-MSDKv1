@@ -45,7 +45,8 @@ public class TakManager implements TakClient.TakClientListener {
     private volatile boolean videoConnected = false;
     /** True once connectVideoChannel() has ever been called successfully this session. Stays
      *  true across a later disconnectVideoChannel() — fail closed: cert A must never regain
-     *  video just because B dropped. */
+     *  video just because B dropped. Only clearVideoChannel() — a removal on purpose — sets it
+     *  false again. */
     private volatile boolean splitConfigured = false;
 
     // ---- Emergency Broadcast override ----
@@ -122,17 +123,17 @@ public class TakManager implements TakClient.TakClientListener {
     }
 
     /**
-     * Told when the Emergency Broadcast override starts or ends.
+     * Told when the Emergency Broadcast override starts, renews or ends.
      *
-     * {@code reason} is one of {@code "enabled"}, {@code "cancelled"}, {@code "expired"} or
-     * {@code "reset-on-reconnect"} — the four events an audit trail needs to distinguish. This
-     * class deliberately does not write that audit record itself (it has no Android/MediaStore
-     * dependency and is shared by every sibling app — see the "no SDK import" rule this package
-     * follows); a listener in the application layer is the one that persists it.
+     * {@code reason} is one of {@code "started"}, {@code "renewed"}, {@code "cancelled"},
+     * {@code "expired"} or {@code "reset-on-reconnect"}. {@code active} is true for the first
+     * two. This class deliberately does not write the flight record itself (it has no
+     * Android dependency and is shared by every sibling app — see the "no SDK import" rule
+     * this package follows); a listener in the application layer is the one that persists it.
+     * No "who": that is recorded outside the application (operator, 2026-10-08).
      */
     public interface EmergencyBroadcastListener {
-        void onEmergencyBroadcastChanged(boolean active, long expiresAtEpochMs, String reason,
-                                         String triggeredByCallsign);
+        void onEmergencyBroadcastChanged(boolean active, long expiresAtEpochMs, String reason);
     }
 
     private final List<EmergencyBroadcastListener> emergencyListeners = new ArrayList<>();
@@ -145,12 +146,12 @@ public class TakManager implements TakClient.TakClientListener {
         synchronized (emergencyListeners) { emergencyListeners.remove(l); }
     }
 
-    private void notifyEmergencyBroadcastChanged(boolean active, String reason, String callsign) {
+    private void notifyEmergencyBroadcastChanged(boolean active, String reason) {
         long expiresAt = active ? emergencyExpiresAtEpochMs : 0L;
         mainHandler.post(() -> {
             synchronized (emergencyListeners) {
                 for (EmergencyBroadcastListener l : emergencyListeners) {
-                    try { l.onEmergencyBroadcastChanged(active, expiresAt, reason, callsign); }
+                    try { l.onEmergencyBroadcastChanged(active, expiresAt, reason); }
                     catch (Exception e) { AppLog.w(TAG, "emergency broadcast listener failed: " + e.getMessage()); }
                 }
             }
@@ -306,14 +307,32 @@ public class TakManager implements TakClient.TakClientListener {
         splitConfigured = true;
     }
 
-    /** Tears down the video channel only. {@code splitConfigured} stays true — fail closed: cert
-     *  A must never regain video just because B dropped. See videoFor(). */
+    /** Tears down the video channel only — a DROP. {@code splitConfigured} stays true — fail
+     *  closed: cert A must never regain video just because B dropped. See videoFor(). For a
+     *  removal on purpose use {@link #clearVideoChannel()}. */
     public void disconnectVideoChannel() {
         if (videoClient != null) {
             try { videoClient.stopClient(); } catch (Throwable t) { AppLog.w(TAG, "stopClient (video): " + t.getMessage()); }
             videoClient = null;
         }
         videoConnected = false;
+    }
+
+    /**
+     * Removes the video channel ON PURPOSE — the pilot switched it off, or logged out — and
+     * returns the application to single-connection behaviour: {@code splitConfigured} goes
+     * false, so cert A carries video again.
+     *
+     * ⚠ This is the fix for the 2026-10-08 review finding. {@link #disconnectVideoChannel()}
+     * alone left {@code splitConfigured} true for the life of the process, thus a switch-off
+     * or a logout silently took video away from EVERY viewer until the application restarted.
+     * A drop and a removal are two different things: use that method for a drop, this for a
+     * removal.
+     */
+    public void clearVideoChannel() {
+        disconnectVideoChannel();
+        splitConfigured = false;
+        AppLog.i(TAG, "Video channel removed — single-connection behaviour restored");
     }
 
     /** True once connectVideoChannel() has ever succeeded this session, whether or not it is
@@ -353,28 +372,28 @@ public class TakManager implements TakClient.TakClientListener {
     }
 
     /**
-     * Starts, or (on a second call while already active) CANCELS, the Emergency Broadcast
-     * override — see the class-level note above {@link #EMERGENCY_BROADCAST_MS} for what this is
-     * for. Safe to call whether or not the video channel is configured, though the UI should only
-     * expose the control when {@link #isVideoChannelConfigured()} — with no split, there is
-     * nothing to override.
-     *
-     * @param triggeredByCallsign the pilot/operator's callsign, for the audit record a listener
-     *                            writes in response to {@link EmergencyBroadcastListener}.
+     * Starts the Emergency Broadcast override, or — if one is already running — RENEWS it: the
+     * clock goes back to the full {@link #EMERGENCY_BROADCAST_MS} (operator, 2026-10-08). See
+     * the class-level note above that constant for what the override is for. Safe to call
+     * whether or not the video channel is configured, though the UI should only expose the
+     * control when {@link #isVideoChannelConfigured()} — with no split, there is nothing to
+     * override.
      */
-    public void toggleEmergencyBroadcast(String triggeredByCallsign) {
-        if (emergencyBroadcastActive) {
-            endEmergencyBroadcast("cancelled");
-            return;
-        }
+    public void startOrRenewEmergencyBroadcast() {
+        boolean renew = emergencyBroadcastActive;
         emergencyBroadcastActive = true;
         emergencyExpiresAtEpochMs = System.currentTimeMillis() + EMERGENCY_BROADCAST_MS;
         if (emergencyExpireRunnable != null) mainHandler.removeCallbacks(emergencyExpireRunnable);
         emergencyExpireRunnable = () -> endEmergencyBroadcast("expired");
         mainHandler.postDelayed(emergencyExpireRunnable, EMERGENCY_BROADCAST_MS);
-        AppLog.i(TAG, "Emergency Broadcast ENABLED by " + triggeredByCallsign
+        AppLog.i(TAG, "Emergency Broadcast " + (renew ? "RENEWED" : "STARTED")
                 + " — video on every connection until " + emergencyExpiresAtEpochMs);
-        notifyEmergencyBroadcastChanged(true, "enabled", triggeredByCallsign);
+        notifyEmergencyBroadcastChanged(true, renew ? "renewed" : "started");
+    }
+
+    /** Stops a running override now. A no-op when none is running. */
+    public void cancelEmergencyBroadcast() {
+        endEmergencyBroadcast("cancelled");
     }
 
     public boolean isEmergencyBroadcastActive() {
@@ -401,7 +420,7 @@ public class TakManager implements TakClient.TakClientListener {
             emergencyExpireRunnable = null;
         }
         AppLog.i(TAG, "Emergency Broadcast ENDED (" + reason + ")");
-        notifyEmergencyBroadcastChanged(false, reason, callsign);
+        notifyEmergencyBroadcastChanged(false, reason);
     }
 
     /**
@@ -424,7 +443,7 @@ public class TakManager implements TakClient.TakClientListener {
      * {@link TakClient#sendMessage} directly, so they ignored the selection entirely — a pilot
      * who picked channels to LIMIT who saw this aircraft still broadcast its position to
      * everyone. The feature failed in both directions at once, and had done so since the v1.2
-     * baseline. ⚠ **FIXED in the v2.3.9 video-split work**: both methods now build their CoT
+     * baseline. ⚠ **FIXED in the v2.4.0 video-split work**: both methods now build their CoT
      * through {@link #sendCotToBoth}/{@link #videoFor} like everything else in this class, so a
      * video restriction on one connection can no longer be silently ignored by these two.
      *

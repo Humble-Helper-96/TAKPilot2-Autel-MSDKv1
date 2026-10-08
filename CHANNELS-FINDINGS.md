@@ -228,7 +228,7 @@ same error: **an absence in our own data was reported as a fact about the server
    names, and the correct method has none.
 5. *"Poll the server each few minutes."* Not necessary. The server pushes `t-x-g-c`.
 
-## 12. The video split — two shared accounts, one aircraft (v2.3.9, refined 2026-10-08)
+## 12. The video split — two shared accounts, one aircraft (v2.4.0, refined 2026-10-08)
 
 A channel is scoped to the USER, not to one message. `<dest group>` cannot do what command staff
 asked for — see section 8 above on why that attribute must never come back. So a controller that

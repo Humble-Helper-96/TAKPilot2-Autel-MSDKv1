@@ -72,7 +72,7 @@ class FlightPathLoggerFormatTest {
         assertTrue("<ele>45.6</ele>" in gpx)
     }
 
-    // ---- Events file (v2.3.9) ----
+    // ---- Events file (v2.4.0) ----
 
     @Test
     fun eventLineIsIsoUtcSpaceTextNewline() {

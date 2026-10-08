@@ -72,7 +72,7 @@ object FlightPathLogger {
     /** In-memory copy of every row, for the one-shot GPX at flight end. 1Hz keeps even a
      *  multi-hour flight to a few MB; a crash loses only this copy, never the CSV. */
     private val points = ArrayList<Point>()
-    /** The flight's EVENTS file (v2.3.9), `<session>-events.log`, beside its CSV and GPX. Made
+    /** The flight's EVENTS file (v2.4.0), `<session>-events.log`, beside its CSV and GPX. Made
      *  on the first event of the session, so a flight with no events has no file. One line per
      *  event — see [event]. Worker thread only. */
     private var eventsUri: Uri? = null
@@ -129,7 +129,7 @@ object FlightPathLogger {
     }
 
     /**
-     * Records one discrete event in the ACTIVE flight's record (v2.3.9) — the Emergency
+     * Records one discrete event in the ACTIVE flight's record (v2.4.0) — the Emergency
      * Broadcast start / renew / stop / expiry, and the stream-path rotation that follows one.
      * No "who": that is recorded outside the application (operator, 2026-10-08).
      *
@@ -325,7 +325,7 @@ object FlightPathLogger {
             ?.use { it.write(text.toByteArray()) }
     }
 
-    // ---- Events file (v2.3.9) — same folder, same best-effort rule as the CSV ----
+    // ---- Events file (v2.4.0) — same folder, same best-effort rule as the CSV ----
 
     /** Worker thread. With no session the line is logged and not written — see [event]. */
     private fun recordEvent(nowMs: Long, text: String) {
