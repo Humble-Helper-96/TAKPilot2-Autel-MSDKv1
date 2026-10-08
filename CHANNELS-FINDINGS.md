@@ -238,10 +238,32 @@ different users, each in its own channel.
 **Two accounts for the whole fleet, shared by every controller.** TAK Server allows many devices
 on one user; each controller enrolls its own certificate under each.
 
-| User | Channel A (no video) | Channel B (video) | Team channels |
+The layout (operator, 2026-10-08). In TAK Portal, **IN** on a channel means the account can
+SEND to it, **OUT** means it can RECEIVE from it:
+
+| Account | Channel A (no video) | Channel B (video) | The other team channels |
 |---|---|---|---|
-| Standard | send + receive | — | receive only |
-| Elevated | — | send + receive | — |
+| Controller — Standard | IN (send) | — | OUT (receive) only |
+| Controller — Elevated | — | IN + OUT | — |
+| End user, basic | OUT (receive) only | — | as today |
+| End user, video-allowed | — | OUT (receive) only | as today |
+
+The server delivers a message to the channels the SENDER can send to, and only people who can
+receive on one of those get it. Standard sends only to A, so the no-video copy reaches only
+basic users; Elevated sends only to B, so the copy with the link reaches only video users;
+neither leaks through the team channels, because the controller only receives there. Markers
+the pilot drops reach both groups, because the application sends every message on both
+connections.
+
+Four rules, all on the admin side:
+1. A video user is in B and NOT in A. In both, they get two copies of one aircraft and the play
+   control flickers. The server does not stop this.
+2. Anyone in neither A nor B sees no aircraft. The aircraft no longer appears through the team
+   channels.
+3. End users never get IN (send) on A or B. Their markers to the controller go through the
+   team channels, which Standard receives.
+4. Standard does not need OUT on A, and Elevated does not need the team channels. More is
+   harmless, just unnecessary.
 
 - **Channel A** — everyone. Gets the aircraft's position, FOV, SPI, and any markers it drops.
   No `__video` element, ever.
@@ -261,8 +283,9 @@ this work does not change it.
 
 1. A Standard-only test client gets only channel A's copy of the aircraft; an Elevated test
    client gets only channel B's copy — live, and after a reconnect (the replay).
-2. ⚠ **The server keeps BOTH connections from one controller when they carry the same aircraft
-   uid.** This is the biggest unproven assumption. If the server drops one, the fallback is a
+2. **The server keeps BOTH connections from one controller when they carry the same aircraft
+   uid — ASSUMED TO WORK** (operator, 2026-10-08: iTAK has been seen to hold several connections
+   at once). Confirm it in passing; it is not a gate. If it ever fails, the fallback is a
    different uid for the Elevated connection (aircraft uid + `-V`); nobody is in both channels,
    so each person still sees one aircraft.
 3. A marker an Elevated person sends reaches the controller through the Standard connection.

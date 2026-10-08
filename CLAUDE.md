@@ -114,8 +114,9 @@ left alone** (operator, 2026-10-08: a token rotation at the end was built and th
 more than the feature needs). A client that saved the link during a broadcast keeps it; with
 Random Path on it dies at the next relaunch, with it off it lives on. Accepted. See
 `CHANNELS-FINDINGS.md` §12.
-**NOT FLOWN. Phase 0 on a TEST server must pass first, above all whether the server keeps two
-connections from one controller that carry the same aircraft uid.** The DJI v5 port follows
+**NOT FLOWN. Phase 0 on a TEST server first** (the channel layout is in `CHANNELS-FINDINGS.md`
+§12; that the server keeps two connections from one controller with the same aircraft uid is
+ASSUMED to work — operator, 2026-10-08 — with a `-V` uid fallback noted). The DJI v5 port follows
 once Autel is confirmed working, from these specs, in its own session.
 
 ⚠ **FIXED as a side effect of this work**: `sendDronePLI` and `sendCameraPoint` had called
