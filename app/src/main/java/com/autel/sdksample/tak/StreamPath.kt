@@ -43,13 +43,6 @@ import java.security.SecureRandom
  * when an activity is recreated — none of those restart the process. A token that changed
  * mid-session would leave the team holding a CoT that names a feed which no longer exists.
  *
- * **The one deliberate exception (v2.4.0): the end of an Emergency Broadcast.** [rotateToken]
- * makes a new token and the application restarts the push under it, on purpose, so that a
- * link handed to every channel during the broadcast stops working the moment it ends. The
- * Elevated audience is told the new path on the next position report and its alias updates in
- * place (the video uid does not carry the token — see below); everyone else is left holding a
- * name the server no longer serves. See `EmergencyBroadcastPolicy`.
- *
  * ⚠ The CoT video uid must NOT follow the token. `CotBuilder.videoUidFor` strips the token
  * segment before it hashes the url, so ATAK keeps one video alias per aircraft instead of one per
  * flight. Pinned in `StreamPathTest`.
@@ -68,32 +61,16 @@ object StreamPath {
      *  The per-slot form is `vKey(slot, "random_path")`. */
     const val PREF_RANDOMIZE = "video_random_path"
 
-    @Volatile private var token: String? = null
-
     /**
-     * The token for this process. Made once, on first read, and never stored. Replaced only by
-     * [rotateToken] — see the class doc for the one case that does.
+     * The token for this process. Made once, on first read, and never stored.
      *
-     * Synchronized on first read, so two threads that race to it get the same value.
+     * `lazy` is synchronized by default, so two threads that race to the first read get the
+     * same value.
      */
-    val sessionToken: String
-        get() = token ?: synchronized(this) { token ?: newToken().also { token = it } }
-
-    private fun newToken(): String {
+    val sessionToken: String by lazy {
         val bytes = ByteArray(TOKEN_LENGTH / 2)
         SecureRandom().nextBytes(bytes)
-        return bytes.joinToString("") { "%02x".format(it) }
-    }
-
-    /**
-     * Makes a NEW token and returns it. The caller must restart the push, or the team is told a
-     * path nothing publishes to — see the class doc. Only `EmergencyBroadcastPolicy` calls this.
-     */
-    fun rotateToken(): String = synchronized(this) {
-        newToken().also {
-            token = it
-            AppLog.i(TAG, "stream path token rotated (new token for the rest of this process)")
-        }
+        bytes.joinToString("") { "%02x".format(it) }
     }
 
     /**

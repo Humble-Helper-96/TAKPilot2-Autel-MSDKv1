@@ -282,16 +282,13 @@ resets to OFF on an app-level reconnect or restart. Start, renew, stop and expir
 the flight's events file beside its CSV and GPX — no "who"; that is recorded outside the
 application.
 
-**The take-back.** The video link carries the media server's credentials, and a TAK client saves
-a link as an alias the moment it sees one. So stopping the advertisement does not, by itself,
-stop a saved link from playing. With **Random Path** on for the video server, the stream path
-carries a random token, and when a broadcast ends the application replaces the token and
-restarts the push under the new path: the Elevated audience is told the new path on the next
-position report and its alias updates in place (the video uid does not carry the token —
-`CotBuilder.videoUidFor`); everyone else is left holding a name the server no longer serves.
-With Random Path off, nothing is rotated and a saved link keeps working until the next
-application launch. The two options are separate pre-flight choices (operator, 2026-10-08); the
-agency is expected to use both.
+**When it ends, the link goes back to the Elevated connection only. Nothing else happens.** The
+video link carries the media server's credentials, and a TAK client saves a link as an alias the
+moment it sees one, so a client that saved it during the broadcast keeps it: with Random Path on
+for the video server it stops working at the next application launch (new token), with it off it
+lives on. That is accepted (operator, 2026-10-08). A token rotation at the end of a broadcast
+was built and removed the same day as more than the feature needs — the stream path is left
+alone.
 
 **Rollback:** with the Elevated account switched off, nothing here changes behaviour.
 `TakManager.videoFor` falls through to today's single-connection behaviour — pinned by

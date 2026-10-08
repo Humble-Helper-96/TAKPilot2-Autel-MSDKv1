@@ -109,11 +109,11 @@ control: tap renews, touch-and-hold stops. No pill in the actions column (six pi
 is a rule). Start, renew, stop and expiry go in the flight's events file beside its CSV and GPX
 (`FlightPathLogger.event`) — no "who", that is recorded outside the application. It resets to
 OFF on an app-level reconnect or restart; a socket blip inside `TakClient` does not end it.
-⚠ **THE TAKE-BACK**: when a broadcast ends and Random Path is on for the video server,
-`EmergencyBroadcastPolicy` replaces the stream-path token and restarts the push, so a link
-handed out during the broadcast stops working; the Elevated audience's alias updates in place
-(the video uid does not carry the token). Random Path and Emergency Broadcast are two separate
-pre-flight choices (operator, 2026-10-08) — nothing is forced. See `CHANNELS-FINDINGS.md` §12.
+When it ends, the link simply goes back to the Elevated connection only — **the stream path is
+left alone** (operator, 2026-10-08: a token rotation at the end was built and then removed as
+more than the feature needs). A client that saved the link during a broadcast keeps it; with
+Random Path on it dies at the next relaunch, with it off it lives on. Accepted. See
+`CHANNELS-FINDINGS.md` §12.
 **NOT FLOWN. Phase 0 on a TEST server must pass first, above all whether the server keeps two
 connections from one controller that carry the same aircraft uid.** The DJI v5 port follows
 once Autel is confirmed working, from these specs, in its own session.
@@ -138,10 +138,8 @@ thus the token goes between them and not at either end.
 ⚠ **ONE TOKEN PER PROCESS, IN MEMORY ONLY.** `StreamPath.sessionToken` is eight lowercase hex
 characters from `SecureRandom`, made on first use and never written to a preference. It does not
 change on a stream stop and start, an SRT reconnect, a landing or an activity recreate. It
-changes only when the application is relaunched — and, from v2.4.0 on the `uasvideo-split`
-branch, at the END of an Emergency Broadcast, on purpose, with the push restarted under the new
-path (see the v2.4.0 entry above). Any other token change mid-session would leave the team
-holding a CoT that names a feed which no longer exists.
+changes only when the application is relaunched. A token that changed mid-session would leave
+the team holding a CoT that names a feed which no longer exists.
 ⚠ **THE PATH IS COMPOSED IN ONE PLACE,** `StreamPath.compose`, reached only through
 `VideoConfig.streamPath()`. The SRT stream id, the RTSP push, the CoT url (and so the
 `ConnectionEntry` path the shared core parses out of it), the masked preview and the two

@@ -1609,13 +1609,10 @@ android {
         //        video link for 15 minutes. The notice at the top of the flight screen carries
         //        the timer and is the control: tap renews, touch-and-hold stops. It resets to
         //        OFF on a reconnect. Start, renew, stop and expiry go in the flight's events
-        //        file beside its CSV and GPX (FlightPathLogger.event), no "who".
-        //        THE TAKE-BACK: when a broadcast ends and Random Path is on, the stream-path
-        //        token is replaced and the push restarted under the new path, so a link handed
-        //        out during the broadcast stops working (EmergencyBroadcastPolicy,
-        //        StreamPath.rotateToken). Random Path and Emergency Broadcast stay two separate
-        //        pre-flight choices; with Random Path off a saved link lives until the next
-        //        launch — accepted. The 2026-10-08 review's three bugs are fixed: a switch-off
+        //        file beside its CSV and GPX (FlightPathLogger.event), no "who". When it ends
+        //        the link goes back to the Elevated connection only; the stream path is left
+        //        alone (a token rotation at the end was built and removed the same day, operator:
+        //        more than the feature needs). The 2026-10-08 review's three bugs are fixed: a switch-off
         //        or logout now restores single-connection video (clearVideoChannel), the control
         //        no longer depends on a once-only visibility check, and no file is written on the
         //        screen thread.

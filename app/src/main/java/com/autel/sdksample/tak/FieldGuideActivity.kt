@@ -189,8 +189,6 @@ class FieldGuideActivity : AppCompatActivity() {
             "Every channel gets the live-video link for 15 minutes. A notice with a timer shows " +
             "at the top of the flight screen. Touch the notice to add 15 minutes. Touch and " +
             "hold it to stop. Each start, renew and stop goes in the flight record.")
-        body("If Random Path is on for the video server, a link given out during an Emergency " +
-            "Broadcast stops when the broadcast stops.")
 
         sub("4. Elevation Data (DTED)")
         body("The terrain data for your area. Import one file for each region. It improves " +

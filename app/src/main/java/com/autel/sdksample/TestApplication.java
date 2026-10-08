@@ -76,8 +76,8 @@ public class TestApplication extends Application {
         // per-process token is made when the random path is on — see StreamPath.
         com.autel.sdksample.tak.StreamPath.INSTANCE.logSessionPath(this);
         // What the application does when an Emergency Broadcast starts, renews or ends — the
-        // flight-record line and the stream-path take-back. Here, not on a screen, so it runs
-        // whichever screen is open, or none. See EmergencyBroadcastPolicy.
+        // flight-record line. Here, not on a screen, so it runs whichever screen is open, or
+        // none. See EmergencyBroadcastPolicy.
         com.autel.sdksample.tak.EmergencyBroadcastPolicy.install(this);
 
         initXlog();

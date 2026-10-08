@@ -755,17 +755,6 @@
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
-        <!-- Neutral, not a control: Random Path (Video Servers screen) and Emergency Broadcast
-             are two separate pre-flight choices (operator, 2026-10-08). This only says how they
-             combine. -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="If Random Path is on for the video server, a link given out during an Emergency Broadcast stops working when the broadcast ends."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

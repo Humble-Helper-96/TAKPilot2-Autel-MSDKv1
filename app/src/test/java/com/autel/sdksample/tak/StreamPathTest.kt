@@ -176,19 +176,4 @@ class StreamPathTest {
     fun thePasswordIsNotInThePath() {
         assertFalse("s3cret" in cfg(true).streamPath())
     }
-
-    // ---- The take-back (v2.4.0): rotating the token at the end of an Emergency Broadcast ----
-
-    @Test
-    fun rotateTokenMakesANewTokenOfTheSameShapeAndThePathFollowsIt() {
-        val before = StreamPath.sessionToken
-        val after = StreamPath.rotateToken()
-        assertNotEquals(before, after)
-        assertEquals(after, StreamPath.sessionToken)
-        assertTrue(Regex("^[0-9a-f]{8}$").matches(after))
-        // The composer reads the live token, so the next start publishes under the new path...
-        assertEquals("ANC-EVO2-B2-$after-Low", StreamPath.compose("ANC-EVO2-B2", randomize = true))
-        // ...and the CoT video uid does not move with it, so a client's alias updates in place.
-        assertEquals(videoUidOf(cfg(false).advertiseUrl()), videoUidOf(cfg(true).advertiseUrl()))
-    }
 }
