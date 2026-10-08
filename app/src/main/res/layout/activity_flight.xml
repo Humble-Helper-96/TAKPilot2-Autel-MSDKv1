@@ -352,24 +352,9 @@
         android:layout_height="42dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="Start/stop recording to the aircraft SD card" />
-    <!-- Emergency Broadcast (v2.3.9) — shown only when a video channel (cert B) is configured;
-         with no split there is nothing to override. Tap starts a 15-minute window where every
-         TAK channel gets the live-video link, not just the video channel's own audience. A
-         second tap while active cancels it immediately. See TakManager.toggleEmergencyBroadcast
-         and FlightActivity's persistent banner (NOT the transient showNotice) while it runs. -->
-    <TextView
-        android:id="@+id/flightEmergencyBroadcastButton"
-        android:layout_marginTop="18dp"
-        android:layout_width="66dp"
-        android:layout_height="42dp"
-        android:background="@drawable/bg_zoom_pill"
-        android:contentDescription="Emergency Broadcast — push video to every TAK channel for 15 minutes"
-        android:gravity="center"
-        android:text="EMER"
-        android:textColor="@color/tp_text_primary"
-        android:textSize="11sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+    <!-- Emergency Broadcast (v2.3.9) has NO pill here, on purpose: it starts from the LIVE
+         pill's long-press menu, and the running notice at the top of the screen is its control
+         (tap renews, touch-and-hold stops). The column keeps its six pills, two widths. -->
 
     </LinearLayout>
 
@@ -487,12 +472,16 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- Emergency Broadcast banner (v2.3.9) — PERSISTENT, not the transient fpvNotice above
-         (that auto-hides after NOTICE_MS; this must stay up for the whole override window, so
-         it is its own view, toggled by TakManager.EmergencyBroadcastListener). Top-center, below
-         fpvNotice's position so the two never overlap if both happen to show at once. -->
+    <!-- Emergency Broadcast notice (v2.3.9) — PERSISTENT, not the transient fpvNotice above
+         (that auto-hides after NOTICE_MS; this stays up for the whole window, so it is its own
+         view, toggled by TakManager.EmergencyBroadcastListener). It is also the CONTROL while a
+         broadcast runs: tap renews for 15 minutes, touch-and-hold stops (operator, 2026-10-08).
+         Top-centre, below fpvNotice's position so the two never overlap if both show at once.
+         A later child than flightCrosshair, thus it takes the touch — a tap on it cannot fall
+         through and drop a marker (the same z-order rule the warning banner follows). -->
     <TextView
         android:id="@+id/flightEmergencyBroadcastBanner"
+        android:contentDescription="Emergency Broadcast is running — tap to add 15 minutes, touch and hold to stop"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"

@@ -836,7 +836,8 @@ class TakConnectActivity : AppCompatActivity() {
     /** Deletes cert B's files + prefs and disconnects it. Called from [clearEnrollment] (full
      *  logout) and also usable on its own if the pilot turns the video-channel switch off. */
     private fun clearVideoEnrollment(prefs: android.content.SharedPreferences) {
-        runCatching { TakManager.getInstance().disconnectVideoChannel() }
+        // A removal, not a drop: single-connection behaviour comes back. See clearVideoChannel.
+        runCatching { TakManager.getInstance().clearVideoChannel() }
         val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
         val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
         if (ts.isNotEmpty()) { val f = java.io.File(ts); runCatching { f.delete() } }
@@ -915,11 +916,13 @@ class TakConnectActivity : AppCompatActivity() {
             prefs.edit().putBoolean(KEY_CHB_ENABLED, isOn).apply()
             paintEnabled(isOn)
             if (!isOn) {
-                // Turning the switch off pauses the connection — it does NOT delete the saved
-                // enrollment (that's clearVideoEnrollment's job, on full Log Out). Turning it
-                // back on later reconnects from the same saved certs with no re-enrollment.
-                runCatching { TakManager.getInstance().disconnectVideoChannel() }
-                setVideoChannelStatus("Video channel disabled.",
+                // Turning the switch off REMOVES the video channel for this session — on purpose,
+                // thus clearVideoChannel() and not disconnectVideoChannel(): the Standard
+                // connection carries video again, as before the split existed. It does NOT
+                // delete the saved enrollment (that's clearVideoEnrollment's job, on full Log
+                // Out); switching back on reconnects from the same saved certs.
+                runCatching { TakManager.getInstance().clearVideoChannel() }
+                setVideoChannelStatus("Elevated account off — video goes out on the Standard account again.",
                     androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             } else if (hasSavedVideoCerts(prefs)) {
                 reconnectVideoFromSaved(prefs)
@@ -944,11 +947,13 @@ class TakConnectActivity : AppCompatActivity() {
     private fun renderVideoChannels(channels: List<TakMissionClient.Channel>) {
         val list = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList) ?: return
         list.removeAllViews()
+        latestVideoChannels = channels
         if (channels.isEmpty()) {
-            setVideoChannelStatus("This server has no channels for the video account.",
+            setVideoChannelStatus("This server has no channels for the Elevated account.",
                 androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             return
         }
+        checkChannelOverlap()
         for (ch in channels) {
             val row = TextView(this).apply {
                 text = when {
@@ -1053,6 +1058,27 @@ class TakConnectActivity : AppCompatActivity() {
             }
             list.addView(row)
         }
+        checkChannelOverlap()
+    }
+
+    /** The Elevated account's channels, as last read — for [checkChannelOverlap]. */
+    private var latestVideoChannels: List<TakMissionClient.Channel> = emptyList()
+
+    /**
+     * The one server mistake this screen can see (v2.3.9): a channel ACTIVE on BOTH accounts.
+     * Everyone in it would get the Elevated copy of the aircraft, video included — the split
+     * fails open and nothing on the server says so. Checked whenever either list is painted.
+     * The fix is on the server, so the line says that and offers no control.
+     */
+    private fun checkChannelOverlap() {
+        val standard = latestChannels.filter { it.active }.map { it.name }.toSet()
+        val elevated = latestVideoChannels.filter { it.active }.map { it.name }.toSet()
+        val shared = standard.intersect(elevated)
+        if (shared.isEmpty()) return
+        AppLog.w(TAG, "Standard and Elevated accounts share active channel(s): $shared")
+        setVideoChannelStatus("Standard and Elevated share channel ${shared.joinToString()} — " +
+            "everyone in it will get video. Fix this on the server.",
+            androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
     }
 
     /**

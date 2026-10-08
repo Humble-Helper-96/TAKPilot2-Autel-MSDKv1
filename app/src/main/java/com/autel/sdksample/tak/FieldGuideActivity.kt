@@ -182,12 +182,15 @@ class FieldGuideActivity : AppCompatActivity() {
             "callsign of the aircraft. Then touch Enroll & Connect.")
         body("Select the active channels here, or in flight with a touch and hold on the TAK " +
             "connection icon.")
-        body("Video Channel (optional): a second TAK account for this aircraft. Only the " +
-            "channel it belongs to gets the live-video link; every other channel still gets " +
-            "the position and the markers. Its channel list here is read-only.")
-        body("Emergency Broadcast (EMER pill, flight screen): pushes the live-video link to " +
-            "every channel for 15 minutes, then stops it automatically. Touch again to stop " +
-            "it early. Every use is recorded with the time and the callsign.")
+        body("Elevated account (optional): the fleet's second TAK account. Only the channel it " +
+            "belongs to gets the live-video link. Every other channel still gets the position " +
+            "and the markers. Its channel list here is read-only.")
+        body("Emergency Broadcast: touch and hold LIVE, then touch Start Emergency Broadcast. " +
+            "Every channel gets the live-video link for 15 minutes. A notice with a timer shows " +
+            "at the top of the flight screen. Touch the notice to add 15 minutes. Touch and " +
+            "hold it to stop. Each start, renew and stop goes in the flight record.")
+        body("If Random Path is on for the video server, a link given out during an Emergency " +
+            "Broadcast stops when the broadcast stops.")
 
         sub("4. Elevation Data (DTED)")
         body("The terrain data for your area. Import one file for each region. It improves " +

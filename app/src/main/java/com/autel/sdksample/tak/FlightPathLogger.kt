@@ -9,6 +9,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.provider.MediaStore
+import com.taklite.client.tak.TakManager
 import com.taklite.util.AppLog
 import java.io.File
 import java.text.SimpleDateFormat
@@ -71,6 +72,11 @@ object FlightPathLogger {
     /** In-memory copy of every row, for the one-shot GPX at flight end. 1Hz keeps even a
      *  multi-hour flight to a few MB; a crash loses only this copy, never the CSV. */
     private val points = ArrayList<Point>()
+    /** The flight's EVENTS file (v2.3.9), `<session>-events.log`, beside its CSV and GPX. Made
+     *  on the first event of the session, so a flight with no events has no file. One line per
+     *  event — see [event]. Worker thread only. */
+    private var eventsUri: Uri? = null
+    private var eventsLegacyFile: File? = null
 
     internal class Point(
         val timeMs: Long, val lat: Double, val lon: Double,
@@ -122,6 +128,23 @@ object FlightPathLogger {
         worker.post { finalizeSession(reason) }
     }
 
+    /**
+     * Records one discrete event in the ACTIVE flight's record (v2.3.9) — the Emergency
+     * Broadcast start / renew / stop / expiry, and the stream-path rotation that follows one.
+     * No "who": that is recorded outside the application (operator, 2026-10-08).
+     *
+     * Cheap by contract, like [onTelemetry]: a timestamp and a post; the file work runs on the
+     * worker. With no flight in progress the line goes to AppLog only, and the next session's
+     * events file opens with a note if a broadcast is still running at takeoff — see
+     * [startSession].
+     */
+    @JvmStatic
+    fun event(text: String) {
+        if (!initialized) return
+        val now = System.currentTimeMillis()
+        worker.post { recordEvent(now, text) }
+    }
+
     // ---- Worker thread from here down ----
 
     private fun onSample(nowMs: Long, flying: Boolean, p: Point) {
@@ -150,12 +173,23 @@ object FlightPathLogger {
         csvLegacyFile = null
         runCatching { createCsv(base) }
             .onFailure { AppLog.w(TAG, "could not create $base.csv: ${it.message}") }
+        eventsUri = null
+        eventsLegacyFile = null
         AppLog.i(TAG, "flight session started: $base")
+        // A broadcast started on the ground belongs to this flight's record too.
+        val tm = TakManager.getInstance()
+        if (tm.isEmergencyBroadcastActive()) {
+            recordEvent(first.timeMs, "emergency-broadcast active at takeoff (expires "
+                + isoUtcFormat.format(Date(tm.emergencyBroadcastExpiresAtEpochMs())) + ")")
+        }
     }
 
     private fun finalizeSession(reason: String) {
         val base = sessionBaseName ?: return
         AppLog.i(TAG, "flight session ended ($reason): $base, ${points.size} points")
+        if (TakManager.getInstance().isEmergencyBroadcastActive()) {
+            recordEvent(System.currentTimeMillis(), "emergency-broadcast still active at landing")
+        }
         if (points.isNotEmpty()) {
             runCatching { writeFile("$base.gpx", gpxDocument(points)) }
                 .onFailure { AppLog.w(TAG, "GPX write failed for $base: ${it.message}") }
@@ -163,6 +197,8 @@ object FlightPathLogger {
         sessionBaseName = null
         csvUri = null
         csvLegacyFile = null
+        eventsUri = null
+        eventsLegacyFile = null
         groundedSinceMs = 0L
         points.clear()
     }
@@ -211,6 +247,11 @@ object FlightPathLogger {
         append(p.batteryPct).append(',')
         append(p.satellites).append('\n')
     }
+
+    /** One events-file line: the ISO-UTC instant, a space, the text, a newline. Pure, so
+     *  `FlightPathLoggerFormatTest` can pin it. */
+    internal fun eventLine(timeMs: Long, text: String): String =
+        isoUtcFormat.format(Date(timeMs)) + " " + text + "\n"
 
     internal fun parseCsvRow(line: String): Point? {
         val f = line.split(',')
@@ -282,6 +323,41 @@ object FlightPathLogger {
     private fun appendToUri(uri: Uri, text: String) {
         appContext.contentResolver.openOutputStream(uri, "wa")
             ?.use { it.write(text.toByteArray()) }
+    }
+
+    // ---- Events file (v2.3.9) — same folder, same best-effort rule as the CSV ----
+
+    /** Worker thread. With no session the line is logged and not written — see [event]. */
+    private fun recordEvent(nowMs: Long, text: String) {
+        val base = sessionBaseName
+        if (base == null) {
+            AppLog.i(TAG, "event with no flight in progress (not written): $text")
+            return
+        }
+        try {
+            if (eventsUri == null && eventsLegacyFile == null) createEvents(base)
+            val line = eventLine(nowMs, text)
+            eventsUri?.let { appendToUri(it, line) }
+            eventsLegacyFile?.appendText(line)
+            AppLog.i(TAG, "event: $text")
+        } catch (t: Throwable) {
+            // Best-effort, like the CSV: a record must never take down the thing it records.
+            AppLog.w(TAG, "event not written: ${t.message}")
+        }
+    }
+
+    private fun createEvents(base: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "$base-events.log")
+                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$SUBFOLDER")
+            }
+            eventsUri = appContext.contentResolver
+                .insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        } else {
+            eventsLegacyFile = File(legacyDir(), "$base-events.log")
+        }
     }
 
     private fun writeFile(name: String, content: String) {

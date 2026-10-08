@@ -93,7 +93,6 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private lateinit var irPaletteButton: TextView
     /** The ⤢ / ⤡ on the thermal window's corner — see [renderPipSizeButton]. */
     private lateinit var pipSizeButton: android.widget.ImageButton
-    private lateinit var emergencyBroadcastButton: TextView
     private lateinit var emergencyBroadcastBanner: TextView
     /** The whole video frame's rect in view space, as last handed to the AR overlay. */
     private var lastVideoRect: android.graphics.RectF? = null
@@ -429,18 +428,20 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             AppLog.v(TAG, "tap: PIP size control -> $target")
             selectCameraView(target)
         }
-        emergencyBroadcastButton = findViewById(R.id.flightEmergencyBroadcastButton)
         emergencyBroadcastBanner = findViewById(R.id.flightEmergencyBroadcastBanner)
-        emergencyBroadcastButton.setOnClickListener {
-            val callsign = TakManager.getInstance().callsign ?: "unknown"
-            AppLog.v(TAG, "tap: Emergency Broadcast control (callsign=$callsign)")
-            TakManager.getInstance().toggleEmergencyBroadcast(callsign)
+        // The running notice IS the control while a broadcast runs (operator, 2026-10-08): a tap
+        // adds 15 minutes, a touch-and-hold stops it. STARTING one is in the LIVE long-press
+        // menu — see wireEmergencyBroadcastRow — and nothing for it sits in the actions column
+        // (six pills, two widths: that is a rule).
+        emergencyBroadcastBanner.setOnClickListener {
+            AppLog.i(TAG, "tap: Emergency Broadcast notice — renew")
+            TakManager.getInstance().startOrRenewEmergencyBroadcast()
         }
-        // Only shown when a video channel is configured — with no split there is nothing to
-        // override. Set once here; the active/inactive PAINT (colour, banner) is driven by the
-        // listener below and by the HUD tick's countdown refresh.
-        emergencyBroadcastButton.visibility =
-            if (TakManager.getInstance().isVideoChannelConfigured()) View.VISIBLE else View.GONE
+        emergencyBroadcastBanner.setOnLongClickListener {
+            AppLog.i(TAG, "touch-and-hold: Emergency Broadcast notice — stop")
+            TakManager.getInstance().cancelEmergencyBroadcast()
+            true
+        }
         TakManager.getInstance().addEmergencyBroadcastListener(emergencyBroadcastListener)
         paintEmergencyBroadcast(
             TakManager.getInstance().isEmergencyBroadcastActive(),
@@ -1552,11 +1553,13 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
             }
         }
 
-        AlertDialog.Builder(this, R.style.TakDialogTheme)
+        val dialog = AlertDialog.Builder(this, R.style.TakDialogTheme)
             .setTitle("Video Quality")
             .setView(view)
             .setPositiveButton("Done", null)
-            .show()
+            .create()
+        wireEmergencyBroadcastRow(view, dialog)
+        dialog.show()
     }
 
     private fun onStartStreamTapped() {
@@ -3410,32 +3413,68 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
     private val hideNotice = Runnable { fpvNotice.visibility = View.GONE }
 
     /**
-     * Told by [TakManager] whenever the Emergency Broadcast override starts or ends. This is
-     * also the ONE place that writes [EmergencyBroadcastLog]'s audit record — see that class's
-     * doc for why TakManager (vendor-neutral, shared with the DJI siblings) does not write it
-     * itself and only fires this callback.
+     * Told by [TakManager] whenever the Emergency Broadcast override starts, renews or ends.
+     * This screen only PAINTS. The flight-record line and the stream-path rotation belong to
+     * [EmergencyBroadcastPolicy], installed at application start so they run whichever screen
+     * is open, or none.
      */
     private val emergencyBroadcastListener =
-        TakManager.EmergencyBroadcastListener { active, expiresAtEpochMs, reason, callsign ->
+        TakManager.EmergencyBroadcastListener { active, expiresAtEpochMs, _ ->
             runOnUiThread { paintEmergencyBroadcast(active, expiresAtEpochMs) }
-            EmergencyBroadcastLog.record(applicationContext, reason, callsign, expiresAtEpochMs)
         }
 
-    /** Paints the pill (lit/unlit) and the persistent banner (shown/hidden + countdown text).
-     *  Called from the listener above on every state change, and from [updateHud]'s tick while
-     *  active so the countdown keeps moving. */
+    /** Shows or hides the running notice and keeps its countdown current. Called from the
+     *  listener above on every change, and from [updateHud]'s tick while active so the mm:ss
+     *  keeps moving. */
     private fun paintEmergencyBroadcast(active: Boolean, expiresAtEpochMs: Long) {
-        emergencyBroadcastButton.background = androidx.core.content.ContextCompat.getDrawable(
-            this, if (active) R.drawable.bg_pill_emergency else R.drawable.bg_zoom_pill)
         if (!active) {
             emergencyBroadcastBanner.visibility = View.GONE
             return
         }
-        val remainingSec = ((expiresAtEpochMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0)
-        val mm = remainingSec / 60
-        val ss = remainingSec % 60
-        emergencyBroadcastBanner.text = "EMERGENCY BROADCAST ACTIVE — video visible on all channels (%d:%02d)".format(mm, ss)
+        emergencyBroadcastBanner.text =
+            "EMERGENCY BROADCAST — video on all channels — ${remainingText(expiresAtEpochMs)}"
         emergencyBroadcastBanner.visibility = View.VISIBLE
+    }
+
+    /** mm:ss until [expiresAtEpochMs], never negative. */
+    private fun remainingText(expiresAtEpochMs: Long): String {
+        val remainingSec = ((expiresAtEpochMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0)
+        return "%d:%02d".format(remainingSec / 60, remainingSec % 60)
+    }
+
+    /**
+     * The Emergency Broadcast rows of the LIVE long-press menu (v2.3.9). Shown only when an
+     * Elevated account (video channel) is configured — with no split there is nothing to
+     * override. No confirm step (operator, 2026-10-08): the long-press and a button that says
+     * what it does are the friction. While one runs, the flight-screen notice is the control
+     * (tap renews, touch-and-hold stops), and the same two actions are offered here.
+     */
+    private fun wireEmergencyBroadcastRow(view: View, dialog: AlertDialog) {
+        val tm = TakManager.getInstance()
+        if (!tm.isVideoChannelConfigured()) return // the rows stay GONE
+        val caption = view.findViewById<TextView>(R.id.videoEmergencyCaption)
+        val start = view.findViewById<android.widget.Button>(R.id.videoEmergencyButton)
+        val stop = view.findViewById<android.widget.Button>(R.id.videoEmergencyStopButton)
+        val active = tm.isEmergencyBroadcastActive()
+        caption.text = if (active) {
+            "Emergency Broadcast is running — ${remainingText(tm.emergencyBroadcastExpiresAtEpochMs())} left."
+        } else {
+            "Emergency Broadcast: every channel gets the video link for 15 minutes."
+        }
+        start.text = if (active) "Renew for 15 min" else "Start Emergency Broadcast (15 min)"
+        caption.visibility = View.VISIBLE
+        start.visibility = View.VISIBLE
+        stop.visibility = if (active) View.VISIBLE else View.GONE
+        start.setOnClickListener {
+            AppLog.i(TAG, "LIVE menu: Emergency Broadcast ${if (active) "renew" else "start"}")
+            tm.startOrRenewEmergencyBroadcast()
+            dialog.dismiss()
+        }
+        stop.setOnClickListener {
+            AppLog.i(TAG, "LIVE menu: Emergency Broadcast stop")
+            tm.cancelEmergencyBroadcast()
+            dialog.dismiss()
+        }
     }
 
     /**

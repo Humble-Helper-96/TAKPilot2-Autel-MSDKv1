@@ -93,18 +93,30 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.3.9 IN PROGRESS** — 2026-10-05. The UASNoVideo/UASVideo video split, plus Emergency
-Broadcast. A second TAK certificate (cert B) in `TakManager`, connected alongside the first
-(`client`) under its own TAK Server username, so one controller can advertise the live-video
-link to a smaller, admin-assigned channel while every other channel still gets the aircraft's
-position, FOV, SPI and markers with no video. `TakManager.videoFor` is the one place that
-decides it — see `VideoSplitPolicyTest`. New "Video Channel" section in `TakConnectActivity`
-(cert B's own enroll/connect, read-only channel list), `TakAutoConnect` reconnects it silently
-like cert A, and the EMER pill on the flight screen runs the 15-minute Emergency Broadcast
-override (own audit file, `EmergencyBroadcastLog`, separate from the normal debug log). See
-`SplitVideoScope.md` and `CHANNELS-FINDINGS.md` §12 for the full design and the Phase 0 server
-prerequisite. **NOT FLOWN. Phase 0 (the server-side channel layout, with two TAK Server
-accounts per controller) must pass before any of this is useful.**
+**v2.3.9 IN PROGRESS — on the `uasvideo-split` branch, not on master** (2026-10-05, refined
+2026-10-08). The video split, plus Emergency Broadcast. **Two shared TAK accounts for the
+fleet, Standard and Elevated**; every controller enrolls on both. The Elevated connection (cert
+B in `TakManager`) carries the live-video link to the one channel that account is in; the
+Standard connection carries the aircraft's position, FOV, SPI and markers to everyone else with
+no video. `TakManager.videoFor` is the one place that decides it — `VideoSplitPolicyTest`.
+"Elevated Account" section in `TakConnectActivity` (its own enroll/connect, a read-only channel
+list, and a red line if both accounts share a channel — the one server mistake the screen can
+see); `TakAutoConnect` reconnects it silently like the Standard one.
+
+**Emergency Broadcast** starts from the LIVE long-press menu; every channel gets the video link
+for 15 minutes. The notice at the top of the flight screen carries the timer and IS the
+control: tap renews, touch-and-hold stops. No pill in the actions column (six pills, two widths
+is a rule). Start, renew, stop and expiry go in the flight's events file beside its CSV and GPX
+(`FlightPathLogger.event`) — no "who", that is recorded outside the application. It resets to
+OFF on an app-level reconnect or restart; a socket blip inside `TakClient` does not end it.
+⚠ **THE TAKE-BACK**: when a broadcast ends and Random Path is on for the video server,
+`EmergencyBroadcastPolicy` replaces the stream-path token and restarts the push, so a link
+handed out during the broadcast stops working; the Elevated audience's alias updates in place
+(the video uid does not carry the token). Random Path and Emergency Broadcast are two separate
+pre-flight choices (operator, 2026-10-08) — nothing is forced. See `CHANNELS-FINDINGS.md` §12.
+**NOT FLOWN. Phase 0 on a TEST server must pass first, above all whether the server keeps two
+connections from one controller that carry the same aircraft uid.** The DJI v5 port follows
+once Autel is confirmed working, from these specs, in its own session.
 
 ⚠ **FIXED as a side effect of this work**: `sendDronePLI` and `sendCameraPoint` had called
 `client.sendMessage` directly since the v1.2 baseline, bypassing the logged/redacted send path

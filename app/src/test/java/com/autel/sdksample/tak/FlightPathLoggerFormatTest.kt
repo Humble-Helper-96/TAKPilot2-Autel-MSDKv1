@@ -71,4 +71,21 @@ class FlightPathLoggerFormatTest {
         val gpx = FlightPathLogger.gpxDocument(listOf(point(msl = Double.NaN)))
         assertTrue("<ele>45.6</ele>" in gpx)
     }
+
+    // ---- Events file (v2.3.9) ----
+
+    @Test
+    fun eventLineIsIsoUtcSpaceTextNewline() {
+        // 1_754_580_000_000 is a whole second: 2025-08-07T15:20:00Z.
+        assertEquals("2025-08-07T15:20:00Z emergency-broadcast started\n",
+            FlightPathLogger.eventLine(1_754_580_000_000L, "emergency-broadcast started"))
+    }
+
+    @Test
+    fun eventLineHoldsExactlyOneNewlineAtTheEnd() {
+        // The file is read one event per line; a break inside the text would split one event.
+        val line = FlightPathLogger.eventLine(1_754_580_000_000L, "stream path rotated")
+        assertEquals(1, line.count { it == '\n' })
+        assertTrue(line.endsWith("\n"))
+    }
 }

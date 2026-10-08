@@ -743,7 +743,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Video Channel"
+            android:text="Elevated Account (video channel)"
             android:textColor="@color/tp_text_primary"
             android:textStyle="bold"
             android:textSize="16sp" />
@@ -751,7 +751,18 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="A second TAK account for this aircraft. Only the channel(s) it belongs to receive the live-video link — every other channel still gets position and markers with no video."
+            android:text="The fleet's second TAK account, shared by every controller. Only the channel it belongs to gets the live-video link. Every other channel still gets the position and the markers, with no video. The account above is the Standard account."
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp" />
+
+        <!-- Neutral, not a control: Random Path (Video Servers screen) and Emergency Broadcast
+             are two separate pre-flight choices (operator, 2026-10-08). This only says how they
+             combine. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="If Random Path is on for the video server, a link given out during an Emergency Broadcast stops working when the broadcast ends."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
@@ -768,7 +779,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Enable video channel"
+                android:text="Enable the Elevated account (video channel)"
                 android:textColor="@color/tp_text_primary"
                 android:textSize="15sp" />
         </LinearLayout>
@@ -781,14 +792,14 @@
             android:paddingTop="8dp"
             android:visibility="gone">
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Video channel username" />
+                <TextView style="@style/takLabelStyle" android:text="Elevated account username" />
                 <EditText
                     android:id="@+id/takVideoUsername"
                     style="@style/takFieldStyle"
                     android:inputType="text" />
             </LinearLayout>
             <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Video channel password" />
+                <TextView style="@style/takLabelStyle" android:text="Elevated account password" />
                 <EditText
                     android:id="@+id/takVideoPassword"
                     style="@style/takFieldStyle"
@@ -803,7 +814,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:visibility="gone"
-            android:text="Enroll &amp; Connect Video Channel" />
+            android:text="Enroll &amp; Connect Elevated Account" />
 
         <TextView
             android:id="@+id/takVideoChannelStatus"
@@ -819,7 +830,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Video channel's channels (read-only)"
+            android:text="Elevated account channels (read-only — set on the server)"
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp"
             android:visibility="gone" />

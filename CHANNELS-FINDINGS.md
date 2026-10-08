@@ -228,41 +228,72 @@ same error: **an absence in our own data was reported as a fact about the server
    names, and the correct method has none.
 5. *"Poll the server each few minutes."* Not necessary. The server pushes `t-x-g-c`.
 
-## 12. UASNoVideo / UASVideo — two certificates, one aircraft (v2.3.9)
+## 12. The video split — two shared accounts, one aircraft (v2.3.9, refined 2026-10-08)
 
-A channel is scoped to the CERTIFICATE, not to one message. `<dest group>` cannot do what
-command staff asked for — see section 8 above on why that attribute must never come back. So a
-controller that must show video to one audience and not to another needs TWO certificates, each
-enrolled under its own TAK Server username, each in its own channel.
+A channel is scoped to the USER, not to one message. `<dest group>` cannot do what command staff
+asked for — see section 8 above on why that attribute must never come back. So a controller that
+must show video to one audience and not to another holds TWO certificates, enrolled under two
+different users, each in its own channel.
 
-- **Channel A (no video)** — the default. Every user in it. Gets the aircraft's position, FOV,
-  SPI, and any markers it drops. No `__video` element, ever.
-- **Channel B (video)** — a smaller, admin-assigned audience. Gets everything channel A gets,
-  plus the `__video` element with the live-stream URL.
+**Two accounts for the whole fleet, shared by every controller.** TAK Server allows many devices
+on one user; each controller enrolls its own certificate under each.
 
-The two certificates send the SAME uid. The server is expected to keep both connections and
-apply each certificate's own channel scope, exactly as it already does for one certificate — see
-section 5/6 above (receive-only proven with ADS-B).
+| User | Channel A (no video) | Channel B (video) | Team channels |
+|---|---|---|---|
+| Standard | send + receive | — | receive only |
+| Elevated | — | send + receive | — |
 
-**Phase 0 results (server-side, admin):** [fill in after the test-server run — confirm a
-Main-only test user gets only channel A's copy and a video-channel test user gets only channel
-B's copy, both on a live connection and after a reconnect; confirm the server keeps BOTH
-connections when they share one uid; confirm a marker a video-channel user sends reaches the
-controller through channel A, not channel B.]
+- **Channel A** — everyone. Gets the aircraft's position, FOV, SPI, and any markers it drops.
+  No `__video` element, ever.
+- **Channel B** — a smaller, admin-assigned audience. Gets everything A gets, plus the
+  `__video` element with the live-stream link.
 
-**Each controller needs TWO TAK Server user accounts**, one per certificate — channel membership
-is tied to the enrolling user, not a flag an admin can set on one account.
+The two connections send the SAME aircraft uid. Everything the controller receives comes in on
+the Standard connection; the Elevated connection discards what it receives (operator,
+2026-10-08). **So the Standard account must be able to receive everything the controller
+needs** — that is item 3 below.
+
+Note for the record: active channels belong to the user, so with shared accounts a channel change
+made on one controller applies to every controller. That is existing behaviour (section 5) and
+this work does not change it.
+
+### Phase 0 — test server, before any of this is useful
+
+1. A Standard-only test client gets only channel A's copy of the aircraft; an Elevated test
+   client gets only channel B's copy — live, and after a reconnect (the replay).
+2. ⚠ **The server keeps BOTH connections from one controller when they carry the same aircraft
+   uid.** This is the biggest unproven assumption. If the server drops one, the fallback is a
+   different uid for the Elevated connection (aircraft uid + `-V`); nobody is in both channels,
+   so each person still sees one aircraft.
+3. A marker an Elevated person sends reaches the controller through the Standard connection.
+4. A freshly enrolled Elevated device has channel B ACTIVE by default. The application never
+   writes channels for the Elevated account, thus a wrong default has no in-app fix.
+5. Several controllers enrolled on the same two users all connect at once.
+
+Results: [fill in after the run].
 
 ### Emergency Broadcast
 
-A pilot-operated override (the EMER pill, flight screen): for 15 minutes, EVERY channel gets the
-video link, not just channel B's audience. This exists because withholding video from channel A
-could cost someone a life-saving piece of information in a fast-moving incident. A second tap
-cancels it early. It always resets to OFF on a reconnect — never silently inherited across a
-restart. Every enable, cancel, and expiry is recorded with a timestamp and the callsign that
-triggered it, in its own audit file — see `EmergencyBroadcastLog` — separate from the normal
-debug log, specifically so this override leaves a record a reviewer can find after the fact.
+Pilot-operated, from the LIVE long-press menu: for 15 minutes EVERY channel gets the video link,
+not just channel B's audience. It exists because withholding video from channel A could cost
+someone a life-saving piece of information in a fast-moving incident. The notice at the top of
+the flight screen carries the timer and is the control: tap renews, touch-and-hold stops. It
+resets to OFF on an app-level reconnect or restart. Start, renew, stop and expiry are written to
+the flight's events file beside its CSV and GPX — no "who"; that is recorded outside the
+application.
 
-**Rollback:** with the "Enable video channel" switch left off, nothing in this section changes
-behaviour. `TakManager.videoFor` falls straight through to today's single-connection behaviour —
-pinned by `VideoSplitPolicyTest`.
+**The take-back.** The video link carries the media server's credentials, and a TAK client saves
+a link as an alias the moment it sees one. So stopping the advertisement does not, by itself,
+stop a saved link from playing. With **Random Path** on for the video server, the stream path
+carries a random token, and when a broadcast ends the application replaces the token and
+restarts the push under the new path: the Elevated audience is told the new path on the next
+position report and its alias updates in place (the video uid does not carry the token —
+`CotBuilder.videoUidFor`); everyone else is left holding a name the server no longer serves.
+With Random Path off, nothing is rotated and a saved link keeps working until the next
+application launch. The two options are separate pre-flight choices (operator, 2026-10-08); the
+agency is expected to use both.
+
+**Rollback:** with the Elevated account switched off, nothing here changes behaviour.
+`TakManager.videoFor` falls through to today's single-connection behaviour — pinned by
+`VideoSplitPolicyTest`. Switching it off, or logging out, restores single-connection video at
+once (`clearVideoChannel`).
