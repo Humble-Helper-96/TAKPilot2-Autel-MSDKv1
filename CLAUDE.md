@@ -96,6 +96,39 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+⚠ **PICK UP HERE: THE AR OVERLAY IS NOT ACCURATE ENOUGH** (operator, 2026-10-09, closing the
+session: "I am still not happy with AR accuracy but I dont know how to fix it"). Nothing else is
+outstanding — v2.4.0 is released and on the controller. This is the next piece of work.
+
+**Start by MEASURING, because nothing can be aimed at an opinion.** The instrument already
+exists and needs no new code: `AutelTakBridge.pushCameraPoint` logs the solved ground point to 7
+decimals for exactly this purpose, and its own comment gives the method — aim the crosshair at a
+feature whose true coordinates are known, and the offset between the logged point and those
+coordinates IS the aim error, in metres on the ground. ⚠ **DECOMPOSE IT**: cross-track offset is
+a BEARING error, along-track is a PITCH error. The two have different causes and different
+fixes, and an undecomposed "it is off by 12 m" cannot be acted on.
+
+The three candidates, from the 2026-09-14 AR audit, in the order to attack them:
+
+1. **THE GIMBAL ROLL SIGN — the cheapest, and it is one bench session.** `liveGimbalRoll` holds
+   the roll RAW and is deliberately NOT in `CameraPose`: roll is a rotation about the camera's
+   forward axis and is exact IF the sign is right, but this firmware reports PITCH down-positive
+   against DJI's convention, so assuming roll matches DJI is a coin toss that rotates every
+   marker the wrong way. Aircraft static, gimbal at a few known rolls, read the diag line. Wire
+   it in AFTER that, not before.
+2. **TELEMETRY LEADS VIDEO.** The overlay projects from telemetry that is current while the
+   video under it is some milliseconds old. ⚠ Needs the lag MEASURED on this hardware before any
+   compensation is written. Same mechanism as the ADS-B dead-reckoning measured at 3.3° on
+   2026-09-15 and deliberately stored.
+3. **MAGNETOMETER BIAS BY HEADING — NO APP CORRECTION.** The operator's standing decision. It is
+   listed only so it is not mistaken for unexplored. Do not propose a per-airframe table again.
+
+⚠ **THE DTED CACHE OF 2026-10-09 CHANGES NO ANSWER AND IS NOT A SUSPECT.** It caches the POSTS
+and interpolates on the caller's exact lat/lon; quantising the QUERY instead is the thing that
+WOULD move a marker, and `DtedTileCacheTest` fails on that. Do not look there first.
+
+---
+
 **v2.4.0 IS RELEASED** — tag `v2.4.0`, versionCode 108, 2026-10-09, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. Developed on the
 `uasvideo-split` branch and merged to master on release (2026-10-05, refined 2026-10-08 and
