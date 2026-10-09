@@ -155,9 +155,12 @@ flight screen. The keys are only for the map screens of the sample application.
 
 This repository contains no server addresses, no certificates and no credentials.
 
-Configure these items in the application under **Pre-Flight Setup**: the TAK enrollment, the server
-address, the channels, the video servers (RTSP or SRT, two servers, a port and a passphrase for
-each), the DTED terrain tiles and the FAA airspace data. The application keeps them on the device. A
+Configure these items in the application. **Pre-Flight Setup** holds the aircraft limits, the
+video quality, the active video server, the DTED terrain tiles and the FAA airspace data, and it
+shows a summary of the TAK connection. Two buttons there open the screens that hold the set-once
+configuration: **TAK Server** (the server address, the ports, both accounts and both channel
+lists) and **Video Servers** (RTSP or SRT, two servers, a port and a passphrase for each, and how
+the team plays the stream). The application keeps them on the device. A
 new installation starts with no data. A video server can randomize its stream path (v2.3.9): the
 name then carries a random part that changes at each start of the application, thus only a team
 member with the current CoT can open the video. The random part is never stored.

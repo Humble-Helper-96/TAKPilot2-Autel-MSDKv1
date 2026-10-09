@@ -96,8 +96,15 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
-**v2.4.0 IN PROGRESS — on the `uasvideo-split` branch, not on master** (2026-10-05, refined
-2026-10-08; it was numbered 2.3.9 until master released that number for Random Path). The video split, plus Emergency Broadcast. **Two shared TAK accounts for the
+**v2.4.0 IS RELEASED** — tag `v2.4.0`, versionCode 108, 2026-10-09, signed APK and notes in
+`../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. Developed on the
+`uasvideo-split` branch and merged to master on release (2026-10-05, refined 2026-10-08 and
+2026-10-09; it was numbered 2.3.9 until master released that number for Random Path).
+⚠ **BENCH TESTED AND ONE LOCAL FLIGHT on 2026-10-09.** The menus, the split across the two
+accounts and the live streaming were confirmed by the operator. The reconnect-on-resume and both
+retraction paths were proved from the log. ⚠ **The SRT READ advertisement is NOT bench-tested
+from this application**, and the AR accuracy is NOT to the operator's satisfaction — see the open
+items in the 2026-09-14 AR audit, of which the gimbal roll sign is the cheapest. The video split, plus Emergency Broadcast. **Two shared TAK accounts for the
 fleet, Standard and Elevated**; every controller enrolls on both. The Elevated connection (cert
 B in `TakManager`) carries the live-video link to the one channel that account is in; the
 Standard connection carries the aircraft's position, FOV, SPI and markers to everyone else with
