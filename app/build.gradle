@@ -1616,8 +1616,11 @@ android {
         //        or logout now restores single-connection video (clearVideoChannel), the control
         //        no longer depends on a once-only visibility check, and no file is written on the
         //        screen thread.
-        //        NOT FLOWN. Phase 0 (the server-side layout on a TEST server, incl. two
-        //        connections sharing one aircraft uid) must pass first — CHANNELS-FINDINGS.md §12.
+        //        THE PILOT MARKER NO LONGER CARRIES THE VIDEO URL (operator, bench 2026-10-08):
+        //        TAK Aware draws a team member that carries a video entry as a 2525 square, not
+        //        a dot, while the stream is up. The aircraft marker alone advertises the stream.
+        //        Bench 2026-10-08: both connections held by the server under one aircraft uid;
+        //        the video-feed reader gets the copy with the link and no other. NOT FLOWN.
         versionCode 105
         versionName "2.4.0"
         multiDexEnabled true

@@ -417,12 +417,14 @@ class AutelTakBridge(
         //
         // Everything below this returns early without a GPS fix from the AIRCRAFT, which is
         // correct — a drone marker at 0,0 would be a lie. But the operator is on the ground with
-        // their own position, and the video is a capture of THEIR screen that keeps streaming
-        // when the aircraft is down. Attaching the video to the drone marker meant that in
-        // exactly the case screen capture exists for, nothing on the network said where the
-        // stream was. So the pilot marker carries it, and it is published on EVERY tick, aircraft
-        // or no aircraft: the real position when the controller has a fix, the "position not
-        // known" form when it does not (2026-09-10 — see pushPilotPli).
+        // their own position, and must be in the team's contact list whatever the aircraft is
+        // doing, so the pilot marker is published on EVERY tick, aircraft or no aircraft: the
+        // real position when the controller has a fix, the "position not known" form when it
+        // does not (2026-09-10 — see pushPilotPli).
+        // ⚠ The pilot marker does NOT carry the video url any more (operator, 2026-10-08). It did
+        // from 2026-08-05, so that a downed aircraft still left a marker saying where the stream
+        // was; TAK Aware draws a team member that carries video as a 2525 square, not a dot, and
+        // the dot won. The aircraft marker alone advertises the stream — see sendPilotPli.
         pushPilotPli()
         // SNAPSHOT every field this push consumes, in one go. The SDK listeners write these on
         // their own thread; reading them live through the body would let one PLI mix position
@@ -469,10 +471,11 @@ class AutelTakBridge(
         // north reference stays 0.0 — <sensor azimuth> is an ABSOLUTE true-north bearing
         // (the DJI original calibrated this the hard way; see its 2026-07 comment).
         tak.sendDronePLI(droneUid, droneCallsign, lat, lon, hae, heading, speedMs, batteryPct,
-            // The drone marker keeps its video advertisement — unchanged. The PILOT marker
-            // carries the same url as WELL (operator, 2026-08-05), so the stream is still
-            // findable when the aircraft has no GPS and this message is not being sent at all.
-            // Two markers advertising one stream is the point, not a duplication bug.
+            // The drone marker is the ONE marker that advertises the stream (operator,
+            // 2026-10-08). From 2026-08-05 the pilot marker carried the url as well, so the
+            // stream stayed findable when the aircraft had no GPS and this message was not
+            // sent; TAK Aware drew that pilot as a 2525 square, and the dot won. See
+            // sendPilotPli.
             videoUrl, spiUid,
             sensorFov, sensorVfov, sensorAzimuth, sensorElevation, sensorRange, 0.0,
             0.0, gimbalPitch, gimbalYaw,
@@ -620,8 +623,8 @@ class AutelTakBridge(
     private var pilotFixOldLogged = false
 
     /**
-     * Publishes the operator's own marker: `<callsign>-Pilot`, Cyan, at the CONTROLLER's position,
-     * carrying the video url while a stream is running.
+     * Publishes the operator's own marker: `<callsign>-Pilot`, Cyan, at the CONTROLLER's position.
+     * It carries no video url (operator, 2026-10-08 — see sendPilotPli); the aircraft marker does.
      *
      * ## With no fix, the marker still goes out (operator, 2026-09-10)
      *
@@ -687,12 +690,23 @@ class AutelTakBridge(
         sendPilotPli(fix)
     }
 
-    /** Sends one pilot PLI. [fix] is null when the controller has no position. */
+    /**
+     * Sends one pilot PLI. [fix] is null when the controller has no position.
+     *
+     * ⚠ **NO VIDEO URL ON THE PILOT MARKER (operator, 2026-10-08).** The aircraft marker alone
+     * carries the stream. From 2026-08-05 to this date the pilot carried it as well, so that a
+     * downed or GPS-less aircraft still left a marker on the network saying where the stream
+     * was. The cost was found on the TAK Aware bench, v2.4.0: a team member whose report carries
+     * a video entry is drawn as a MIL-STD-2525 unit symbol (a cyan square) instead of the
+     * team-member dot, for as long as the stream is up. Proved by the pilot turning back into a
+     * dot the moment the url was absent, with nothing else changed (TAK Aware logs 11 and 12).
+     * The operator chose the dot. The shared core keeps the parameter; the DJI trees still pass
+     * their url and owe this decision when they port the split.
+     */
     private fun sendPilotPli(fix: android.location.Location?) {
         runCatching {
             // No team argument — the pilot marker's colour is TakManager's PILOT_TEAM, always.
-            tak.sendPilotPLI(fix, droneCallsign, "Team Member",
-                pilotBatteryPct(), TakBridgeHolder.videoUrlOrNull())
+            tak.sendPilotPLI(fix, droneCallsign, "Team Member", pilotBatteryPct(), null)
         }.onFailure { AppLog.w(TAG, "pilot PLI failed: ${it.message}") }
     }
 
@@ -1147,8 +1161,9 @@ object TakBridgeHolder {
     fun onProductConnected() { bridge?.onProductConnected() }
     fun onProductDisconnected() { /* cache goes stale; PLI keeps last fix until fresh data */ }
 
-    /** The RTSP url currently advertised, or null when nothing is streaming. Read by the
-     *  bridge each tick so the pilot marker carries it. */
+    /** The RTSP url currently advertised, or null when nothing is streaming. The bridge reads
+     *  its own copy for the AIRCRAFT marker; the pilot marker no longer carries it (operator,
+     *  2026-10-08 — see AutelTakBridge.sendPilotPli). Kept for any other reader. */
     fun videoUrlOrNull(): String? = videoUrl
 
     fun setVideoUrl(url: String?) {

@@ -114,6 +114,21 @@ left alone** (operator, 2026-10-08: a token rotation at the end was built and th
 more than the feature needs). A client that saved the link during a broadcast keeps it; with
 Random Path on it dies at the next relaunch, with it off it lives on. Accepted. See
 `CHANNELS-FINDINGS.md` §12.
+
+⚠ **THE PILOT MARKER NO LONGER CARRIES THE VIDEO URL** (operator, bench 2026-10-08). It had
+since 2026-08-05, so a downed or GPS-less aircraft still left a marker saying where the stream
+was. TAK Aware draws a team member whose report carries a video entry as a MIL-STD-2525 unit
+symbol — a cyan square — instead of the team-member dot, for as long as the stream is up.
+Proved with nothing else changed: TAK Aware logs 11 (url present, square) and 12 (url absent,
+dot). The dot won. `AutelTakBridge.sendPilotPli` passes null; the shared core keeps the
+parameter and **both DJI trees still pass their url and owe this decision** when they port the
+split. The aircraft marker alone advertises the stream.
+
+Also learned on the same bench, for the record: a TAK client keeps the play control on a marker
+after the stream stops (a later report with no video entry does not remove a saved video
+entry) — a client behaviour, raised with the TAK Aware developer rather than worked around; the
+Standard account's in-flight TAK Channels dialog shows the Standard account only, by design;
+and the controller's clock must be on network time (`FLIGHT-TEST-CHECKLIST.md` §2).
 **NOT FLOWN. Phase 0 on a TEST server first** (the channel layout is in `CHANNELS-FINDINGS.md`
 §12; that the server keeps two connections from one controller with the same aircraft uid is
 ASSUMED to work — operator, 2026-10-08 — with a `-V` uid fallback noted). The DJI v5 port follows
@@ -348,7 +363,9 @@ section 4.
 
 In v1.6.0 so far: the CoT video advertisement now carries a nested `ConnectionEntry`, which
 is what makes the feed playable from the aircraft marker and the pilot marker. This was
-flight-verified on 2026-08-12 — the operator confirmed video on both markers. The bare
+flight-verified on 2026-08-12 — the operator confirmed video on both markers. ⚠ **The pilot
+marker's share of this is REVERSED on the `uasvideo-split` branch (operator, 2026-10-08)** — see
+the v2.4.0 entry under Current work; the aircraft marker alone carries the stream there. The bare
 `<__video sensor url/>` shape it replaced put the url on the wire and gave no client a play
 control. `com.taklite` is shared by contract, so this code is the same in the DJI tree.
 
