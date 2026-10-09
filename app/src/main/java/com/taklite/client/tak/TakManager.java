@@ -13,6 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class TakManager implements TakClient.TakClientListener {
     private static final String TAG = "TakManager";
+
+    /** What the outbound log calls each connection. The account names the pilot sees in
+     *  Pre-Flight, so a log line and the screen agree on which socket is meant. */
+    private static final String LINK_STANDARD = "standard";
+    private static final String LINK_ELEVATED = "elevated";
     private static final long STALE_CHECK_INTERVAL_MS = 30000;
 
     private static TakManager instance;
@@ -481,11 +486,12 @@ public class TakManager implements TakClient.TakClientListener {
      * send every outbound message goes through, generalized from what used to be {@code sendCot}
      * so it can run against either cert A's {@code client} or cert B's {@code videoClient}.
      */
-    private void sendOn(TakClient target, boolean targetConnected, String xml) {
+    private boolean sendOn(TakClient target, boolean targetConnected, String xml, String link,
+                           String alreadyLogged) {
         if (target == null || !targetConnected) {
-            AppLog.w(TAG, "CoT NOT SENT — client=" + (target == null ? "null" : "present")
+            AppLog.w(TAG, "CoT NOT SENT [" + link + "] — client=" + (target == null ? "null" : "present")
                     + " connected=" + targetConnected);
-            return;
+            return false;
         }
         String wire = xml;
         // THE EXACT BYTES handed to the socket. Added 2026-08-15: markers were reported as not
@@ -496,8 +502,61 @@ public class TakManager implements TakClient.TakClientListener {
         // VERBOSE, not debug. This runs several times a second; the operator turns Detailed on
         // in Debug Log to diagnose, which is the convention the flight-test checklist already
         // uses. AppLog.v only reaches the file when that is set.
-        AppLog.v(TAG, "CoT OUT: " + redactCredentials(wire));
+        //
+        // ⚠ THE SECOND CONNECTION DOES NOT REPEAT THE WIRE. The v2.4.0 split made this method
+        // run TWICE per outbound message, and both copies logged the whole event: measured on
+        // the controller 2026-10-09, `CoT OUT` was 30.7 % of a log file that filled 1 MB every
+        // 132 s (7.95 KB/s), and AppLog flushes synchronously on the calling thread every 8 KB
+        // — about once a second, each flush a FileWriter open/append/close plus a MediaStore
+        // write under a global lock. Halving the largest producer is the cheapest fix available.
+        // The two wires differ ONLY by the __video block (that is [videoFor]'s whole job), so
+        // the second line says which block it carried and nothing else. If the two ever differ
+        // for some OTHER reason, [withoutVideoBlock] stops matching and the full wire is logged
+        // — the shortening must never be able to hide a real difference.
+        boolean full = alreadyLogged == null || !sameButForVideoBlock(alreadyLogged, wire);
+        if (full) {
+            AppLog.v(TAG, "CoT OUT [" + link + "]: " + redactCredentials(wire));
+        } else {
+            AppLog.v(TAG, "CoT OUT [" + link + "]: as above, "
+                    + (wire.contains("<__video") ? "plus" : "without") + " the __video block");
+        }
         target.sendMessage(wire);
+        return full;
+    }
+
+    /** True when two outbound wires are the same message and differ at most by whether they
+     *  carry the {@code __video} block. See the logging note in {@link #sendOn}. */
+    static boolean sameButForVideoBlock(String a, String b) {
+        if (a == null || b == null) return false;
+        String sa = withoutVideoBlock(a);
+        String sb = withoutVideoBlock(b);
+        return sa != null && sa.equals(sb);
+    }
+
+    /**
+     * The wire with its {@code __video} element removed, or the wire unchanged when it has
+     * none.
+     *
+     * Prefers the closing tag over the first {@code "/>"}: the nested {@code <ConnectionEntry/>}
+     * that makes a feed playable is itself self-closing, so cutting at {@code "/>"} would slice
+     * the element in half and leave a fragment that compares unequal to everything. The bare
+     * {@code <__video sensor url/>} shape has no closing tag, which is the only case the
+     * {@code "/>"} branch is for.
+     */
+    static String withoutVideoBlock(String xml) {
+        if (xml == null) return null;
+        int start = xml.indexOf("<__video");
+        if (start < 0) return xml;
+        int end;
+        int close = xml.indexOf("</__video>", start);
+        if (close >= 0) {
+            end = close + "</__video>".length();
+        } else {
+            int selfClose = xml.indexOf("/>", start);
+            if (selfClose < 0) return xml;
+            end = selfClose + 2;
+        }
+        return xml.substring(0, start) + xml.substring(end);
     }
 
     /**
@@ -513,11 +572,14 @@ public class TakManager implements TakClient.TakClientListener {
      * let a pilot who restricted an aircraft's audience still broadcast its position to everyone.
      */
     private void sendCotToBoth(String xmlForA, String xmlForB) {
-        sendOn(client, connected, xmlForA);
+        boolean loggedA = sendOn(client, connected, xmlForA, LINK_STANDARD, null);
         // Read the field ONCE, and ask THAT socket — not the manager's flag, which could belong
         // to a replacement client dialled between this read and the send (review, 2026-10-08).
         TakClient b = videoClient;
-        if (b != null) sendOn(b, videoConnected && b.isConnected(), xmlForB);
+        // Only offer A's wire as the thing to shorten against when A actually LOGGED it. With
+        // the Standard connection down, "as above" would point at a line that is not there.
+        if (b != null) sendOn(b, videoConnected && b.isConnected(), xmlForB, LINK_ELEVATED,
+                loggedA ? xmlForA : null);
     }
 
     /**

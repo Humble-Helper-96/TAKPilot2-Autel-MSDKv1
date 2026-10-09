@@ -1663,6 +1663,38 @@ android {
         //        it is the same mechanism as the ADS-B dead-reckoning measured at 3.3° on
         //        2026-09-15 and deliberately stored. (9) the roll sign, above.
         //        AR: NOT FLOWN. The DTED cache is unit-tested only.
+        //
+        //        THE SECOND CONNECTION NO LONGER REPEATS THE WIRE IN THE LOG (2026-10-09).
+        //        The split made every outbound CoT go out twice and BOTH copies logged the whole
+        //        event. Measured on the controller from a real flight log: `CoT OUT` was 30.7 %
+        //        of a file that filled 1 MB every 132 s (7.77 KB/s), 173 duplicate pairs in one
+        //        file. AppLog flushes SYNCHRONOUSLY ON THE CALLING THREAD every 8 KB — at that
+        //        rate about once a second, each flush a FileWriter open/append/close plus a
+        //        MediaStore write under a global lock, and AppLog's own header records that an
+        //        earlier per-line version of this cost 120 % of a core and stuttered the screen.
+        //        The elevated line now names the difference ("as above, plus/without the
+        //        __video block") instead of repeating ~930 bytes. Measured saving on that same
+        //        file: 15.4 % of all log bytes, 7.77 -> 6.58 KB/s, flush 1.03 -> 1.22 s,
+        //        rotation 132 -> 156 s.
+        //        ⚠ THE SHORTENING CANNOT HIDE A REAL DIFFERENCE, and that is the property under
+        //        test. The two wires may differ by the __video block and nothing else; anything
+        //        else falls back to logging the full wire (sameButForVideoBlock /
+        //        withoutVideoBlock, OutboundLogShorteningTest, 8). withoutVideoBlock prefers the
+        //        closing tag over the first "/>" because the nested <ConnectionEntry/> that makes
+        //        a feed playable is itself self-closing — cutting at "/>" would slice the element
+        //        in half and the shortening would never fire on the one shape it is for.
+        //        Shared core, so taklite-core master moved first and Autel was synced from it;
+        //        check-taklite.sh says Autel CONFORMS. The DJI trees inherit it at their port.
+        //        ⚠ THIS IS NOT WHY THE AIRCRAFT LOSES SIGNAL. Investigated the same day from the
+        //        controller's own logs: the 2 s bridge tick NEVER drifts through a dropout (220
+        //        samples, every gap an exact multiple of 2.01 s) and PLI/LINK pair 220:220, so
+        //        the gaps are ticks that ran on time and hit pushOnce's "no GPS fix" early
+        //        return — missing AIRCRAFT telemetry, not blocked threads. Log volume is flat
+        //        while the drops cluster. Two 0 % events: one pre-takeoff (flying=false, 99 %
+        //        battery) and one airborne, with signal degrading at CONSTANT altitude and still
+        //        dipping to 60 % with the aircraft ON THE GROUND — which range cannot explain.
+        //        ⚠ rsrp/masterSnr/airSnr read 0 on EVERY sample: this firmware does not populate
+        //        them, so the vendor percentage is the only radio datum there is.
         versionCode 105
         versionName "2.4.0"
         multiDexEnabled true
