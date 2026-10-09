@@ -69,11 +69,12 @@ class AutelVideoStreamer(
         // ONLY THE PORT DIFFERS BETWEEN THE PROTOCOLS, and SRT adds a passphrase. Each keeps
         // its own value, so a pilot who toggles back and forth finds what they last entered.
         //
-        // ⚠ [rtspPort] IS USED WHICHEVER TRANSPORT IS SELECTED, and the screen hides its field
-        // under SRT. It is not only the push port: [advertiseUrl] is an RTSP address because no
-        // TAK client plays SRT, so this is the port the team connects to even while the video
-        // leaves the controller over SRT. It was the constant 8554 until 2026-08-29, which
-        // meant a server serving RTSP on any other port could not be advertised at all.
+        // ⚠ [rtspPort] IS USED WHICHEVER PUBLISH TRANSPORT IS SELECTED, and the screen hides
+        // its field under SRT: it is the default read port, so the team can be connecting to it
+        // while the video leaves over SRT. It is no longer the ONLY possibility — see
+        // [advertiseTransport], which can now put an srt:// address in the CoT instead. It was
+        // the constant 8554 until 2026-08-29, which meant a server serving RTSP on any other
+        // port could not be advertised at all.
         val rtspPort: Int = VideoTransport.RTSP.defaultPort,
         val srtPort: Int = VideoTransport.SRT.defaultPort,
 
@@ -96,6 +97,36 @@ class AutelVideoStreamer(
         val advertiseUser: String = "",
         val advertisePass: String = "",
 
+        /**
+         * How the TEAM READS the stream — the scheme in the CoT. Independent of [transport],
+         * which is how the video LEAVES this controller. The two legs are separate and always
+         * were; until 2026-10-09 only the push leg was selectable.
+         *
+         * ⚠ **This is a FORWARD-COMPATIBILITY control and [VideoTransport.RTSP] stays the
+         * default.** ATAK plays an SRT read today, with the CoT shaped as
+         * `srt-cot-video-advertising.md` describes; TAK Aware CANNOT, and the cause is its
+         * bundled MobileVLCKit having no SRT access module compiled in — a vendor build issue
+         * that no CoT shape can work around. A fleet that moves this to SRT before its clients
+         * are ready advertises an address its viewers fail to open, and a failure to open
+         * reads as a dead feed, not a wrong address. Move it when the clients can read it.
+         */
+        val advertiseTransport: VideoTransport = VideoTransport.RTSP,
+        /**
+         * The port the team READS SRT on. Separate from [advertisePort] (the RTSP read port)
+         * for the same reason [srtPort] is separate from [rtspPort]: they are different ports
+         * on the server, and a pilot who toggles back and forth finds what they last entered.
+         */
+        val advertiseSrtPort: Int = VideoTransport.SRT.defaultPort,
+        /**
+         * SRT READ passphrase — MediaMTX's `srtReadPassphrase`, which is NOT necessarily
+         * [srtPassphrase] (its `srtPublishPassphrase`). Empty when the read path has none.
+         *
+         * ⚠ Unlike the publish passphrase this one DOES go in a url, because SRT carries it in
+         * the stream-id query and there is nowhere else to put it. That is the protocol's
+         * design, not a choice here. It still must never be logged — see [advertiseUrlSafe].
+         */
+        val advertisePassphrase: String = "",
+
         /** How the video leaves the controller. See [VideoTransport]. */
         val transport: VideoTransport = VideoTransport.RTSP,
         /** SRT only, and MILLISECONDS. The evidence for the number, the units trap and the
@@ -113,6 +144,10 @@ class AutelVideoStreamer(
          *
          * ⚠ **NEVER LOG THIS AND NEVER PUT IT IN A URL.** It is not part of the stream id, it
          * does not appear in [pushUrl] or [urlSafe], and it must not go in the CoT.
+         *
+         * ⚠ **IT IS NOT THE READ PASSPHRASE.** The team's side has its own —
+         * [advertisePassphrase], MediaMTX's `srtReadPassphrase` — and crossing the two is the
+         * mistake that looks exactly like wrong credentials.
          */
         val srtPassphrase: String = "",
         /** Pilot-selected video quality: "low" | "standard" | "high", matching the DJI
@@ -169,24 +204,64 @@ class AutelVideoStreamer(
             if (transport == VideoTransport.SRT) srtPort else rtspPort
 
         /**
-         * The address that goes in the CoT, for the team to play.
+         * The address that goes in the CoT, for the team to play. Built from the ADVERTISE
+         * fields, which are not necessarily this server's own — see them above. An empty string
+         * means the pilot turned the advertisement off, and no video block goes in the CoT.
          *
-         * ⚠ **ALWAYS RTSP, on the media server's RTSP port** — see [VideoTransport]. An SRT push
-         * is not playable by any TAK client, so advertising `srt://…` would put an address on
-         * the wire that every viewer would fail to open, and the failure would look like a dead
-         * feed rather than a wrong address.
+         * ⚠ **IT IS NOT ALWAYS RTSP ANY MORE** (operator, 2026-10-09). It was, and the reason
+         * recorded here was that no TAK client plays SRT. That is no longer true: ATAK plays an
+         * SRT read, confirmed against a live server and real clients in
+         * `srt-cot-video-advertising.md`. [advertiseTransport] selects it, and RTSP remains the
+         * default because TAK Aware still cannot — see that field.
          *
-         * It is built from the ADVERTISE fields, never the SRT ones (whose port is an ingest
-         * port) and not necessarily this server's own — see them above. An empty string means
-         * the pilot turned the advertisement off, and no video block goes in the CoT.
+         * ⚠ **THE SRT FORM IS NOT A SCHEME SWAP.** An SRT reader is told what it wants in the
+         * STREAM ID, not in a path: `?streamid=read:<path>[:<user>:<pass>]`. The `read:` prefix
+         * is MediaMTX's own shorthand for a subscriber, the counterpart of the `publish:` that
+         * [pushUrl] already builds. And the whole query string has to reach
+         * `CotBuilder.appendVideo` intact, because ATAK rebuilds the connection from
+         * `ConnectionEntry.path` and not from this url — that is the single fact the reference
+         * document exists to record.
+         *
+         * ⚠ The credentials are NOT url-encoded in the SRT form, unlike the RTSP one. The
+         * stream id is one opaque colon-separated string that the media server splits itself;
+         * percent-encoding it would make the server look for a user that does not exist. The
+         * same colon trap as [pushUrl] therefore applies — a colon in the video password has no
+         * escape in either direction.
          */
         fun advertiseUrl(): String {
             if (!advertiseEnabled) return ""
             val h = advertiseHost.ifEmpty { host }
-            val cred = if (advertiseUser.isNotEmpty())
-                "${enc(advertiseUser)}:${enc(advertisePass)}@" else ""
-            return "rtsp://$cred$h:$advertisePort/${streamPath()}?tcp"
+            return when (advertiseTransport) {
+                VideoTransport.RTSP -> {
+                    val cred = if (advertiseUser.isNotEmpty())
+                        "${enc(advertiseUser)}:${enc(advertisePass)}@" else ""
+                    "rtsp://$cred$h:$advertisePort/${streamPath()}?tcp"
+                }
+                VideoTransport.SRT ->
+                    "srt://$h:$advertiseSrtPort?streamid=${srtReadStreamId()}${srtReadPhrase()}"
+            }
         }
+
+        /**
+         * The SRT read stream id, `read:<path>[:<user>:<pass>]`.
+         *
+         * The credentials are appended only when there is a user, matching [pushUrl]: a path
+         * with no authentication must not be asked for an empty one, because MediaMTX reads the
+         * trailing colons as a real, empty user and refuses the connection.
+         */
+        private fun srtReadStreamId(): String =
+            if (advertiseUser.isEmpty()) "read:${streamPath()}"
+            else "read:${streamPath()}:$advertiseUser:$advertisePass"
+
+        /**
+         * `&passphrase=…`, or nothing at all.
+         *
+         * ⚠ A DANGLING `&passphrase=` IS NOT THE SAME AS NO PASSPHRASE — the reference document
+         * says not to emit one. An empty value asks for encryption with an empty key, which a
+         * server with no passphrase refuses just as firmly as a wrong one.
+         */
+        private fun srtReadPhrase(): String =
+            if (advertisePassphrase.isEmpty()) "" else "&passphrase=$advertisePassphrase"
 
         /**
          * The url with the password masked, for the screen and the log.
@@ -218,6 +293,34 @@ class AutelVideoStreamer(
                     else "srt://$host:$srtPort/publish:${streamPath()}:$username:$secret"
             }
         }
+        /**
+         * [advertiseUrl] with both secrets masked, for the Video Servers preview.
+         *
+         * ⚠ The SRT read form carries the PASSPHRASE IN THE URL, which the push form never
+         * does. A preview is read over a pilot's shoulder and screenshotted into training
+         * material, thus it is masked here the same as a password. The empty case still reads
+         * "(NO PASSWORD)" rather than the same `***`, for the reason [urlSafe] gives: a mask
+         * that cannot tell "set" from "unset" cannot answer the question the preview exists for.
+         */
+        fun advertiseUrlSafe(): String {
+            if (!advertiseEnabled) return ""
+            val h = advertiseHost.ifEmpty { host }
+            return when (advertiseTransport) {
+                VideoTransport.RTSP -> {
+                    val cred = if (advertiseUser.isEmpty()) "" else
+                        "$advertiseUser:${if (advertisePass.isEmpty()) "(NO PASSWORD)" else "***"}@"
+                    "rtsp://$cred$h:$advertisePort/${streamPath()}?tcp"
+                }
+                VideoTransport.SRT -> {
+                    val id = if (advertiseUser.isEmpty()) "read:${streamPath()}" else
+                        "read:${streamPath()}:$advertiseUser:" +
+                            (if (advertisePass.isEmpty()) "(NO PASSWORD)" else "***")
+                    val phrase = if (advertisePassphrase.isEmpty()) "" else "&passphrase=***"
+                    "srt://$h:$advertiseSrtPort?streamid=$id$phrase"
+                }
+            }
+        }
+
         private fun enc(s: String): String =
             java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
     }
@@ -654,6 +757,11 @@ object VideoStreamerHolder {
             advertisePort = p.getInt("video_adv_port", VideoTransport.RTSP.defaultPort),
             advertiseUser = p.getString("video_adv_user", "") ?: "",
             advertisePass = p.getString("video_adv_pass", "") ?: "",
+            advertiseTransport =
+                VideoTransport.fromPref(p.getString("video_adv_transport", null)),
+            advertiseSrtPort =
+                p.getInt("video_adv_srt_port", VideoTransport.SRT.defaultPort),
+            advertisePassphrase = p.getString("video_adv_srt_phrase", "") ?: "",
             srtPort = p.getInt("video_srt_port", VideoTransport.SRT.defaultPort),
             transport = transport,
             // Read on every start, so a change on the Debug screen takes effect at the next

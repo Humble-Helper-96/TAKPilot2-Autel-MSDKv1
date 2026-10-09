@@ -5,14 +5,26 @@ package com.autel.sdksample.tak
  * is a property of the network, and the pilot is the only person who knows which network this
  * callout is on.
  *
- * ## This changes one leg only
+ * ## The two legs are chosen separately
  *
  * ```
- *   controller  --[ RTSP or SRT ]-->  media server  --[ always RTSP ]-->  TAK clients
+ *   controller  --[ RTSP or SRT ]-->  media server  --[ RTSP or SRT ]-->  TAK clients
+ *                      ^                                   ^
+ *                 VideoConfig.transport          VideoConfig.advertiseTransport
  * ```
  *
- * **No TAK client plays SRT.** Thus the address in the CoT stays an RTSP address whichever
- * transport is selected, and the media server does the translation.
+ * This enum names a protocol; it does NOT say which leg. The PUBLISH leg is
+ * `VideoConfig.transport`, the READ leg `VideoConfig.advertiseTransport`, and they are
+ * independent — an SRT publish with an RTSP read is the normal arrangement, because the media
+ * server translates.
+ *
+ * ⚠ **"No TAK client plays SRT" WAS WRITTEN HERE AND IT IS NO LONGER TRUE** (operator,
+ * 2026-10-09). ATAK plays an SRT read when the CoT is shaped as
+ * `UAS_Apps/srt-cot-video-advertising.md` describes — the whole `?streamid=…` query in
+ * `ConnectionEntry.path`, which is the one thing that was missing. TAK Aware still cannot,
+ * and that is a vendor build issue (no SRT module in its bundled MobileVLCKit) that no CoT
+ * shape can work around. **The read leg therefore defaults to RTSP and should stay there
+ * until the clients in the fleet can read SRT.**
  *
  * ## The two transports
  *

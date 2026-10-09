@@ -94,7 +94,12 @@ class VideoServersActivity : AppCompatActivity() {
         val passphrase: EditText = v("Passphrase")
         val advGroup: RadioGroup = v("AdvGroup")
         val advOther: RadioButton = v("AdvOther")
-        val advHint: TextView = v("AdvHint")
+        val advProtoGroup: RadioGroup = v("AdvProtoGroup")
+        val advProtoHint: TextView = v("AdvProtoHint")
+        val advSrtBlock: LinearLayout = v("AdvSrtBlock")
+        val advSrtPort: EditText = v("AdvSrtPort")
+        val advPassphrase: EditText = v("AdvPassphrase")
+        val advUrl: TextView = v("AdvUrl")
         val pushUrl: TextView = v("PushUrl")
 
         /** True while the fields are filled from prefs, so the listeners do not treat the fill
@@ -110,6 +115,11 @@ class VideoServersActivity : AppCompatActivity() {
 
         fun selectedTransport(): VideoTransport =
             if (transportGroup.checkedRadioButtonId == id("TransportSrt")) VideoTransport.SRT
+            else VideoTransport.RTSP
+
+        /** How the TEAM READS it — independent of [selectedTransport], which is the push. */
+        fun selectedAdvProto(): VideoTransport =
+            if (advProtoGroup.checkedRadioButtonId == id("AdvProtoSrt")) VideoTransport.SRT
             else VideoTransport.RTSP
 
         fun selectedAdvertise(): String = when (advGroup.checkedRadioButtonId) {
@@ -140,6 +150,12 @@ class VideoServersActivity : AppCompatActivity() {
             val other = if (slot == 1) 2 else 1
             return when (selectedAdvertise()) {
                 ADV_OFF -> base.copy(advertiseEnabled = false)
+                // ⚠ THE READ PROTOCOL FOLLOWS THE SERVER, not this card. Advertising through
+                // the other server means the team connects to THAT server, so its scheme, its
+                // read port and its read passphrase are the ones that have to go in the CoT —
+                // the same rule the host, port and login beside them already follow. This
+                // card's own "TAK Advertisement Protocol" control describes this card's
+                // server, and is read by the other card when IT advertises through this one.
                 ADV_OTHER -> base.copy(
                     advertiseEnabled = true,
                     advertiseHost = prefs.getString(vKey(other, "host"), "") ?: "",
@@ -147,6 +163,12 @@ class VideoServersActivity : AppCompatActivity() {
                         VideoTransport.RTSP.defaultPort),
                     advertiseUser = prefs.getString(vKey(other, "user"), "") ?: "",
                     advertisePass = prefs.getString(vKey(other, "pass"), "") ?: "",
+                    advertiseTransport = VideoTransport.fromPref(
+                        prefs.getString(vKey(other, "adv_transport"), null)),
+                    advertiseSrtPort = prefs.getInt(vKey(other, "adv_srt_port"),
+                        VideoTransport.SRT.defaultPort),
+                    advertisePassphrase =
+                        prefs.getString(vKey(other, "adv_srt_phrase"), "") ?: "",
                 )
                 else -> base.copy(
                     advertiseEnabled = true,
@@ -154,6 +176,10 @@ class VideoServersActivity : AppCompatActivity() {
                     advertisePort = base.rtspPort,
                     advertiseUser = base.username,
                     advertisePass = base.password,
+                    advertiseTransport = selectedAdvProto(),
+                    advertiseSrtPort = advSrtPort.text.toString().trim().toIntOrNull()
+                        ?: VideoTransport.SRT.defaultPort,
+                    advertisePassphrase = advPassphrase.text.toString(),
                 )
             }
         }
@@ -173,11 +199,25 @@ class VideoServersActivity : AppCompatActivity() {
             else
                 "The lowest delay on a reliable network."
 
+            val advSrt = selectedAdvProto() == VideoTransport.SRT
+            advSrtBlock.visibility = if (advSrt) View.VISIBLE else View.GONE
+            advProtoHint.text = if (advSrt)
+                "ATAK only. TAK Aware cannot play SRT yet — leave this on RTSP for a mixed team."
+            else
+                "Plays on every TAK client. Use this unless the whole team is on ATAK."
+
             advOther.text = slotName(if (slot == 1) 2 else 1)
             val cfg = buildConfig()
-            advHint.text =
-                if (!cfg.advertiseEnabled) "The CoT carries no video address."
-                else "The CoT carries ${cfg.advertiseHost.ifEmpty { "…" }}:${cfg.advertisePort}"
+            // ⚠ There was a "The CoT carries host:port" line here and it is GONE (operator,
+            // 2026-10-09). It restated, less precisely, what the TAK Advertisement Address
+            // below already shows in full — and a card that says the same thing twice in two
+            // shapes is what made this screen blur together when read quickly.
+            advUrl.text =
+                if (!cfg.advertiseEnabled) "(no address in the CoT)"
+                else if (cfg.advertiseHost.ifEmpty { cfg.host }.isEmpty() ||
+                    cfg.streamId.isEmpty())
+                    "${selectedAdvProto().scheme}://…  (enter host + identifier)"
+                else cfg.advertiseUrlSafe()
             pushUrl.text =
                 if (cfg.host.isEmpty() || cfg.streamId.isEmpty())
                     "${cfg.transport.scheme}://…  (enter host + identifier)"
@@ -208,12 +248,21 @@ class VideoServersActivity : AppCompatActivity() {
                 .putString(vKey(slot, "srt_phrase"), cfg.srtPassphrase)
                 .putString(vKey(slot, "codec"), cfg.codec)
                 .putString(vKey(slot, "advertise"), selectedAdvertise())
+                // ⚠ FROM THE CONTROLS, NOT FROM `cfg`. With "Other" selected `cfg` carries the
+                // OTHER slot's read settings — that is the whole point of that branch — and
+                // writing those back here would overwrite this card's own with its neighbour's
+                // the moment anything on the card was touched.
+                .putString(vKey(slot, "adv_transport"), selectedAdvProto().prefValue)
+                .putInt(vKey(slot, "adv_srt_port"),
+                    advSrtPort.text.toString().trim().toIntOrNull()
+                        ?: VideoTransport.SRT.defaultPort)
+                .putString(vKey(slot, "adv_srt_phrase"), advPassphrase.text.toString())
                 .putBoolean(vKey(slot, "random_path"), cfg.randomizePath)
                 .apply()
             mirrorActiveSlot()
             refreshDerived()
-            // The other card names this one on its "Team plays from" button and may advertise
-            // through it, so a change here can change what it shows.
+            // The other card names this one on its "TAK Advertisement Server" button and may
+            // advertise through it, so a change here can change what it shows.
             refreshOtherCard(slot)
         }
 
@@ -235,6 +284,12 @@ class VideoServersActivity : AppCompatActivity() {
         transportGroup.check(
             if (VideoTransport.fromPref(prefs.getString(vKey(slot, "transport"), null)) ==
                 VideoTransport.SRT) id("TransportSrt") else id("TransportRtsp"))
+        advSrtPort.setText(prefs.getInt(vKey(slot, "adv_srt_port"),
+            VideoTransport.SRT.defaultPort).toString())
+        advPassphrase.setText(prefs.getString(vKey(slot, "adv_srt_phrase"), "") ?: "")
+        advProtoGroup.check(
+            if (VideoTransport.fromPref(prefs.getString(vKey(slot, "adv_transport"), null)) ==
+                VideoTransport.SRT) id("AdvProtoSrt") else id("AdvProtoRtsp"))
         advGroup.check(when (prefs.getString(vKey(slot, "advertise"), ADV_SELF)) {
             ADV_OTHER -> id("AdvOther")
             ADV_OFF -> id("AdvOff")
@@ -260,11 +315,11 @@ class VideoServersActivity : AppCompatActivity() {
             // The lock stops a CHANGE, not the reading: the fields keep full contrast and stop
             // taking touches, exactly as they did on Pre-Flight.
             for (view in listOf<View>(name, host, streamId, user, pass, rtspPort, srtPort,
-                passphrase)) {
+                passphrase, advSrtPort, advPassphrase)) {
                 view.isEnabled = false
             }
             randomPath.apply { isClickable = false; isFocusable = false }
-            for (group in listOf(codecGroup, transportGroup, advGroup)) {
+            for (group in listOf(codecGroup, transportGroup, advGroup, advProtoGroup)) {
                 for (i in 0 until group.childCount) {
                     group.getChildAt(i).apply { isClickable = false; isFocusable = false }
                 }
@@ -277,9 +332,10 @@ class VideoServersActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
-        listOf(name, host, streamId, user, pass, rtspPort, srtPort, passphrase)
+        listOf(name, host, streamId, user, pass, rtspPort, srtPort, passphrase,
+            advSrtPort, advPassphrase)
             .forEach { it.addTextChangedListener(watcher) }
-        for (group in listOf(codecGroup, transportGroup, advGroup)) {
+        for (group in listOf(codecGroup, transportGroup, advGroup, advProtoGroup)) {
             group.setOnCheckedChangeListener { _, _ ->
                 refreshDerived()
                 if (!loading) save()
@@ -338,6 +394,17 @@ class VideoServersActivity : AppCompatActivity() {
                 prefs.getString(vKey(if (fromOther) other else slot, "user"), "") ?: "")
             .putString("video_adv_pass",
                 prefs.getString(vKey(if (fromOther) other else slot, "pass"), "") ?: "")
+            // The READ leg, from the same slot as the rest of the advertisement: the team
+            // connects to whichever server the CoT names, so its scheme, read port and read
+            // passphrase travel together with its host and login.
+            .putString("video_adv_transport", VideoTransport.fromPref(
+                prefs.getString(vKey(if (fromOther) other else slot, "adv_transport"), null))
+                .prefValue)
+            .putInt("video_adv_srt_port", prefs.getInt(
+                vKey(if (fromOther) other else slot, "adv_srt_port"),
+                VideoTransport.SRT.defaultPort))
+            .putString("video_adv_srt_phrase",
+                prefs.getString(vKey(if (fromOther) other else slot, "adv_srt_phrase"), "") ?: "")
             .putBoolean(StreamPath.PREF_RANDOMIZE,
                 prefs.getBoolean(vKey(slot, "random_path"), false))
             .apply()

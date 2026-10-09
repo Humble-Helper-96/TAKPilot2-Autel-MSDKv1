@@ -22,16 +22,11 @@
         android:paddingTop="4dp"
         android:paddingBottom="4dp">
 
-        <!-- Says where the state lives. A pilot must not think this screen is the control: the
-             server holds it, and an administrator can change it from TAK Portal at any time. -->
-        <TextView
-            android:id="@+id/takChanNote"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="8dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
-            android:text="The TAK server holds these channels. A change here goes to the server." />
+        <!-- ⚠ THE "the TAK server holds these channels" LINE IS GONE (operator, 2026-10-09).
+             It said where the state lives, which a pilot opening this dialog in flight does not
+             need told every time — and on this screen it cost a line the two channel lists
+             needed. The fact is still on the TAK Server screen's own channel section and in the
+             Field Guide, which are where somebody reads it once. -->
 
         <!-- Shown only when the TAK configuration is locked. -->
         <TextView
@@ -60,10 +55,12 @@
             android:textSize="13sp"
             android:text="" />
 
-        <!-- The ELEVATED account's channels (v2.4.0, operator 2026-10-08): shown under the
-             Standard account's so the pilot sees the whole scope of this aircraft in flight.
-             READ-ONLY — plain rows, no check boxes: the application never changes what the
-             Elevated account is a member of. Both GONE until an Elevated enrollment exists. -->
+        <!-- The ELEVATED account's channels (operator, 2026-10-08): shown under the Standard
+             account's so the pilot sees the whole scope of this aircraft in flight. WRITABLE
+             since 2026-10-09 (operator), behind the same lock as the Standard rows — a tick is
+             also the only possible "ignore incoming" control, because inbound CoT carries no
+             channel label. ⚠ The account is shared by the whole fleet, so a change here reaches
+             every controller. Both GONE until an Elevated enrollment exists. -->
         <TextView
             android:id="@+id/takChanElevatedLabel"
             android:layout_width="match_parent"
@@ -73,7 +70,7 @@
             android:textColor="@color/tp_text_secondary"
             android:textSize="13sp"
             android:visibility="gone"
-            android:text="Elevated account (video) — read-only, set on the server" />
+            android:text="Elevated account (video)" />
 
         <LinearLayout
             android:id="@+id/takChanElevatedList"

@@ -108,27 +108,70 @@ object TakMissionManager {
     }
 
     /**
-     * The ELEVATED account's channels (v2.4.0), read with that account's own certificate, for the
-     * read-only lists on Pre-Flight and in the flight screen's TAK Channels dialog. Never
-     * written: the application does not change what the Elevated account is a member of.
+     * The ELEVATED account's channels (v2.4.0), read with that account's own certificate, for
+     * the lists on the TAK Server screen and in the flight screen's TAK Channels dialog.
      *
-     * [cb] gets null when no Elevated enrollment is saved, else the list (empty when the server
-     * returned none). Posted on the main thread.
+     * ⚠ **NULL AND EMPTY ARE DIFFERENT ANSWERS, AND THE CALLERS DEPEND ON IT.** Null means
+     * there is no Elevated enrollment at all, and the caller keeps its section hidden. An empty
+     * list means the account IS enrolled and the server returned no channels for it, which is a
+     * thing the pilot needs told. Collapsing the two puts "the server returned no channels" in
+     * front of somebody who never set up a second account.
      *
-     * ⚠ The preference keys are literals here for the same reason as in AutelVideoStreamer:
-     * they are private constants of TakConnectActivity. If one moves there, move it here.
+     * Posted on the main thread.
      */
     fun listElevatedChannels(context: Context, cb: (List<TakMissionClient.Channel>?) -> Unit) {
+        if (!hasElevatedEnrollment(context)) { cb(null); return }
+        io.execute {
+            val chans = elevatedClient(context)?.listChannels() ?: emptyList()
+            handler.post { cb(chans) }
+        }
+    }
+
+    /** True when an Elevated certificate is saved. Cheap — reads preferences, opens nothing. */
+    fun hasElevatedEnrollment(context: Context): Boolean {
+        val p = context.getSharedPreferences(TakConnectActivity.PREFS, Context.MODE_PRIVATE)
+        return (p.getString("host", "") ?: "").isNotEmpty() &&
+            (p.getString("chb_truststore_path", "") ?: "").isNotEmpty() &&
+            (p.getString("chb_clientcert_path", "") ?: "").isNotEmpty()
+    }
+
+    /**
+     * Sets the ELEVATED account's active channels (operator, 2026-10-09; the DJIv5 sibling led).
+     * Mirrors [setActiveChannels], which does the same for the Standard account.
+     *
+     * ⚠ **ABSOLUTE, AND SCOPED TO THE USER — WHICH THE WHOLE FLEET SHARES.** activebits replaces
+     * the complete set, so anything not in [bitpos] is switched OFF; and the set belongs to the
+     * ACCOUNT, not to this controller (`CHANNELS-FINDINGS.md` §5). The Elevated account is one
+     * shared TAK Server user across every controller, so unticking the video channel here takes
+     * video away from EVERY controller in the fleet until somebody puts it back. That is not a
+     * defect to fix — it is what a shared account means — but it is why the section says so
+     * above the rows.
+     *
+     * [cb] gets false when no Elevated enrollment is saved as well as when the server refuses.
+     */
+    fun setElevatedActiveChannels(context: Context, bitpos: List<Int>, cb: (Boolean) -> Unit) {
+        io.execute {
+            val ok = elevatedClient(context)?.setActiveChannels(bitpos) == true
+            handler.post { cb(ok) }
+        }
+    }
+
+    /**
+     * A Mission API client on the ELEVATED certificate, or null when none is enrolled. Worker
+     * thread only — it opens a TLS connection.
+     *
+     * ⚠ The preference keys are literals here for the same reason as in AutelVideoStreamer:
+     * they are private constants of TakConnectActivity. If one moves there, move it here. Cert
+     * B has no host of its own: it reuses cert A's, because it is the same controller under a
+     * second certificate.
+     */
+    private fun elevatedClient(context: Context): TakMissionClient? {
         val p = context.getSharedPreferences(TakConnectActivity.PREFS, Context.MODE_PRIVATE)
         val host = p.getString("host", "") ?: ""
         val ts = p.getString("chb_truststore_path", "") ?: ""
         val cc = p.getString("chb_clientcert_path", "") ?: ""
-        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) { cb(null); return }
-        io.execute {
-            val chans = TakMissionClient.fromCert(host, API_PORT, ts, P12_PASSWORD, cc, P12_PASSWORD)
-                ?.listChannels() ?: emptyList()
-            handler.post { cb(chans) }
-        }
+        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) return null
+        return TakMissionClient.fromCert(host, API_PORT, ts, P12_PASSWORD, cc, P12_PASSWORD)
     }
 
     /** The one wording for a channel row, so the three lists on two screens cannot drift:

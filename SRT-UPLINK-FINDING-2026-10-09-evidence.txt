@@ -1,0 +1,101 @@
+Evidence for SRT-UPLINK-FINDING-2026-10-09.md — extracted from the controller's own
+logs, which are NOT in this repository (flight-logs/ is gitignored).
+
+################ SESSION A — the flight that tore ################
+Source: /sdcard/Download/TAKPilot2 Logs/app-2026-10-09-14-41-46.log
+Build v2.4.0 vc106. SRT latency 500 ms. H.265.
+
+screen capture [STANDARD] H.265: 2048x1536 -> 1024x768 @ 15fps 800kbps, 10s IDR, intra refresh 30f — variant: OMX.qcom.video.encoder.hevc / full (profile+level, VBR, max-fps) + intra-refresh
+
+--- every link line, in order ---
+2026-10-09 14:44:29.427  link [SRT]: 656kbps wire=711kbps  14fps  drops=0  frames=154
+2026-10-09 14:44:39.479  link [SRT]: 866kbps wire=919kbps  15fps  drops=0  frames=305
+2026-10-09 14:44:49.535  link [SRT]: 831kbps wire=900kbps  15fps  drops=0  frames=456
+2026-10-09 14:44:59.590  link [SRT]: 761kbps wire=1029kbps  15fps  drops=0  frames=607
+2026-10-09 14:45:09.653  link [SRT]: 799kbps wire=876kbps  15fps  drops=0  frames=758
+2026-10-09 14:45:19.685  link [SRT]: 814kbps wire=969kbps  14fps  drops=0  frames=907
+2026-10-09 14:45:29.730  link [SRT]: 794kbps wire=872kbps  15fps  drops=0  frames=1058
+2026-10-09 14:45:39.730  link [SRT]: 763kbps wire=912kbps  15fps  drops=0  frames=1208
+2026-10-09 14:45:49.743  link [SRT]: 703kbps wire=773kbps  13fps  drops=0  frames=1346
+2026-10-09 14:45:59.784  link [SRT]: 688kbps wire=777kbps  11fps  drops=0  frames=1460
+2026-10-09 14:46:09.789  link [SRT]: 933kbps wire=1005kbps  14fps  drops=0  frames=1610
+2026-10-09 14:46:19.853  link [SRT]: 820kbps wire=1010kbps  15fps  drops=0  frames=1761
+2026-10-09 14:46:29.919  link [SRT]: 806kbps wire=861kbps  15fps  drops=0  frames=1912
+2026-10-09 14:46:40.013  link [SRT]: 847kbps wire=953kbps  14fps  drops=0  frames=2063
+2026-10-09 14:46:50.061  link [SRT]: 727kbps wire=820kbps  15fps  drops=0  frames=2214
+2026-10-09 14:47:00.062  link [SRT]: 834kbps wire=905kbps  14fps  drops=0  frames=2364
+2026-10-09 14:47:10.115  link [SRT]: 759kbps wire=896kbps  12fps  drops=0  frames=2493
+2026-10-09 14:47:20.134  link [SRT]: 1010kbps wire=1125kbps  12fps  drops=0  frames=2617
+2026-10-09 14:47:30.141  link [SRT]: 608kbps wire=666kbps  14fps  drops=0  frames=2767
+2026-10-09 14:47:40.184  link [SRT]: 855kbps wire=1023kbps  15fps  drops=0  frames=2918
+2026-10-09 14:47:50.194  link [SRT]: 854kbps wire=934kbps  14fps  drops=0  frames=3068
+2026-10-09 14:48:00.288  link [SRT]: 711kbps wire=792kbps  14fps  drops=0  frames=3219
+2026-10-09 14:48:10.341  link [SRT]: 763kbps wire=925kbps  14fps  drops=0  frames=3361
+2026-10-09 14:51:59.365  link [SRT]: 702kbps wire=1040kbps  12fps  drops=0  frames=267
+2026-10-09 14:52:09.438  link [SRT]: 973kbps wire=1529kbps  12fps  drops=0  frames=393
+2026-10-09 14:52:19.455  link [SRT]: 722kbps wire=803kbps  14fps  drops=0  frames=543
+2026-10-09 14:52:29.508  link [SRT]: 819kbps wire=1456kbps  15fps  drops=0  frames=694
+2026-10-09 14:52:39.515  link [SRT]: 782kbps wire=868kbps  14fps  drops=0  frames=844
+2026-10-09 14:52:49.518  link [SRT]: 692kbps wire=1989kbps  13fps  drops=0  frames=978
+2026-10-09 14:52:59.557  link [SRT]: 1380kbps wire=859kbps  12fps  drops=0  frames=1102
+2026-10-09 14:53:09.572  link [SRT]: 291kbps wire=3304kbps  14fps  drops=0  frames=1252
+2026-10-09 14:53:19.638  link [SRT]: 817kbps wire=901kbps  15fps  drops=0  frames=1403
+2026-10-09 14:53:29.695  link [SRT]: 856kbps wire=935kbps  14fps  drops=0  frames=1553
+2026-10-09 14:53:39.739  link [SRT]: 798kbps wire=1550kbps  14fps  drops=0  frames=1703
+2026-10-09 14:53:49.777  link [SRT]: 774kbps wire=6169kbps  15fps  drops=0  frames=1854
+2026-10-09 14:53:59.815  link [SRT]: 794kbps wire=11479kbps  15fps  drops=0  frames=2005
+2026-10-09 14:54:09.849  link [SRT]: 789kbps wire=17679kbps  14fps  drops=0  frames=2155
+2026-10-09 14:54:19.896  link [SRT]: 810kbps wire=23017kbps  15fps  drops=11  frames=2306
+2026-10-09 14:54:29.899  link [SRT]: 807kbps wire=28821kbps  14fps  drops=30  frames=2455
+2026-10-09 14:54:39.962  link [SRT]: 779kbps wire=34795kbps  14fps  drops=79  frames=2605
+2026-10-09 14:54:50.041  link [SRT]: 792kbps wire=47914kbps  14fps  drops=86  frames=2755
+2026-10-09 14:55:00.088  link [SRT]: 843kbps wire=54648kbps  15fps  drops=86  frames=2906
+2026-10-09 14:55:10.147  link [SRT]: 776kbps wire=61394kbps  15fps  drops=86  frames=3057
+2026-10-09 14:55:20.166  link [SRT]: 818kbps wire=66856kbps  14fps  drops=86  frames=3207
+2026-10-09 14:55:30.178  link [SRT]: 784kbps wire=85092kbps  14fps  drops=86  frames=3357
+2026-10-09 14:55:40.228  link [SRT]: 814kbps wire=77995kbps  15fps  drops=86  frames=3508
+2026-10-09 14:55:50.307  link [SRT]: 778kbps wire=859kbps  14fps  drops=86  frames=3659
+2026-10-09 14:56:00.372  link [SRT]: 821kbps wire=904kbps  15fps  drops=86  frames=3810
+2026-10-09 14:56:10.449  link [SRT]: 734kbps wire=1105kbps  14fps  drops=86  frames=3961
+2026-10-09 14:57:29.848  link [SRT]: 780kbps wire=882kbps  13fps  drops=0  frames=143
+2026-10-09 14:57:39.944  link [SRT]: 683kbps wire=767kbps  13fps  drops=0  frames=282
+2026-10-09 14:57:49.945  link [SRT]: 680kbps wire=902kbps  11fps  drops=0  frames=394
+2026-10-09 14:58:47.648  link [SRT]: 753kbps wire=753kbps  14fps  drops=0  frames=152
+2026-10-09 14:58:57.652  link [SRT]: 811kbps wire=895kbps  14fps  drops=0  frames=302
+2026-10-09 14:59:07.660  link [SRT]: 791kbps wire=2634kbps  14fps  drops=0  frames=452
+2026-10-09 14:59:17.685  link [SRT]: 777kbps wire=5342kbps  14fps  drops=0  frames=601
+2026-10-09 14:59:27.709  link [SRT]: 842kbps wire=15108kbps  15fps  drops=0  frames=752
+2026-10-09 14:59:37.766  link [SRT]: 680kbps wire=20966kbps  14fps  drops=0  frames=893
+2026-10-09 14:59:47.834  link [SRT]: 714kbps wire=17340kbps  12fps  drops=0  frames=1014
+2026-10-09 14:59:57.872  link [SRT]: 993kbps wire=1070kbps  14fps  drops=0  frames=1160
+2026-10-09 15:00:07.936  link [SRT]: 756kbps wire=836kbps  15fps  drops=0  frames=1311
+
+################ SESSION B — after the change ################
+Source: logcat capture, build vc108. SRT latency 1 s. H.265. Ground, static.
+⚠ 3.3 minutes only, and statistically identical to session A's first 10 clean
+   minutes. It has NOT yet met the condition that broke session A.
+
+screen capture [HIGH] H.265: 2048x1536 -> 1440x1080 @ 15fps 1800kbps, 10s IDR, intra refresh 30f — variant: OMX.qcom.video.encoder.hevc / full (profile+level, VBR, max-fps) + intra-refresh
+
+--- every link line, in order ---
+10-09 15:17:58.954  link [SRT]: 1737kbps wire=1708kbps  14fps  drops=0  frames=152
+10-09 15:18:09.045  link [SRT]: 1858kbps wire=2163kbps  14fps  drops=0  frames=303
+10-09 15:18:19.080  link [SRT]: 1436kbps wire=1846kbps  13fps  drops=0  frames=441
+10-09 15:18:29.163  link [SRT]: 1510kbps wire=1633kbps  11fps  drops=0  frames=556
+10-09 15:18:39.220  link [SRT]: 2296kbps wire=2408kbps  14fps  drops=0  frames=703
+10-09 15:18:49.230  link [SRT]: 1589kbps wire=1708kbps  13fps  drops=0  frames=840
+10-09 15:18:59.273  link [SRT]: 1978kbps wire=1702kbps  11fps  drops=0  frames=957
+10-09 15:19:09.300  link [SRT]: 1820kbps wire=2351kbps  14fps  drops=0  frames=1105
+10-09 15:19:19.363  link [SRT]: 1892kbps wire=2011kbps  11fps  drops=0  frames=1220
+10-09 15:19:29.395  link [SRT]: 1593kbps wire=1784kbps  12fps  drops=0  frames=1347
+10-09 15:19:39.427  link [SRT]: 1546kbps wire=1890kbps  11fps  drops=0  frames=1460
+10-09 15:19:49.493  link [SRT]: 1929kbps wire=1986kbps  12fps  drops=0  frames=1590
+10-09 15:19:59.593  link [SRT]: 2133kbps wire=2086kbps  11fps  drops=0  frames=1703
+10-09 15:20:09.639  link [SRT]: 1721kbps wire=2236kbps  14fps  drops=0  frames=1853
+10-09 15:20:19.704  link [SRT]: 1806kbps wire=1917kbps  15fps  drops=0  frames=2004
+10-09 15:20:29.710  link [SRT]: 1815kbps wire=1954kbps  14fps  drops=0  frames=2154
+10-09 15:20:39.769  link [SRT]: 1613kbps wire=1678kbps  12fps  drops=0  frames=2275
+10-09 15:20:49.826  link [SRT]: 1879kbps wire=1902kbps  12fps  drops=0  frames=2405
+10-09 15:20:59.904  link [SRT]: 1929kbps wire=2236kbps  14fps  drops=0  frames=2556
+10-09 15:21:09.960  link [SRT]: 1842kbps wire=2295kbps  15fps  drops=0  frames=2707
+10-09 15:21:20.012  link [SRT]: 1800kbps wire=1935kbps  15fps  drops=0  frames=2858

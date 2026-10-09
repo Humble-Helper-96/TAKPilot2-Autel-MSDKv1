@@ -24,10 +24,14 @@ import java.net.Socket
  * SRT is UDP. There is no connect to attempt and no reply to wait for; a probe would have to
  * perform a real SRT handshake, which needs the streaming library and is not a cheap check.
  *
- * But the media server always serves RTSP regardless — no TAK client plays SRT, so the address
- * advertised in the CoT is an RTSP address in both modes (see [VideoTransport]). Probing the
+ * But the media server serves RTSP regardless of how anything is published or read. Probing the
  * RTSP port therefore tests THE SERVER, which is what the pilot wants to know, and it works
- * identically for both transports. It does not test the SRT ingest port, and this is written
+ * identically for every combination of legs.
+ *
+ * ⚠ This used to justify itself with "no TAK client plays SRT, so the CoT address is always
+ * RTSP". That is no longer true — the read leg can be SRT now (see [VideoTransport]) — but
+ * the probe is unaffected: it was never testing the advertised address, only whether the
+ * server is up and speaking. It does not test the SRT ingest port, and this is written
  * here so nobody later reads the green light as meaning more than it does.
  *
  * ## Why OPTIONS and not just a TCP connect

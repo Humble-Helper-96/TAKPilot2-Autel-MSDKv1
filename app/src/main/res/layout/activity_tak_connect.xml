@@ -550,286 +550,45 @@
 
 
 
-        <!-- The host and the lock share a row. The lock is at the TOP of the section, beside
-             the first field it guards, rather than at the foot: it was a long scroll away from
-             everything it governs. It still disables Log Out further down — see takLockedFields
-             — which is the destructive control it exists to stand in front of.
-
-             The lock column takes layout_gravity="bottom" so the box sits level with the field,
-             which is one label lower than the top of the row. -->
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn"
-                android:layout_weight="2">
-                <TextView style="@style/takLabelStyle" android:text="Server host" />
-                <EditText
-                    android:id="@+id/takHost"
-                    style="@style/takFieldStyle"
-                    android:hint="tak.example.com"
-                    android:inputType="textUri" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn"
-                android:layout_gravity="bottom">
-                <CheckBox
-                    android:id="@+id/takLockConfig"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:buttonTint="@color/tp_accent"
-                    android:text="Lock configuration"
-                    android:textColor="@color/tp_text_primary"
-                    android:textSize="14sp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
+        <!-- THE SUMMARY. Everything that CONFIGURES the connection moved to
+             TakServerActivity (operator, 2026-10-09); what stays is what a pilot READS before
+             a flight — who this aircraft is signed in as, and which channels it reaches. All
+             three lines are generated from the live state, so none of them can go stale the
+             way a typed label does. The button is the way in. -->
+        <TextView
+            android:id="@+id/takSummaryStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:textColor="@color/tp_text_secondary"
+            android:textSize="13sp"
+            android:text="" />
 
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:orientation="vertical">
-                <TextView style="@style/takLabelStyle" android:text="Enroll port" />
-                <EditText
-                    android:id="@+id/takEnrollPort"
-                    style="@style/takFieldStyle"
-                    android:text="8446"
-                    android:inputType="number" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:orientation="vertical">
-                <TextView style="@style/takLabelStyle" android:text="CoT port" />
-                <EditText
-                    android:id="@+id/takCotPort"
-                    style="@style/takFieldStyle"
-                    android:text="8089"
-                    android:inputType="number" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout style="@style/takFormRow">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Username" />
-                <EditText
-                    android:id="@+id/takUsername"
-                    style="@style/takFieldStyle"
-                    android:inputType="text" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Password" />
-                <EditText
-                    android:id="@+id/takPassword"
-                    style="@style/takFieldStyle"
-                    android:inputType="textPassword" />
-            </LinearLayout>
-
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Aircraft callsign" />
-                <EditText
-                    android:id="@+id/takCallsign"
-                    style="@style/takFieldStyle"
-                    android:hint="TAKPilot2-EVO2"
-                    android:inputType="text" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
+        <TextView
+            android:id="@+id/takSummaryChannels"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="12dp"
-            android:gravity="center_vertical">
-            <CheckBox
-                android:id="@+id/takCameraPoint"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:buttonTint="@color/tp_btn_primary" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Send the camera look-point to TAK"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
+            android:layout_marginTop="4dp"
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp"
+            android:text="" />
 
-        <Button
-            style="@style/TakButton.Primary"
-            android:id="@+id/takConnectButton"
+        <TextView
+            android:id="@+id/takSummaryElevated"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="Enroll &amp; Connect" />
+            android:layout_marginTop="4dp"
+            android:textColor="@color/tp_text_tertiary"
+            android:textSize="12sp"
+            android:text="" />
 
         <Button
             style="@style/TakButton.Neutral"
-            android:id="@+id/takDisconnectButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Log Out (switch user)" />
-
-        <TextView
-            android:id="@+id/takStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="14sp"
-            android:text="" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="20dp"
-            android:background="@color/tp_border" />
-
-        <!-- My Channels: pull the groups the logged-in user belongs to and pick which ones this
-             The server holds the state and enforces it — this is a mirror, not the control.
-             Editing is behind Lock Config. Locking must NOT stop the rows reflecting the
-             server, so the rows stay readable and only lose their touch response. -->
-        <TextView
+            android:id="@+id/takConfigureServer"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="My Channels"
-            android:textColor="@color/tp_text_primary"
-            android:textStyle="bold"
-            android:textSize="16sp" />
+            android:layout_marginTop="10dp"
+            android:text="Configure TAK Server…" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="The TAK server holds these channels. A change here goes to the server."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
-
-
-        <TextView
-            android:id="@+id/takChannelsStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
-            android:text="" />
-
-        <LinearLayout
-            android:id="@+id/takChannelsList"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="4dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="20dp"
-            android:background="@color/tp_border" />
-
-        <!-- Video channel (cert B) — v2.4.0. OFF by default. A second certificate, enrolled
-             under its own TAK Server username, that carries the live-video URL in addition to
-             everything cert A already sends. The channel list below is READ-ONLY: nothing here
-             writes activebits for this certificate — see TakConnectActivity.refreshVideoChannels. -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Elevated Account (video channel)"
-            android:textColor="@color/tp_text_primary"
-            android:textStyle="bold"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Only the channel this account belongs to gets the live-video link. Every other channel still gets the position and the markers, with no video."
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="8dp"
-            android:gravity="center_vertical">
-            <Switch
-                android:id="@+id/takVideoChannelEnabled"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Enable the Elevated account (video channel)"
-                android:textColor="@color/tp_text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/takVideoChannelFields"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="8dp"
-            android:visibility="gone">
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Elevated account username" />
-                <EditText
-                    android:id="@+id/takVideoUsername"
-                    style="@style/takFieldStyle"
-                    android:inputType="text" />
-            </LinearLayout>
-            <LinearLayout style="@style/takColumn">
-                <TextView style="@style/takLabelStyle" android:text="Elevated account password" />
-                <EditText
-                    android:id="@+id/takVideoPassword"
-                    style="@style/takFieldStyle"
-                    android:inputType="textPassword" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <Button
-            style="@style/TakButton.Primary"
-            android:id="@+id/takVideoConnectButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:visibility="gone"
-            android:text="Enroll &amp; Connect Elevated Account" />
-
-        <TextView
-            android:id="@+id/takVideoChannelStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="@color/tp_text_secondary"
-            android:textSize="13sp"
-            android:text="" />
-
-        <TextView
-            android:id="@+id/takVideoChannelsLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Elevated account channels (read-only — set on the server)"
-            android:textColor="@color/tp_text_tertiary"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/takVideoChannelsList"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="4dp" />
 
         <View
             android:layout_width="match_parent"

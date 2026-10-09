@@ -178,14 +178,20 @@ class FieldGuideActivity : AppCompatActivity() {
             "a cellular network.")
 
         sub("3. TAK Server Connection")
-        body("Type the address of the TAK server, your username, your password and the " +
-            "callsign of the aircraft. Then touch Enroll & Connect.")
-        body("Select the active channels here, or in flight with a touch and hold on the TAK " +
+        body("Pre-Flight shows who you are connected as, which channels are active and where " +
+            "the live-video link goes. To change any of it, touch Configure TAK Server.")
+        body("On that screen: type the address of the TAK server, your username, your password " +
+            "and the callsign of the aircraft. Then touch Enroll & Connect.")
+        body("Select the active channels there, or in flight with a touch and hold on the TAK " +
             "connection icon.")
         body("Elevated account (optional): the fleet's second TAK account. Only the channel it " +
             "belongs to gets the live-video link. Every other channel still gets the position " +
-            "and the markers. Its channel list here is read-only. After Log Out, enroll the " +
-            "Elevated account again, or the video link goes to every channel.")
+            "and the markers. After Log Out, enroll the Elevated account again, or the video " +
+            "link goes to every channel.")
+        body("Tick and untick the channels of the Elevated account the same as your own. " +
+            "Untick a channel to stop the aircraft reaching it, which is also how you stop " +
+            "data arriving from it. ⚠ Every controller shares that account, thus no controller " +
+            "sends video to a channel you untick until somebody ticks it again.")
         body("Emergency Broadcast: touch and hold LIVE, then touch Start Emergency Broadcast. " +
             "Every channel gets the live-video link for 15 minutes. The aircraft marker carries " +
             "the link, thus the aircraft must have a GPS position. A notice with a timer shows " +

@@ -873,6 +873,7 @@ class AutelTakBridge(
          *  aircraft stops being reported almost at once and its marker can then stale out. */
         private const val TELEMETRY_FRESH_MS = 5_000L
 
+
         /** How long one controller-battery reading serves the pilot PLI — see pilotBatteryPct. */
         private const val BATTERY_CACHE_MS = 30_000L
 

@@ -45,6 +45,21 @@ public class CotBuilder {
     private static final long MARKER_STALE_DURATION_MS = 72 * 60 * 60 * 1000L; // 72 hours
 
     // Sensor point of interest — the ground point the drone camera is looking at.
+    //
+    // ⚠ THE STALE TIME IS THE ONLY THING THIS APPLICATION DOES TO MAKE THE SPI GO AWAY, AND
+    // THAT IS A DECISION (operator, 2026-10-09). A `t-x-d-d` delete, sent when the camera
+    // stopped having a look-point, was BUILT and then REMOVED the same day: the controller
+    // does not tell the server to delete anything, and how long a point survives after it
+    // stops being refreshed is the receiving client's retention policy, not the aircraft's.
+    // An aircraft that reaches into every EUD on the net and removes a map item is a much
+    // larger hammer than the problem, and it is not ours to swing.
+    //
+    // What this class therefore owes a receiver is exactly two things, and both are pinned by
+    // SensorPointRetentionTest: a SHORT stale window, and NOTHING that asks for the point to
+    // be kept. There is no <archived/> here and there must never be one — see
+    // CotParser.isPersistentType, which is this application's own reader of that same flag.
+    // If a client still shows the point after it expires, that is the client's retention and
+    // it is settled there, not here.
     private static final String SENSOR_POINT_TYPE = "b-m-p-s-p-i";
     private static final long SENSOR_POINT_STALE_MS = 15000; // 15s — clears if the feed stops
 
@@ -590,19 +605,6 @@ public class CotBuilder {
      * gets a clean address. If a feed needs auth and a client uses ConnectionEntry alone, this is
      * where that shows up.
      *
-     * <p>⚠ <b>For {@code srt://}, {@code ConnectionEntry.path} carries the whole query string,
-     * not a path segment.</b> Confirmed 2026-10-09 against a real ATAK client: ATAK's SRT
-     * handling does not read the streamid or passphrase from {@code url}'s query string, or from
-     * any other {@code ConnectionEntry} field — it builds the SRT connection entirely from
-     * {@code path}, and expects that one attribute to hold the literal {@code ?streamid=...}
-     * string, exactly as a pilot would type it into ATAK's own Add/Edit Alias screen. A bare
-     * path (or just the stream name) sends ATAK's native SRT call an empty streamid and it
-     * fails immediately — {@code MediaProcessor.createFromSrtNative} throws before a socket ever
-     * opens. Do not "simplify" this back to a plain path. TAK Aware is unaffected either way: it
-     * reads {@code url} verbatim and does not consult {@code ConnectionEntry} for playback (and
-     * logs exactly that — "CoT video URL/ConnectionEntry identity mismatch ... using baseUrl
-     * url" — when the two disagree), so one CoT built this way is safe for both clients.
-     *
      * @param alias human-readable name for the feed; shown in a client's video manager.
      */
     private static void appendVideo(StringBuilder sb, String videoUrl, String alias, String spiUid) {
@@ -619,8 +621,28 @@ public class CotBuilder {
             if (u.getHost() != null) host = u.getHost();
             port = u.getPort();
             if (u.getPath() != null) path = u.getPath();
-            if ("srt".equals(protocol) && u.getQuery() != null) {
-                path = "?" + u.getQuery();
+            // ⚠ SRT PUTS THE WHOLE QUERY STRING IN `path`, LEADING "?" INCLUDED. This is the
+            // one fact that makes a CoT-advertised SRT feed playable, and it is not a guess:
+            // see UAS_Apps/srt-cot-video-advertising.md, which recorded it against a live
+            // server and real clients on 2026-10-09.
+            //
+            // ATAK does NOT read `url` for SRT. It rebuilds the connection from this
+            // ConnectionEntry, and its parser matches on the literal "?streamid=" text. Given
+            // a bare stream name, or the streamid without that prefix, it hands an EMPTY
+            // stream id to its native SRT call; the server answers `invalid stream ID ''` and
+            // the open fails instantly, every time, whatever `url` says.
+            //
+            // ⚠ RTSP IS DELIBERATELY LEFT ALONE. Its advertised url carries a "?tcp" query
+            // that has never been part of its path, it is the form both clients have played
+            // for years, and widening this to every scheme would change the one case that is
+            // known to work in order to fix one that does not.
+            // getRawQuery, not getQuery: the stream id must reach ATAK byte for byte as it
+            // was built, and getQuery percent-DECODES. Nothing in the SRT url is encoded (the
+            // stream id is opaque and must not be), so decoding could only corrupt a literal
+            // "%" in a passphrase.
+            if ("srt".equalsIgnoreCase(protocol) && u.getRawQuery() != null
+                    && !u.getRawQuery().isEmpty()) {
+                path = "?" + u.getRawQuery();
             }
         } catch (IllegalArgumentException e) {
             // An unparseable url is still worth advertising: `url` carries the whole thing, and

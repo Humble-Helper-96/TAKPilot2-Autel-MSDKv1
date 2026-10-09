@@ -1695,7 +1695,129 @@ android {
         //        dipping to 60 % with the aircraft ON THE GROUND — which range cannot explain.
         //        ⚠ rsrp/masterSnr/airSnr read 0 on EVERY sample: this firmware does not populate
         //        them, so the vendor percentage is the only radio datum there is.
-        versionCode 105
+        //
+        //        ---- STILL v2.4.0, 2026-10-09 (operator): four items, three of them parity ----
+        //
+        //        1. THE TAK SERVER CONFIGURATION MOVED TO TakServerActivity. The same move, and
+        //        the same reasoning, VideoServersActivity made for the video settings on
+        //        2026-08-30; the DJIv5 sibling led it this morning and this is the port.
+        //        Pre-Flight keeps a GENERATED three-line summary — which user, which channels
+        //        are active, where the video link goes — and one button. Both enrollments, six
+        //        fields, two channel lists and the TAK lock live on the new screen. The summary
+        //        is generated and never typed, because a hand-written status line outlives what
+        //        it describes.
+        //        ⚠ IT TOOK A RECONNECT WITH IT, AND THAT IS THE DEFECT TO WATCH FOR. Pre-Flight's
+        //        onCreate used to reconnect from saved certs on the way past, and that branch
+        //        went to the new screen with the fields. What was left was tryReconnect from the
+        //        HOME screen's onCreate — and that screen is singleTask, so coming back to it
+        //        does not run again; worse, the foreground service keeps this process alive
+        //        across a swipe-away, so "launching the app again" is often not a new process at
+        //        all. TakAutoConnect.retryIfDown now runs on the RESUME of the home screen AND
+        //        of Pre-Flight, with no once-per-process latch. TIE A RETRY TO A SCREEN BEING
+        //        SHOWN, NOT TO A PROCESS STARTING. The sibling hit this and named it; this port
+        //        carries the fix from the start rather than the fault.
+        //        ⚠ reconnect() GAINED AN IN-FLIGHT GUARD AND A try/catch, because a resume can
+        //        now fire it. TakManager.connect() is not reentrant — it disconnects and
+        //        reassigns its client field with no lock, so two racing calls can orphan a live
+        //        TakClient socket thread still publishing PLI for the same uid. And an exception
+        //        on a plain Thread reaches Android's default handler, which KILLS THE PROCESS.
+        //        ⚠ setupOneLock/applyLock are GONE and are now ConfigLock, ONE implementation
+        //        for every screen. Copying them was the obvious move and the wrong one: both of
+        //        their rules — locked is not hidden, and a control whose state IS its tick must
+        //        not be dimmed — came from real faults, and a copy is how one screen keeps a
+        //        safety rule while the other quietly stops. Pre-Flight keeps the VIDEO and
+        //        BATTERY locks, because the controls they guard stayed.
+        //        ⚠ NOTHING MIGRATED. Every preference key and every view id is the one that was
+        //        already there, so a controller that upgrades finds its server configured.
+        //
+        //        2. THE FLIGHT SCREEN'S TAK CHANNELS DIALOG MATCHES THE SIBLING. The line "The
+        //        TAK server holds these channels" is gone — a pilot opening this dialog in the
+        //        air does not need told where the state lives every time, and the fact is still
+        //        on the TAK Server screen and in the Field Guide. THE ELEVATED ACCOUNT'S ROWS
+        //        ARE NOW TICKS, writable behind the same lock as the Standard rows, on both
+        //        screens.
+        //        ⚠ A TICK IS ALSO THE "IGNORE INCOMING" CONTROL, AND IT IS THE ONLY ONE THAT CAN
+        //        EXIST. Inbound CoT carries NO channel label — a TAK client sends and receives
+        //        plain CoT and the SERVER decides delivery (CHANNELS-FINDINGS §1-3), and
+        //        <dest group> is the invention that destroyed every marker on 2026-08-15. There
+        //        is nothing in an arriving message to filter on. Unticking stops it arriving
+        //        because the server stops sending. Do not propose a client-side channel filter.
+        //        ⚠ connectVideoChannel NOW PASSES acceptInbound = true at both call sites. That
+        //        is the deliberate opt-in the shared core's six-argument default was built to
+        //        keep safe; the tick above means nothing without it.
+        //        ⚠ IT CHANGES THE WHOLE FLEET. activebits is absolute and belongs to the
+        //        ACCOUNT, and the Elevated account is one shared TAK Server user. Unticking its
+        //        video channel takes video from every controller. Both screens say so.
+        //
+        //        3. ⚠ THE SPI STALES OUT, AND THE APPLICATION DOES NOT DELETE IT — THAT IS THE
+        //        DECISION, AND IT REVERSES ONE TAKEN EARLIER THE SAME DAY (operator,
+        //        2026-10-09: "I dont need the controller telling the TAK Server to delete the
+        //        SPI, I just want it to stale out and disappear per EuD retention").
+        //        The report was that the camera point did not go away. A t-x-d-d delete, sent
+        //        whenever the camera stopped having a look-point, was BUILT, bench-proved on
+        //        the controller — edge-triggered correctly, one delete per transition, both
+        //        reasons firing — and then REMOVED. It worked and it was still the wrong
+        //        shape: how long a point survives after it stops being refreshed is the
+        //        RECEIVING CLIENT'S retention policy, and an aircraft that reaches into every
+        //        EUD on the net and removes a map item is a far larger hammer than the problem.
+        //        ⚠ WHAT THIS APPLICATION OWES A RECEIVER IS TWO THINGS AND IT ALREADY DID BOTH.
+        //        Confirmed on the wire from the bench capture, not inferred: start and stale
+        //        exactly 15 s apart, time == start, and no <archived/> anywhere in the event.
+        //        Nothing we send asks for the point to be kept. Both are now pinned by
+        //        SensorPointRetentionTest (6), including a test that FAILS if a delete builder
+        //        reappears — read the note on CotBuilder.SENSOR_POINT_STALE_MS before deciding
+        //        that was wanted.
+        //        ⚠ PUBLISHING ALREADY STOPPED ON EVERY PATH THAT MATTERS and none of that
+        //        changed: above the horizon, no GPS fix, telemetry gone quiet (5 s), the
+        //        look-point switched off. A client that still shows the point after its stale
+        //        has passed is applying its own retention, and that is settled there.
+        //        ⚠ THE BENCH RUN THAT KILLED IT IS WORTH KEEPING. Hung off TELEMETRY_FRESH_MS
+        //        (5 s), the delete fired on every RF dropout — this airframe drops its link for
+        //        seconds at a time — so the camera point blinked off every screen and came
+        //        back. Raising the threshold to the 15 s stale window fixed the flicker, and
+        //        then the feature went anyway. A correct implementation of the wrong idea.
+        //        SHARED CORE: the taklite-core master moved from Autel, which is the reference
+        //        tree. Nothing is owed to DJIv5 from this item — the delete never reached it.
+        //
+        //        4. THE CoT CAN NOW ADVERTISE AN SRT READ, AND ATAK PLAYS IT. The recipe is not
+        //        ours and was not guessed: UAS_Apps/srt-cot-video-advertising.md recorded it on
+        //        2026-10-09 against a live TAK Server, a real MediaMTX listener and real clients.
+        //        ⚠ THE ONE FACT: ConnectionEntry.path must carry the WHOLE query string,
+        //        "?streamid=read:<path>[:<user>:<pass>]&passphrase=<secret>", leading "?"
+        //        included. ATAK does NOT read `url` for SRT — it rebuilds the connection from
+        //        ConnectionEntry and its parser matches on the literal "?streamid=" text. Given
+        //        a bare stream name, or the streamid without that prefix, it hands an EMPTY
+        //        stream id to its native call, the server answers `invalid stream ID ''` and the
+        //        open fails instantly, whatever `url` says. getRawQuery, not getQuery: the
+        //        stream id must reach ATAK byte for byte, and getQuery percent-DECODES.
+        //        ⚠ RTSP IS DELIBERATELY UNTOUCHED. Its advertised url carries a "?tcp" query
+        //        that has never been part of its path, both clients have played that form for
+        //        years, and widening the rule to every scheme would break the case that works to
+        //        fix one that does not.
+        //        ⚠ THE READ LEG IS A SEPARATE CHOICE FROM THE PUBLISH LEG, and RTSP STAYS THE
+        //        DEFAULT. TAK Aware cannot play SRT at all — its bundled MobileVLCKit has no SRT
+        //        access module compiled in, a vendor build issue no CoT shape can work around —
+        //        so a fleet that moves this before its clients are ready advertises an address
+        //        its viewers fail to open, and a failure to open reads as a dead feed rather
+        //        than a wrong address.
+        //        ⚠ THE TWO PASSPHRASES ARE DIFFERENT SETTINGS on the server, srtReadPassphrase
+        //        against srtPublishPassphrase. Crossing them looks exactly like wrong
+        //        credentials. The read one is the ONE secret that must appear in a url, because
+        //        SRT carries it in the stream id and there is nowhere else to put it — so the
+        //        on-screen preview masks it like a password.
+        //        ⚠ NO DANGLING "&passphrase=". An empty value asks for encryption with an empty
+        //        key, which a server with no passphrase refuses as firmly as a wrong one. And a
+        //        path with no authentication gets no trailing colons: MediaMTX reads those as a
+        //        real, empty user.
+        //        The Video Servers screen takes the sibling's terminology and ordering (operator,
+        //        2026-10-09): TAK Advertisement Server first, then Video Publish Protocol, then
+        //        TAK Advertisement Protocol with its read port and read passphrase, then CoT
+        //        Advertisement Address and Publish Address. SrtReadAdvertiseTest (12) and
+        //        SrtConnectionEntryTest (8) pin the url and the CoT shape — a correct url with a
+        //        wrong `path` plays on nothing, so both halves are tested.
+        //        ⚠ NOT FLOWN, AND THE SRT READ IS NOT BENCH-TESTED FROM THIS APPLICATION. The
+        //        recipe is proved; this tree's build of it is not.
+        versionCode 108
         versionName "2.4.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

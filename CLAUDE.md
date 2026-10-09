@@ -102,9 +102,11 @@ fleet, Standard and Elevated**; every controller enrolls on both. The Elevated c
 B in `TakManager`) carries the live-video link to the one channel that account is in; the
 Standard connection carries the aircraft's position, FOV, SPI and markers to everyone else with
 no video. `TakManager.videoFor` is the one place that decides it — `VideoSplitPolicyTest`.
-"Elevated Account" section in `TakConnectActivity` (its own enroll/connect, a read-only channel
-list, and a red line if both accounts share a channel — the one server mistake the screen can
-see); `TakAutoConnect` reconnects it silently like the Standard one.
+"Elevated Account" section in `TakServerActivity` (its own enroll/connect, a WRITABLE channel
+list since 2026-10-09, and a red line if both accounts share a channel — the one server mistake
+the screen can see); `TakAutoConnect` reconnects it silently like the Standard one. ⚠ That section
+was on `TakConnectActivity` until the configuration moved to its own screen — see the 2026-10-09
+entry at the foot of this file.
 
 **Emergency Broadcast** starts from the LIVE long-press menu; every channel gets the video link
 for 15 minutes. The notice at the top of the flight screen carries the timer and IS the
@@ -836,7 +838,113 @@ were a second thing to keep in step with it.
 Only the exported copies went. An edit to the guide is now finished when the Kotlin is correct;
 there is nothing left to regenerate.
 
-**2026-10-09: THIS TREE OWES THE DJIv5 TREE TWO CHANGES, and MSDKv4 is frozen.**
+**2026-10-09, LATER THE SAME DAY: THE TWO CHANGES BELOW ARE NOW TAKEN, plus two more.** The
+debt list that follows is PAID — read it for the reasoning, not as work owed. versionCode 106.
+
+1. **The TAK server configuration is on `TakServerActivity`** and Pre-Flight keeps a GENERATED
+   three-line summary and a `Configure TAK Server…` button. `setupOneLock`/`applyLock` are gone
+   and are now `ConfigLock`, one implementation for every screen; Pre-Flight keeps the video and
+   battery locks because the controls they guard stayed. Nothing migrated — every preference key
+   and every view id is the one that was already there.
+   ⚠ **THE MOVE TOOK A RECONNECT WITH IT, AND THAT IS THE FAULT TO REMEMBER.** Pre-Flight's
+   `onCreate` reconnected from saved certs on the way past, and that branch left with the fields.
+   `TakAutoConnect.retryIfDown` now runs on the RESUME of the home screen AND of Pre-Flight, with
+   no once-per-process latch: **tie a retry to a SCREEN BEING SHOWN, not to a process starting** —
+   the foreground service keeps this process alive across a swipe-away, so "relaunching the app"
+   is often not a new process at all. `reconnect()` gained an in-flight guard and a `try/catch`
+   because a resume can now fire it.
+2. **The Elevated account's channels are WRITABLE on both screens**, behind the same lock as the
+   Standard rows, and `connectVideoChannel` passes `acceptInbound = true` at both call sites.
+   ⚠ A tick is also the ONLY "ignore incoming" control that can exist — inbound CoT carries no
+   channel label — and it changes the WHOLE FLEET, because activebits belongs to the shared
+   account. ⚠ **NOT unticked on a live server.** It would take video from the fleet.
+3. **The flight screen's TAK Channels dialog matches the sibling's wording**: the "The TAK server
+   holds these channels" line is gone from it (the fact is on the TAK Server screen and in the
+   Field Guide), the Elevated heading is just "Elevated account (video)", and its rows are ticks.
+   ⚠ The sibling's TYPE SCALING did not transfer — it shrank its text for a 768dp panel; this
+   controller is 1024x720dp and the dialog fits at 13sp. Specification §4.2 makes the rule the
+   MUST and the numbers per-device.
+4. ⚠ **THE SPI STALES OUT, AND THIS APPLICATION DOES NOT DELETE IT** (operator, 2026-10-09:
+   "I dont need the controller telling the TAK Server to delete the SPI, I just want it to stale
+   out and disappear per EuD retention"). The report was that the camera point did not go away.
+   A `t-x-d-d` delete was BUILT, bench-proved on the controller — edge-triggered correctly, one
+   delete per transition, both reasons firing — and then REMOVED. **It worked and it was still
+   the wrong shape**: how long a point survives after it stops being refreshed is the RECEIVING
+   CLIENT'S retention policy, and an aircraft that reaches into every EUD on the net and removes
+   a map item is a far larger hammer than the problem. Do not rebuild it.
+   ⚠ **WHAT THIS APPLICATION OWES A RECEIVER IS TWO THINGS AND IT ALREADY DID BOTH** — confirmed
+   on the wire from the bench capture, not inferred: `start` and `stale` exactly 15 s apart,
+   `time` == `start`, and no `<archived/>` anywhere in the event. Nothing sent asks for the point
+   to be kept. `SensorPointRetentionTest` pins both, and fails if a delete builder reappears; the
+   reasoning is on `CotBuilder.SENSOR_POINT_STALE_MS`.
+   ⚠ **PUBLISHING ALREADY STOPPED ON EVERY PATH THAT MATTERS** and none of that changed: above
+   the horizon, no GPS fix, telemetry quiet (5 s), look-point off. A client still showing the
+   point after its stale has passed is applying its own retention, and that is settled there.
+   ⚠ **THE BENCH RUN THAT KILLED IT IS WORTH KEEPING.** Hung off `TELEMETRY_FRESH_MS` (5 s), the
+   delete fired on every RF dropout — this airframe drops its link for seconds at a time — so the
+   camera point blinked off every screen and came back. Raising the threshold to the stale window
+   fixed the flicker, and then the feature went anyway. A correct implementation of the wrong
+   idea.
+
+5. **The CoT can advertise an SRT READ, and ATAK plays it.** The recipe is
+   `../../../srt-cot-video-advertising.md`, recorded that day against a live server and real
+   clients — read it before touching this.
+   ⚠ **THE ONE FACT: `ConnectionEntry.path` carries the WHOLE query string**, leading `?`
+   included. ATAK does not read `url` for SRT; it rebuilds the connection from `ConnectionEntry`
+   and matches on the literal `?streamid=` text. `getRawQuery`, not `getQuery` — the stream id
+   must reach ATAK byte for byte. ⚠ **RTSP is deliberately untouched**: its `?tcp` has never been
+   part of its path and both clients have played that form for years.
+   ⚠ **THE READ LEG IS A SEPARATE CHOICE FROM THE PUBLISH LEG AND RTSP STAYS THE DEFAULT.** TAK
+   Aware cannot play SRT at all (no SRT module in its bundled MobileVLCKit — a vendor build
+   issue), so moving a mixed fleet to SRT advertises an address its viewers fail to open, which
+   reads as a dead feed. ⚠ `srtReadPassphrase` is NOT `srtPublishPassphrase`; the read one is the
+   one secret that must appear in a url, and the preview masks it. ⚠ No dangling
+   `&passphrase=`, and no trailing colons on a path with no authentication.
+   The Video Servers screen took the sibling's terminology and ordering: TAK Advertisement Server,
+   Video Publish Protocol, TAK Advertisement Protocol, CoT Advertisement Address, Publish Address.
+   ⚠ **NOT FLOWN, and the SRT read is not bench-tested from this application.** The recipe is
+   proved; this tree's build of it is not.
+
+**2026-10-09, FLOWN on vc106 — THE FIRST H.265 FLIGHT, and a torn picture at the far end.**
+The finding is `SRT-UPLINK-FINDING-2026-10-09.md`; read it before tuning anything about video.
+In one paragraph: the operator saw green blocks in a MediaMTX recording and asked whether the
+transcoding caused them. There is no transcoding. The uplink lost video — SRT retransmitted,
+`wire` climbed to two orders of magnitude above `payload`, the send queue overflowed and 86
+frames were never sent. The earlier clip is the OTHER failure mode, packets lost beyond SRT's
+500 ms budget. `countFrame`'s own comment names both and `drops` is the discriminator.
+
+⚠ **H.265 IS NOT IMPLICATED AND THE ENCODER TOOK THE TOP RUNG.** The log line reads
+`full (profile+level, VBR, max-fps) + intra-refresh` on `OMX.qcom.video.encoder.hevc`, 1024x768
+@ 15 fps, and the payload held at 700-1000 kbps through both bad patches. The H.265 question
+from 2026-09-12 — a fleet-readiness decision, not a code one — is unchanged by this.
+
+⚠ **THE PILOT'S SCREEN CANNOT REPORT WHAT THE TEAM RECEIVES**, and that is permanent: the
+controller decodes the aircraft's DOWNLINK, which is upstream of every uplink fault. The same
+point is in `VIDEO-STREAM-VBR-FIX.md` from August. Judge the outgoing stream by the `link [...]`
+line in `app.log` or by the far end, never by the picture in front of the pilot.
+
+⚠ **THE 1 s FOLLOW-UP IS NOT A RESULT YET.** The operator raised the SRT latency to 1 s, went to
+1440x1080 at 1800 kbps and saw no tearing — but 3.3 minutes on the ground, at `wire/payload`
+1.10x mean, is statistically identical to the FIRST TEN MINUTES of the flight that tore, which
+ran at 1.13x before the storm. Three variables moved together (latency, bitrate, radio
+conditions) and none is controlled. Do not record this as fixed; fly the same route and watch
+`wire` against `payload`. **The fleet default is still 500 ms** — the 1 s is a Debug-screen field
+override on one controller.
+
+⚠ **DO NOT QUOTE THE 85 Mbps `wire` FIGURE.** It is not physically possible on this uplink. The
+counter is the library's own and double-counts a requeued packet; the SHAPE tracks `drops`
+exactly, the absolute number means nothing. Use it as a ratio against `payload`.
+
+Also flown that day: `TakAutoConnect`'s new in-flight guard earned its place — two resumes fired
+in the same millisecond and the log reads `retrying the connection` / `reconnect already in
+flight — ignoring this request` / one `Auto-connected`.
+
+⚠ **THE SHARED CORE MOVED FROM THIS TREE, which is the reference tree.** `check-taklite.sh` says
+Autel CONFORMS. Nothing is owed to DJIv5 from the SPI item — the delete was removed before it
+reached that tree. Its `CotBuilder` is reported DRIFTED on comments alone (its own stale-time
+note, and the retention note added here); its `TakManager` matches its pinned waiver again.
+
+**2026-10-09: THIS TREE OWED THE DJIv5 TREE TWO CHANGES, and MSDKv4 is frozen.**
 
 The DJI MSDKv5 tree took the video split from here on 2026-10-09 and then led on two changes of
 its own, with the operator's agreement. Specification §8 rule 1 allows one live tree to lead;
@@ -854,12 +962,11 @@ is NOT a list of things that happened here — nothing below is in this tree yet
    generated summary — which user, which channels are active, where the video link goes — and a
    button. Their `setupOneLock`/`applyLock` became a shared `ConfigLock` in the same change.
 
-⚠ **THE SHARED CORE ALREADY CARRIES PART 1 AND THIS TREE'S BEHAVIOUR IS UNCHANGED.**
-`TakManager.connectVideoChannel` now takes an `acceptInbound` flag, and the six-argument form
-this tree calls still DISCARDS, which is what it has always done. That default exists precisely
-so a decision taken on the DJI bench could not change the wire behaviour of a tree that is
-bench-tested and awaiting release. Taking change 1 here means passing true at the call site —
-deliberately, not by accident.
+⚠ **PART 1 IS NOW TAKEN HERE.** `TakManager.connectVideoChannel` takes an `acceptInbound` flag
+and the six-argument form still DISCARDS — that default exists so a decision taken on the DJI
+bench could not change the wire behaviour of this tree by accident. **Both of this tree's call
+sites now pass `true`, deliberately** (`TakServerActivity.connectVideoChannelWithCerts` and
+`TakAutoConnect.reconnect`), because the writable tick means nothing without it.
 
 ⚠ **MSDKv4 IS FROZEN** (operator). The specification now covers the two live applications, this
 one and MSDKv5. `check-taklite.sh` reports that tree's drift and never fails on it.

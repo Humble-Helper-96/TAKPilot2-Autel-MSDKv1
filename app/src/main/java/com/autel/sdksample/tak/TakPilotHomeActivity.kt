@@ -198,6 +198,11 @@ class TakPilotHomeActivity : AppCompatActivity() {
         super.onResume()
         AppLog.v(TAG, "onResume")
         AutelProductHolder.install()   // reclaim the global product listener (see holder docs)
+        // ⚠ ON RESUME, NOT ONLY ON CREATE. This screen is singleTask, and the foreground
+        // service keeps the process alive across a swipe-away — so onCreate's one attempt can
+        // be the only one a pilot ever gets, even when they think they have relaunched the
+        // application. See TakAutoConnect.retryIfDown.
+        TakAutoConnect.retryIfDown(applicationContext)
         handler.post(refresh)
     }
 

@@ -30,16 +30,13 @@ import java.util.UUID
  */
 class TakConnectActivity : AppCompatActivity() {
 
-    private lateinit var status: TextView
-
     override fun onDestroy() {
         // A debounced write must not outlive the screen that scheduled it — leaving the pilot's
         // half-typed value to land on the aircraft after they navigated away.
         cancelPendingSettingPushes()
-        // The listener holds this Activity. TakManager outlives the screen, thus leaving it
-        // attached leaks the whole Activity and repaints views that are gone.
-        runCatching { TakManager.getInstance().removeGroupChangeListener(groupChangeListener) }
-        runCatching { TakManager.getInstance().removeListener(connectionListener) }
+        // ⚠ THE TAK LISTENERS ARE NOT HERE ANY MORE. They went to TakServerActivity with the
+        // TAK configuration (operator, 2026-10-09), and that screen attaches and removes its
+        // own. This screen holds none, so there is nothing here to detach.
         super.onDestroy()
     }
 
@@ -68,140 +65,21 @@ class TakConnectActivity : AppCompatActivity() {
         setupDtedSection()
         setupUasfmSection()
 
-        val host = findViewById<EditText>(R.id.takHost)
-        val enrollPort = findViewById<EditText>(R.id.takEnrollPort)
-        val cotPort = findViewById<EditText>(R.id.takCotPort)
-        val username = findViewById<EditText>(R.id.takUsername)
-        val password = findViewById<EditText>(R.id.takPassword)
-        val callsign = findViewById<EditText>(R.id.takCallsign)
-        status = findViewById(R.id.takStatus)
-
-        // Restore last-used values (except password).
-        host.setText(prefs.getString(KEY_HOST, ""))
-        enrollPort.setText(prefs.getInt(KEY_ENROLL_PORT, 8446).toString())
-        cotPort.setText(prefs.getInt(KEY_COT_PORT, 8089).toString())
-        username.setText(prefs.getString(KEY_USERNAME, ""))
-        callsign.setText(prefs.getString(KEY_CALLSIGN, "TAKPilot2-EVO2"))
-
-        // Camera look-point toggle (applies live to the running bridge + persists).
-        val cameraPoint = findViewById<android.widget.CheckBox>(R.id.takCameraPoint)
         wireAvoidanceSection()
         wireControlRatesSection()
-        cameraPoint.isChecked = prefs.getBoolean(KEY_CAMERA_POINT, false)
-        cameraPoint.setOnCheckedChangeListener { _, isOn ->
-            AppLog.v(TAG, "camera point toggle -> $isOn")
-            prefs.edit().putBoolean(KEY_CAMERA_POINT, isOn).apply()
-            TakBridgeHolder.setCameraPointEnabled(isOn)
-        }
-        TakBridgeHolder.setCameraPointEnabled(cameraPoint.isChecked)
 
-        // My Channels. The channels come from the server and go back to the server, and no
-        // <dest group> goes on any message — that attribute is what made the server drop every
-        // marker in v1.6.0. The evidence is in CHANNELS-FINDINGS.md.
-        refreshChannels()
-        // The server pushes t-x-g-c when the channels change, from this controller or from an
-        // administrator in TAK Portal. Listening beats a timer: the screen follows in about a
-        // second, and it asks the server nothing while nothing changes.
-        TakManager.getInstance().addGroupChangeListener(groupChangeListener)
-        // AND read them again when TAK connects. The refresh above needs a connection, so a
-        // screen opened before TAK is up would otherwise show an empty list for ever — the
-        // "Pull Channels" button used to be the only way out of that, and it is gone
-        // (operator, 2026-08-16).
-        TakManager.getInstance().addListener(connectionListener)
-
-        // Reflect live state on open, and silently reconnect with saved certs if the
-        // socket is not up — so the user never has to re-enter credentials / re-enroll.
-        when {
-            TakManager.getInstance().isConnected ->
-                setStatus("Connected. Sending the aircraft position to TAK.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
-            prefs.getBoolean(KEY_LOGGED_OUT, false) ->
-                setStatus("Logged out. Enter host, username and password to sign in.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            hasSavedCerts(prefs) -> {
-                setStatus("Reconnecting with saved enrollment …", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-                reconnectFromSaved(prefs, callsign.text.toString().trim().ifEmpty { "TAKPilot2-EVO2" })
-            }
-            else -> setStatus("Not connected.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
+        // ⚠ THE TAK CONFIGURATION IS NOT ON THIS SCREEN ANY MORE (operator, 2026-10-09) — it
+        // is in TakServerActivity, the same move VideoServersActivity made on 2026-08-30. What
+        // stays is the summary a pilot reads before a flight. See paintTakSummary.
+        findViewById<Button>(R.id.takConfigureServer).setOnClickListener {
+            AppLog.v(TAG, "tap: Configure TAK Server")
+            startActivity(Intent(this, TakServerActivity::class.java))
         }
 
-        findViewById<Button>(R.id.takConnectButton).setOnClickListener {
-            AppLog.v(TAG, "Connect tapped")
-            val h = host.text.toString().trim()
-            val u = username.text.toString().trim()
-            val p = password.text.toString()
-            val cs = callsign.text.toString().trim().ifEmpty { "TAKPilot2-EVO2" }
-            val ep = enrollPort.text.toString().trim().toIntOrNull() ?: 8446
-            val cp = cotPort.text.toString().trim().toIntOrNull() ?: 8089
-
-            if (TakManager.getInstance().isConnected) {
-                setStatus("Already connected.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
-                return@setOnClickListener
-            }
-            // Fail here, in words, when the controller has no route out — BEFORE the enroller
-            // turns the same fact into a generic TLS/socket error. Field reports (v1.5.9,
-            // event 1) had pilots reading "enrollment failed" as a server or credential fault
-            // when the controller simply had no network. Guards both paths below: fresh
-            // enrollment and reconnect-from-saved both need the network.
-            if (!NetworkStatus.hasInternet(this)) {
-                AppLog.w(TAG, "Connect blocked: no validated network")
-                setStatus("No network connection. Connect the controller to wifi first — " +
-                    "check the WIFI line on the home screen.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-                return@setOnClickListener
-            }
-            prefs.edit()
-                .putString(KEY_HOST, h.ifEmpty { prefs.getString(KEY_HOST, "") })
-                .putInt(KEY_ENROLL_PORT, ep)
-                .putInt(KEY_COT_PORT, cp)
-                .putString(KEY_USERNAME, u.ifEmpty { prefs.getString(KEY_USERNAME, "") })
-                .putString(KEY_CALLSIGN, cs)
-                .apply()
-
-            // If we already enrolled before, reconnect with saved certs — no password needed.
-            if (hasSavedCerts(prefs) && p.isEmpty()) {
-                reconnectFromSaved(prefs, cs)
-                return@setOnClickListener
-            }
-            if (h.isEmpty() || u.isEmpty() || p.isEmpty()) {
-                setStatus("Host, username and password are required for first enrollment.",
-                    androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-                return@setOnClickListener
-            }
-            enrollAndConnect(h, ep, cp, u, p, cs)
-        }
-
-        findViewById<Button>(R.id.takDisconnectButton).setOnClickListener {
-            AppLog.v(TAG, "Logout tapped")
-            // Full LOG OUT: stop everything AND clear the saved enrollment so the app will not silently
-            // reconnect the old user, and a different user can enroll cleanly. Each teardown step is
-            // guarded — a throw from the closing socket must NOT abort the logout (that crash was
-            // why logout never stuck). clearEnrollment + the logged-out flag always run.
-            runCatching { VideoStreamerHolder.stop() }
-            runCatching { TakBridgeHolder.stop() }
-            runCatching { TakManager.getInstance().disconnect() }
-            // NOT stop(): logging out of TAK does not mean the app is done. See releaseIfIdle.
-            runCatching { TakForegroundService.releaseIfIdle(applicationContext) }
-            runCatching { clearEnrollment(prefs) }
-            // Reset the UI fields so it's clearly a fresh login.
-            username.setText("")
-            password.setText("")
-            // Nothing local to clear: the channels live on the server now. Logging out does
-            // not change them, which is correct — they belong to the certificate.
-            latestChannels = emptyList()
-            runCatching { findViewById<android.widget.LinearLayout>(R.id.takChannelsList).removeAllViews() }
-            runCatching { findViewById<TextView>(R.id.takChannelsStatus).text = "" }
-            channelsStatusIsEmptyNotice = false
-            // clearEnrollment() above already cleared cert B's files/prefs and disconnected it —
-            // this just resets THIS screen's video-channel fields to match.
-            runCatching { findViewById<android.widget.Switch>(R.id.takVideoChannelEnabled).isChecked = false }
-            runCatching { findViewById<EditText>(R.id.takVideoUsername).setText("") }
-            runCatching { findViewById<EditText>(R.id.takVideoPassword).setText("") }
-            runCatching { findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList).removeAllViews() }
-            setVideoChannelStatus("", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            setStatus("Logged out. Enter host, username and password to sign in as another user.",
-                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-        }
+        // The summary is painted here AND on every resume — see onResume for why.
+        paintTakSummary()
 
         setupVideoControls(prefs)
-        setupVideoChannelSection(prefs, host, enrollPort, cotPort)
 
         // LAST, deliberately: every other setup call above populates or rebinds these fields,
         // and the lock has to be the final word on whether they are editable. Applying it
@@ -303,6 +181,16 @@ class TakConnectActivity : AppCompatActivity() {
         val p = getSharedPreferences("takpilot2_tak", MODE_PRIVATE)
         paintVideoSummary(p)
         mirrorActiveSlot(p)
+        // ⚠ RETRY THE TAK CONNECTION HERE. Before the TAK configuration moved to its own
+        // screen this screen's onCreate did it on the way past, through its
+        // reconnect-from-saved branch, and nobody had to think about it. Pre-Flight is the
+        // screen a pilot actually opens before a flight, so it is the right place for it —
+        // see TakAutoConnect.retryIfDown for the whole fault.
+        TakAutoConnect.retryIfDown(applicationContext)
+        // Repainted on EVERY resume, not only on create: coming back from TakServerActivity is
+        // the one moment the summary is most likely to be wrong, because the pilot just went
+        // there to change exactly what it reports.
+        paintTakSummary()
         setupSdCardSection()
         sdHandler.post(sdTick)
     }
@@ -491,12 +379,22 @@ class TakConnectActivity : AppCompatActivity() {
             vKey(slot, if (transport == VideoTransport.SRT) "srt_port" else "rtsp_port"),
             transport.defaultPort)
         val other = if (slot == 1) 2 else 1
+        // ⚠ THE TEAM'S LEG IS NOT ALWAYS RTSP since 2026-10-09, so this line reads the
+        // ADVERTISE transport of whichever slot the CoT names — not this slot's push
+        // transport, and not the RTSP port it used to assume. A summary that named the wrong
+        // port is the one failure a pilot cannot see from here.
+        fun advPortOf(s: Int): String {
+            val proto = VideoTransport.fromPref(prefs.getString(vKey(s, "adv_transport"), null))
+            val port = if (proto == VideoTransport.SRT)
+                prefs.getInt(vKey(s, "adv_srt_port"), VideoTransport.SRT.defaultPort)
+            else prefs.getInt(vKey(s, "rtsp_port"), VideoTransport.RTSP.defaultPort)
+            return "${proto.label} $port"
+        }
         val team = when (prefs.getString(vKey(slot, "advertise"), "self")) {
             "off" -> "the team gets no video address"
-            "other" -> "team plays from ${prefs.getString(vKey(other, "host"), "") ?: ""}:" +
-                    prefs.getInt(vKey(other, "rtsp_port"), VideoTransport.RTSP.defaultPort)
-            else -> "team plays from $host:" +
-                    prefs.getInt(vKey(slot, "rtsp_port"), VideoTransport.RTSP.defaultPort)
+            "other" -> "team plays from ${prefs.getString(vKey(other, "host"), "") ?: ""} " +
+                    advPortOf(other)
+            else -> "team plays from $host ${advPortOf(slot)}"
         }
         // The path on its own line: it is the name the server sees, and with the random token
         // on it cannot be read from the broadcast id alone.
@@ -541,6 +439,15 @@ class TakConnectActivity : AppCompatActivity() {
                 prefs.getInt(vKey(src, "rtsp_port"), VideoTransport.RTSP.defaultPort))
             .putString(KEY_V_ADV_USER, prefs.getString(vKey(src, "user"), "") ?: "")
             .putString(KEY_V_ADV_PASS, prefs.getString(vKey(src, "pass"), "") ?: "")
+            // The READ leg travels with the rest of the advertisement, from the same slot —
+            // the team connects to whichever server the CoT names. See
+            // VideoServersActivity.mirrorActiveSlot, which must stay in step with this.
+            .putString(KEY_V_ADV_TRANSPORT, VideoTransport.fromPref(
+                prefs.getString(vKey(src, "adv_transport"), null)).prefValue)
+            .putInt(KEY_V_ADV_SRT_PORT,
+                prefs.getInt(vKey(src, "adv_srt_port"), VideoTransport.SRT.defaultPort))
+            .putString(KEY_V_ADV_SRT_PHRASE,
+                prefs.getString(vKey(src, "adv_srt_phrase"), "") ?: "")
             .putBoolean(StreamPath.PREF_RANDOMIZE,
                 prefs.getBoolean(vKey(slot, "random_path"), false))
             .apply()
@@ -645,518 +552,82 @@ class TakConnectActivity : AppCompatActivity() {
         AppLog.i(TAG, "video config migrated to slot 1")
     }
 
-    private fun enrollAndConnect(
-        host: String, enrollPort: Int, cotPort: Int,
-        username: String, password: String, droneCallsign: String,
-    ) {
-        AppLog.v(TAG, "enrollAndConnect: host=$host enrollPort=$enrollPort cotPort=$cotPort user=$username")
-        setStatus("Enrolling with $host:$enrollPort …", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-
-        // Stable operator uid persisted across sessions.
+    /**
+     * The three lines Pre-Flight keeps of the TAK configuration (operator, 2026-10-09).
+     *
+     * ⚠ **GENERATED, NEVER TYPED.** Each line is built from the live state every time this
+     * screen appears, so none of them can say something the application stopped doing — which
+     * is the failure mode a hand-written summary has, and this tree has paid for it twice: the
+     * video summary was generated for exactly this reason on 2026-08-30, and the Field Guide
+     * carried a line that outlived what it described.
+     *
+     * What a pilot needs before a flight is WHO this aircraft is signed in as and WHO can see
+     * it. Everything that changes those answers is one tap away in [TakServerActivity].
+     */
+    private fun paintTakSummary() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        var uid = prefs.getString(KEY_UID, "") ?: ""
-        if (uid.isEmpty()) {
-            uid = "TAKPilot2-" + UUID.randomUUID().toString().substring(0, 8)
-            prefs.edit().putString(KEY_UID, uid).apply()
-        }
-        // The aircraft gets its own distinct uid so it shows as a separate air track.
-        val droneUid = "$uid-DRONE"
+        val tm = TakManager.getInstance()
+        val statusLine = findViewById<TextView>(R.id.takSummaryStatus) ?: return
+        val channelLine = findViewById<TextView>(R.id.takSummaryChannels)
+        val elevatedLine = findViewById<TextView>(R.id.takSummaryElevated)
 
-        Thread {
-            TakCertEnroller.enroll(host, enrollPort, username, password, uid, filesDir,
-                object : TakCertEnroller.EnrollmentCallback {
-                    override fun onSuccess(trustStorePath: String, clientCertPath: String) {
-                        // Persist certs so we never have to re-enroll — future connects reuse these.
-                        prefs.edit()
-                            .putString(KEY_TRUSTSTORE, trustStorePath)
-                            .putString(KEY_CLIENTCERT, clientCertPath)
-                            .putBoolean(KEY_LOGGED_OUT, false)   // new enrollment → allow auto-reconnect again
-                            .apply()
-                        runOnUiThread { setStatus("Enrolled. Connecting …", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary)) }
-                        connectWithCerts(uid, username, droneUid, droneCallsign,
-                            host, cotPort, trustStorePath, clientCertPath)
-                    }
-
-                    override fun onError(error: String) {
-                        AppLog.w(TAG, "enrollment failed: $error")
-                        runOnUiThread { setStatus("Error: $error", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger)) }
-                    }
-                })
-        }.start()
-    }
-
-    /** Connect using already-enrolled cert files (no re-enrollment / re-entry of password). */
-    private fun connectWithCerts(
-        uid: String, username: String, droneUid: String, droneCallsign: String,
-        host: String, cotPort: Int, trustStorePath: String, clientCertPath: String,
-    ) {
-        val certPw = "atakatak"
-        // 2nd arg is the CALLSIGN, not the username. Passing `username` here made the aircraft
-        // appear on the TAK server (and in the flight HUD, which reads TakManager.callsign)
-        // under the operator's login name instead of the callsign set in Pre-Flight Setup —
-        // so a team saw "0009anc" where they expected the aircraft's name. The username still
-        // identifies the account for enrollment; it is not what the team should see.
-        TakManager.getInstance().connect(
-            uid, droneCallsign, "Cyan", "Team Member",
-            host, cotPort, trustStorePath, certPw, clientCertPath, certPw,
-        )
-        runOnUiThread {
-            setStatus("Connected. Sending the aircraft position to TAK as \"$droneCallsign\".",
-                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
-            TakBridgeHolder.start(droneUid, droneCallsign)
-            TakForegroundService.start(applicationContext, droneCallsign)
-        }
-    }
-
-    /** Reconnect using saved certs + saved server settings, no UI entry needed. */
-    private fun reconnectFromSaved(prefs: android.content.SharedPreferences, droneCallsign: String) {
-        val host = prefs.getString(KEY_HOST, "") ?: ""
-        val username = prefs.getString(KEY_USERNAME, "") ?: ""
-        val cotPort = prefs.getInt(KEY_COT_PORT, 8089)
-        val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
-        val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
-        var uid = prefs.getString(KEY_UID, "") ?: ""
-        if (uid.isEmpty()) {
-            uid = "TAKPilot2-" + UUID.randomUUID().toString().substring(0, 8)
-            prefs.edit().putString(KEY_UID, uid).apply()
-        }
-        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) {
-            setStatus("Saved enrollment incomplete — enroll again.", androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-            return
-        }
-        Thread { connectWithCerts(uid, username, "$uid-DRONE", droneCallsign, host, cotPort, ts, cc) }.start()
-    }
-
-    /** Delete the saved enrollment (cert files + prefs) so a different user can sign in clean.
-     *  Also clears cert B (the video channel, v2.4.0) — a logout must not leave a second,
-     *  more-privileged certificate behind for the next person to sign in on top of. */
-    private fun clearEnrollment(prefs: android.content.SharedPreferences) {
-        val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
-        val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
-        if (ts.isNotEmpty()) { val f = java.io.File(ts); val ok = runCatching { f.delete() }.getOrDefault(false); AppLog.i(TAG, "delete truststore $ts -> $ok (exists=${f.exists()})") }
-        if (cc.isNotEmpty()) { val f = java.io.File(cc); val ok = runCatching { f.delete() }.getOrDefault(false); AppLog.i(TAG, "delete clientcert $cc -> $ok (exists=${f.exists()})") }
-        // Also nuke any cert files by their well-known names, in case the prefs paths drifted.
-        listOf("tak_clientcert.p12", "tak_truststore.p12").forEach {
-            val f = java.io.File(filesDir, it); if (f.exists()) { val ok = runCatching { f.delete() }.getOrDefault(false); AppLog.i(TAG, "delete $it -> $ok") }
-        }
-        prefs.edit()
-            .remove(KEY_TRUSTSTORE)
-            .remove(KEY_CLIENTCERT)
-            .remove(KEY_UID)
-            .remove(KEY_USERNAME)
-            // Controllers that ran v1.6.0 or older still hold a stored channel list. Nothing
-            // reads it — the channels live on the server — so clearing it stops dead state
-            // outliving a logout.
-            .remove(KEY_CHANNELS)
-            .putBoolean(KEY_LOGGED_OUT, true)   // block auto-reconnect until a fresh enroll
-            .apply()
-        AppLog.i(TAG, "enrollment cleared")
-        clearVideoEnrollment(prefs)
-    }
-
-    /** True if we have saved cert files on disk from a previous enrollment. */
-    private fun hasSavedCerts(prefs: android.content.SharedPreferences): Boolean {
-        val ts = prefs.getString(KEY_TRUSTSTORE, "") ?: ""
-        val cc = prefs.getString(KEY_CLIENTCERT, "") ?: ""
-        return ts.isNotEmpty() && cc.isNotEmpty() &&
-            java.io.File(ts).exists() && java.io.File(cc).exists()
-    }
-
-    // ---- Video channel (cert B) — v2.4.0 ----
-    //
-    // Cert B enrolls under its OWN TAK Server username/password (see TakCertEnroller's doc: the
-    // username/password authenticate a CSR signing request, there is no cert file to "upload"),
-    // so it lands in a different channel/group than cert A. It reuses cert A's host/enroll
-    // port/CoT port — one aircraft, one controller, two certificates — only the username,
-    // password and file-name prefix differ.
-
-    /** Enroll cert B and, on success, connect the video channel. Mirrors [enrollAndConnect]. */
-    private fun enrollAndConnectVideo(
-        host: String, enrollPort: Int, cotPort: Int, username: String, password: String,
-    ) {
-        AppLog.v(TAG, "enrollAndConnectVideo: host=$host enrollPort=$enrollPort cotPort=$cotPort user=$username")
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        var uid = prefs.getString(KEY_CHB_UID, "") ?: ""
-        if (uid.isEmpty()) {
-            uid = "TAKPilot2-" + UUID.randomUUID().toString().substring(0, 8) + "-VIDEO"
-            prefs.edit().putString(KEY_CHB_UID, uid).apply()
-        }
-        setVideoChannelStatus("Enrolling video channel with $host:$enrollPort …",
-            androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-        Thread {
-            TakCertEnroller.enroll(host, enrollPort, username, password, uid, filesDir, "tak_video_",
-                object : TakCertEnroller.EnrollmentCallback {
-                    override fun onSuccess(trustStorePath: String, clientCertPath: String) {
-                        prefs.edit()
-                            .putString(KEY_CHB_TRUSTSTORE, trustStorePath)
-                            .putString(KEY_CHB_CLIENTCERT, clientCertPath)
-                            .putString(KEY_CHB_USERNAME, username)
-                            .putBoolean(KEY_CHB_LOGGED_OUT, false)
-                            .apply()
-                        runOnUiThread {
-                            setVideoChannelStatus("Enrolled. Connecting …",
-                                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-                        }
-                        connectVideoChannelWithCerts(host, cotPort, trustStorePath, clientCertPath)
-                    }
-
-                    override fun onError(error: String) {
-                        AppLog.w(TAG, "video channel enrollment failed: $error")
-                        runOnUiThread {
-                            setVideoChannelStatus("Error: $error",
-                                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-                        }
-                    }
-                })
-        }.start()
-    }
-
-    /** Connect cert B using already-enrolled files. Mirrors [connectWithCerts]. */
-    private fun connectVideoChannelWithCerts(host: String, cotPort: Int, trustStorePath: String, clientCertPath: String) {
-        val certPw = "atakatak"
-        TakManager.getInstance().connectVideoChannel(host, cotPort, trustStorePath, certPw, clientCertPath, certPw)
-        runOnUiThread {
-            // "Connecting", not "connected": the socket is being dialled on its own thread and
-            // nothing has answered yet. The channel list that follows is the proof it works.
-            setVideoChannelStatus("Elevated account: connecting …",
-                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            refreshVideoChannels()
-        }
-    }
-
-    /** Reconnect cert B using saved certs, no UI entry needed. Mirrors [reconnectFromSaved]. */
-    private fun reconnectVideoFromSaved(prefs: android.content.SharedPreferences) {
-        val host = prefs.getString(KEY_HOST, "") ?: ""
-        val cotPort = prefs.getInt(KEY_COT_PORT, 8089)
-        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
-        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
-        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) return
-        Thread { connectVideoChannelWithCerts(host, cotPort, ts, cc) }.start()
-    }
-
-    /** True if cert B has saved cert files on disk from a previous enrollment. Mirrors
-     *  [hasSavedCerts]. */
-    private fun hasSavedVideoCerts(prefs: android.content.SharedPreferences): Boolean {
-        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
-        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
-        return ts.isNotEmpty() && cc.isNotEmpty() &&
-            java.io.File(ts).exists() && java.io.File(cc).exists()
-    }
-
-    /** Deletes cert B's files + prefs and disconnects it. Called from [clearEnrollment] (full
-     *  logout) and also usable on its own if the pilot turns the video-channel switch off. */
-    private fun clearVideoEnrollment(prefs: android.content.SharedPreferences) {
-        // A removal, not a drop: single-connection behaviour comes back. See clearVideoChannel.
-        runCatching { TakManager.getInstance().clearVideoChannel() }
-        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: ""
-        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
-        if (ts.isNotEmpty()) { val f = java.io.File(ts); runCatching { f.delete() } }
-        if (cc.isNotEmpty()) { val f = java.io.File(cc); runCatching { f.delete() } }
-        listOf("tak_video_clientcert.p12", "tak_video_truststore.p12").forEach {
-            val f = java.io.File(filesDir, it); if (f.exists()) runCatching { f.delete() }
-        }
-        prefs.edit()
-            .remove(KEY_CHB_TRUSTSTORE)
-            .remove(KEY_CHB_CLIENTCERT)
-            .remove(KEY_CHB_UID)
-            .remove(KEY_CHB_USERNAME)
-            .putBoolean(KEY_CHB_LOGGED_OUT, true)
-            .apply()
-        AppLog.i(TAG, "video channel enrollment cleared")
-    }
-
-    private fun setVideoChannelStatus(text: String, color: Int) {
-        findViewById<TextView>(R.id.takVideoChannelStatus)?.let {
-            it.text = text
-            it.setTextColor(color)
-        }
-    }
-
-    /** Read-only — cert B never writes activebits. Mirrors [refreshChannels]/[renderChannels]
-     *  but with no checkboxes: nothing here can change what B is a member of. */
-    private fun refreshVideoChannels() {
-        // One reader for the Elevated list, shared with the flight screen's dialog.
-        TakMissionManager.listElevatedChannels(this) { chans -> renderVideoChannels(chans ?: return@listElevatedChannels) }
-    }
-
-    /**
-     * Wires the "Video Channel" section (cert B, v2.4.0) — OFF by default. [host]/[enrollPort]/
-     * [cotPort] are cert A's already-on-screen fields, reused as-is (one aircraft, one
-     * controller, two certificates — only the username/password/file-prefix differ).
-     */
-    private fun setupVideoChannelSection(
-        prefs: android.content.SharedPreferences,
-        host: EditText, enrollPort: EditText, cotPort: EditText,
-    ) {
-        val enabledSwitch = findViewById<android.widget.Switch>(R.id.takVideoChannelEnabled)
-        val fields = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelFields)
-        val connectButton = findViewById<Button>(R.id.takVideoConnectButton)
-        val channelsLabel = findViewById<TextView>(R.id.takVideoChannelsLabel)
-        val videoUsername = findViewById<EditText>(R.id.takVideoUsername)
-        val videoPassword = findViewById<EditText>(R.id.takVideoPassword)
-
-        videoUsername.setText(prefs.getString(KEY_CHB_USERNAME, ""))
-
-        fun paintEnabled(on: Boolean) {
-            fields.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
-            connectButton.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
-            channelsLabel.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
-        }
-
-        val enabled = prefs.getBoolean(KEY_CHB_ENABLED, false)
-        enabledSwitch.isChecked = enabled
-        paintEnabled(enabled)
-        // ⚠ NOT when it is already connected (review, 2026-10-08). This runs on every onCreate,
-        // and a reconnect tears the Elevated socket down and re-dials it — and until that
-        // review it also ended a running Emergency Broadcast. A pilot opening this screen to
-        // read a channel must change nothing on the wire.
-        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)
-            && !TakManager.getInstance().isVideoChannelConnected()) {
-            setVideoChannelStatus("Reconnecting the Elevated account …",
-                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            reconnectVideoFromSaved(prefs)
-        }
-
-        enabledSwitch.setOnCheckedChangeListener { _, isOn ->
-            AppLog.v(TAG, "video channel enable toggle -> $isOn")
-            prefs.edit().putBoolean(KEY_CHB_ENABLED, isOn).apply()
-            paintEnabled(isOn)
-            if (!isOn) {
-                // Turning the switch off REMOVES the video channel for this session — on purpose,
-                // thus clearVideoChannel() and not disconnectVideoChannel(): the Standard
-                // connection carries video again, as before the split existed. It does NOT
-                // delete the saved enrollment (that's clearVideoEnrollment's job, on full Log
-                // Out); switching back on reconnects from the same saved certs.
-                runCatching { TakManager.getInstance().clearVideoChannel() }
-                setVideoChannelStatus("Elevated account off — video goes out on the Standard account again.",
-                    androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            } else if (hasSavedVideoCerts(prefs)) {
-                reconnectVideoFromSaved(prefs)
+        val user = prefs.getString(KEY_USERNAME, "") ?: ""
+        val callsign = prefs.getString(KEY_CALLSIGN, "") ?: ""
+        when {
+            tm.isConnected -> {
+                statusLine.text = "Connected as \"$user\"" +
+                    if (callsign.isNotEmpty()) " — the aircraft is \"$callsign\"." else "."
+                statusLine.setTextColor(androidx.core.content.ContextCompat.getColor(
+                    applicationContext, R.color.tp_state_go))
             }
-        }
-
-        connectButton.setOnClickListener {
-            val h = host.text.toString().trim()
-            val ep = enrollPort.text.toString().trim().toIntOrNull() ?: 8446
-            val cp = cotPort.text.toString().trim().toIntOrNull() ?: 8089
-            val u = videoUsername.text.toString().trim()
-            val p = videoPassword.text.toString()
-            if (h.isEmpty() || u.isEmpty() || p.isEmpty()) {
-                setVideoChannelStatus("Host (above), video username and password are required.",
-                    androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-                return@setOnClickListener
-            }
-            enrollAndConnectVideo(h, ep, cp, u, p)
-        }
-    }
-
-    private fun renderVideoChannels(channels: List<TakMissionClient.Channel>) {
-        val list = findViewById<android.widget.LinearLayout>(R.id.takVideoChannelsList) ?: return
-        list.removeAllViews()
-        latestVideoChannels = channels
-        if (channels.isEmpty()) {
-            setVideoChannelStatus("This server has no channels for the Elevated account.",
-                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
-            return
-        }
-        checkChannelOverlap()
-        for (ch in channels) {
-            val row = TextView(this).apply {
-                text = TakMissionManager.channelLabel(ch) + if (ch.active) "" else " (off)"
-                setTextColor(androidx.core.content.ContextCompat.getColor(
-                    applicationContext, R.color.tp_text_primary))
-            }
-            list.addView(row)
-        }
-    }
-
-    private fun setStatus(text: String, color: Int) {
-        status.text = text
-        status.setTextColor(color)
-    }
-
-    // ---- My Channels ----
-
-
-    /**
-     * The channels, as the SERVER holds them.
-     *
-     * This is not a local preference any more. The check box shows the server's `active` state,
-     * and a change PUTs the new set to the server — the method a real TAK client uses. Nothing
-     * is stored on the controller, thus nothing here can disagree with the server.
-     *
-     * EVERY CHANNEL CAN BE SWITCHED ON AND OFF, including a receive-only one. The check box is
-     * the `active` flag, and `active` governs RECEIVE as well as send. A first version disabled
-     * the box on a receive-only channel, which confused "cannot publish to it" with "cannot use
-     * it" — and left a channel that could be switched off from TAK Portal with no way to switch
-     * it back on from the controller (operator, 2026-08-16). ADS-B is exactly the channel a
-     * pilot wants to turn off and on: it is noisy, and switching it off stops the traffic.
-     *
-     * The direction is shown as text instead. It tells the pilot what the channel will and will
-     * not carry, and it takes nothing away from them.
-     */
-    private fun renderChannels(channels: List<TakMissionClient.Channel>) {
-        val list = findViewById<android.widget.LinearLayout>(R.id.takChannelsList)
-        list.removeAllViews()
-        latestChannels = channels
-        val status = findViewById<TextView>(R.id.takChannelsStatus)
-        if (channels.isEmpty()) {
-            // A server with channels turned off returns none. Say so, and offer no control:
-            // writing to such a server is reported to cause real trouble on it.
-            status.text = "This server has no channels."
-            status.setTextColor(androidx.core.content.ContextCompat.getColor(
-                applicationContext, R.color.tp_text_secondary))
-            channelsStatusIsEmptyNotice = true
-            return
-        }
-        // ⚠ CLEAR THE "no channels" NOTICE. The list is empty on the first read, before the
-        // server answers, thus the notice is written once and then stood above a full list of
-        // channels (hardware, 2026-09-01). Only that message is cleared: a send, a server
-        // answer or a server-side change writes this same line and then re-reads the
-        // channels, and those messages must survive the repaint that follows.
-        if (channelsStatusIsEmptyNotice) {
-            status.text = ""
-            channelsStatusIsEmptyNotice = false
-        }
-        for (ch in channels) {
-            val row = android.widget.CheckBox(this).apply {
-                // Two-way is the normal case and gets no label — a note on every row is
-                // noise, and the exception is what a pilot needs to see (operator,
-                // 2026-08-16).
-                text = when {
-                    ch.canSend && ch.canReceive -> ch.name
-                    ch.canReceive -> "${ch.name} - Rx Only"
-                    ch.canSend -> "${ch.name} - Tx Only"
-                    else -> "${ch.name} - no direction"
-                }
-                // Secondary text is the only hint that the row is locked. The tick stays
-                // full contrast, because the tick is the information.
-                setTextColor(androidx.core.content.ContextCompat.getColor(
-                    applicationContext,
-                    if (takConfigLocked()) R.color.tp_text_secondary else R.color.tp_text_primary))
-                // Enabled for every channel. See the note above: the box is `active`, and a
-                // receive-only channel is still one a pilot may want on or off.
-                // ⚠ THE LOCK STOPS A CHANGE, NOT THE READING. The rows still follow the
-                // server while locked — a pilot must always be able to SEE the scope of this
-                // aircraft. The lock exists to stop an accidental change, not to hide the truth
-                // (operator, 2026-08-16).
-                //
-                // ⚠ LOCKED IS NOT DISABLED. isEnabled=false greys the tick as well as the row,
-                // and a pilot then cannot tell a checked box from an unchecked one — which
-                // defeats the paragraph above. The row stays at full contrast and stops taking
-                // touches instead. The check box keeps its own tint for the same reason.
-                isChecked = ch.active
-                isClickable = !takConfigLocked()
-                isFocusable = !takConfigLocked()
-                buttonTintList = android.content.res.ColorStateList.valueOf(
-                    androidx.core.content.ContextCompat.getColor(
-                        applicationContext, R.color.tp_accent))
-                setOnCheckedChangeListener { _, checked ->
-                    if (updatingChannels) return@setOnCheckedChangeListener
-                    ch.active = checked
-                    pushActiveChannels()
-                }
-            }
-            list.addView(row)
-        }
-        checkChannelOverlap()
-    }
-
-    /** The Elevated account's channels, as last read — for [checkChannelOverlap]. */
-    private var latestVideoChannels: List<TakMissionClient.Channel> = emptyList()
-
-    /**
-     * The one server mistake this screen can see (v2.4.0): a channel ACTIVE on BOTH accounts.
-     * Everyone in it would get the Elevated copy of the aircraft, video included — the split
-     * fails open and nothing on the server says so. Checked whenever either list is painted.
-     * The fix is on the server, so the line says that and offers no control.
-     */
-    private fun checkChannelOverlap() {
-        val standard = latestChannels.filter { it.active }.map { it.name }.toSet()
-        val elevated = latestVideoChannels.filter { it.active }.map { it.name }.toSet()
-        val shared = standard.intersect(elevated)
-        if (shared.isEmpty()) {
-            // Clear ONLY our own line, so a connect or enrollment status is not wiped — and
-            // clear it the moment the server is corrected (review, 2026-10-08).
-            if (overlapWarningShown) {
-                overlapWarningShown = false
-                setVideoChannelStatus("", androidx.core.content.ContextCompat.getColor(
+            user.isEmpty() -> {
+                statusLine.text = "No TAK server is set up. Touch Configure TAK Server."
+                statusLine.setTextColor(androidx.core.content.ContextCompat.getColor(
                     applicationContext, R.color.tp_text_secondary))
             }
-            return
-        }
-        overlapWarningShown = true
-        AppLog.w(TAG, "Standard and Elevated accounts share active channel(s): $shared")
-        setVideoChannelStatus("Standard and Elevated share channel ${shared.joinToString()} — " +
-            "everyone in it will get video. Fix this on the server.",
-            androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
-    }
-
-    /** True while takVideoChannelStatus holds the overlap warning, so checkChannelOverlap can
-     *  retract its own line and nothing else's. */
-    private var overlapWarningShown = false
-
-    /**
-     * Sends the COMPLETE set of active channels to the server.
-     *
-     * ⚠ activebits is ABSOLUTE. Anything not in this list is switched off, thus the whole set
-     * goes every time and never a change. ⚠ It applies to the CERTIFICATE — every controller
-     * enrolled as this user gets this set.
-     */
-    private fun pushActiveChannels() {
-        // ⚠ NEVER WRITE TO A SERVER THAT HAS NO CHANNELS. Cory Foy (TAK Aware) reported
-        // 2026-08-16 that a channel change sent to a server which does not have channels
-        // enabled can do real damage server side — days of debugging on one deployment. No row
-        // exists when the list is empty, thus no toggle can fire this, but the guard is here
-        // so that stays true if a caller is ever added.
-        if (latestChannels.isEmpty()) {
-            AppLog.w(TAG, "channel write refused — this server returned no channels")
-            return
-        }
-        val bits = latestChannels.filter { it.active && it.bitpos >= 0 }.map { it.bitpos }
-        val status = findViewById<TextView>(R.id.takChannelsStatus)
-        channelsStatusIsEmptyNotice = false
-        status.text = "Sending ${bits.size} active channel(s) to the server…"
-        TakMissionManager.setActiveChannels(bits) { ok ->
-            status.text = if (ok) "Server accepted ${bits.size} active channel(s)."
-                          else "The server refused the change. See the log."
-            status.setTextColor(androidx.core.content.ContextCompat.getColor(applicationContext,
-                if (ok) R.color.tp_state_go else R.color.tp_state_danger))
-            // Read it back. The server is the truth, not what was just tapped.
-            refreshChannels()
-        }
-    }
-
-    /** Re-reads the channels from the server and repaints. The server can be changed from TAK
-     *  Portal by an administrator, thus the screen must follow it and not a local copy. */
-    private fun refreshChannels() {
-        TakMissionManager.listChannels { chans ->
-            updatingChannels = true
-            renderChannels(chans)
-            updatingChannels = false
-        }
-    }
-
-    /** The server told us the channels changed. Read them again — the event carries a notice,
-     *  not a list. */
-    private val groupChangeListener = TakManager.GroupChangeListener {
-        AppLog.i(TAG, "channels changed on the server — re-reading")
-        refreshChannels()
-        channelsStatusIsEmptyNotice = false
-        findViewById<TextView>(R.id.takChannelsStatus)?.text =
-            "The server changed the channels. The list is up to date."
-    }
-
-    /** Reads the channels again when TAK connects. Nothing else here needs contact events. */
-    private val connectionListener = object : TakManager.TakUserListener {
-        override fun onTakUserUpdated(user: com.taklite.client.tak.TakUser) {}
-        override fun onTakUserRemoved(uid: String) {}
-        override fun onTakUserDeleted(uid: String) {}
-        override fun onTakConnectionChanged(connected: Boolean) {
-            if (connected) {
-                AppLog.i(TAG, "TAK connected — reading the channels")
-                refreshChannels()
+            else -> {
+                // ⚠ "Not connected" and "not set up" are different answers and must look
+                // different. An enrolled controller that cannot reach its server is a fault to
+                // go and fix; an unconfigured one is a job not started.
+                statusLine.text = "Not connected. Signed in as \"$user\"."
+                statusLine.setTextColor(androidx.core.content.ContextCompat.getColor(
+                    applicationContext, R.color.tp_state_unknown))
             }
+        }
+        // The channels come from the SERVER, so there is nothing to show until it answers.
+        // Until then the line says that rather than showing an empty list, which would read as
+        // "this aircraft reaches nobody".
+        channelLine.text = if (tm.isConnected) "Reading the channels…" else ""
+        if (tm.isConnected) {
+            TakMissionManager.listChannels { chans ->
+                val active = chans.filter { it.active }
+                channelLine.text = when {
+                    chans.isEmpty() -> "This server has no channels."
+                    active.isEmpty() -> "No channel is active — nobody receives this aircraft."
+                    else -> "Active: " +
+                        active.joinToString(", ") { TakMissionManager.channelLabel(it) }
+                }
+            }
+        }
+        if (TakMissionManager.hasElevatedEnrollment(this) &&
+            prefs.getBoolean(KEY_CHB_ENABLED, false)
+        ) {
+            elevatedLine.text = "Elevated account: reading the channels…"
+            TakMissionManager.listElevatedChannels(this) { chans ->
+                val active = chans?.filter { it.active }.orEmpty()
+                elevatedLine.text = when {
+                    active.isEmpty() -> "Elevated account: no active channel — the video link " +
+                        "reaches nobody."
+                    else -> "Video link on: " +
+                        active.joinToString(", ") { TakMissionManager.channelLabel(it) }
+                }
+            }
+        } else {
+            // No second account. Say what that MEANS rather than leaving a blank: with no
+            // split, the video link rides the Standard connection and everybody in its
+            // channels can play it.
+            elevatedLine.text =
+                "No Elevated account — the video link goes to every active channel."
         }
     }
 
@@ -1176,20 +647,6 @@ class TakConnectActivity : AppCompatActivity() {
             }
         }
     }
-
-    /** The TAK configuration lock. The channel rows read it each time they are painted, thus a
-     *  lock or unlock takes effect without leaving the screen. */
-    private fun takConfigLocked(): Boolean =
-        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TAK_LOCKED, false)
-
-    private var latestChannels: List<TakMissionClient.Channel> = emptyList()
-    /** True while the check boxes are being set from server data, so the listener does not
-     *  treat a repaint as a pilot's tap and PUT it straight back. */
-    private var updatingChannels = false
-    /** True while takChannelsStatus holds the "no channels" notice that renderChannels wrote.
-     *  The other writers of that line (a send, a server answer, a server-side change) must not
-     *  be wiped by a later repaint, thus renderChannels clears only its own message. */
-    private var channelsStatusIsEmptyNotice = false
 
     // ---- 1. Aircraft Settings ----
 
@@ -1478,16 +935,12 @@ class TakConnectActivity : AppCompatActivity() {
      * is deliberately NOT here — reconnecting is safe, and needing to reconnect is exactly when
      * a pilot must not be fighting a lock.
      */
-    private val takLockedFields = listOf(
-        R.id.takHost, R.id.takEnrollPort, R.id.takCotPort,
-        R.id.takUsername, R.id.takPassword, R.id.takCallsign,
-        R.id.takDisconnectButton,
-        // The Elevated account (v2.4.0) locks with the server fields — it is the MORE privileged
-        // account, and a stray tap on its switch would put video on every channel (review,
-        // 2026-10-08).
-        R.id.takVideoChannelEnabled, R.id.takVideoUsername, R.id.takVideoPassword,
-        R.id.takVideoConnectButton,
-    )
+    /**
+     * ⚠ **THE TAK LOCK IS NOT ON THIS SCREEN ANY MORE.** It went with the fields it guards, to
+     * [TakServerActivity] (operator, 2026-10-09), and its field list is there. Nothing of the
+     * TAK configuration stayed here, so there is nothing left for a lock to protect. The VIDEO
+     * lock DID stay, because the active-server toggle it also guards stayed.
+     */
     /** Codec and transport are part of WHAT the stream is — the wrong codec breaks playback
      *  outright (CloudTAK cannot play H.265), so they lock with the server fields (operator,
      *  2026-08-06). The quality profile stays live; see [setupConfigLocks]. The two codec
@@ -1522,17 +975,10 @@ class TakConnectActivity : AppCompatActivity() {
      * is and is not protecting against.
      */
     private fun setupConfigLocks() {
-        setupOneLock(
-            R.id.takLockConfig, KEY_TAK_LOCKED, takLockedFields,
-            "Unlock TAK server settings?",
-            "The lock prevents an accidental change to a server that works. " +
-                "A wrong value stops the aircraft sending data to your team.",
-            // The channel rows are built in code, thus applyLock cannot reach them by id. They
-            // are painted again instead, and each row reads the lock as it is built.
-            afterChange = { renderChannels(latestChannels) },
-        )
-        setupOneLock(
-            R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
+        // ⚠ The TAK lock is NOT here any more — it went with the fields it guards, to
+        // TakServerActivity (operator, 2026-10-09).
+        ConfigLock.install(
+            this, R.id.videoLockConfig, KEY_VIDEO_LOCKED, videoLockedFields,
             "Unlock video server settings?",
             "These fields are locked so a working stream configuration is not changed by " +
                 "accident. Editing them can stop your team seeing the video.",
@@ -1540,116 +986,23 @@ class TakConnectActivity : AppCompatActivity() {
             // — see the note on videoLockedFields.
             afterChange = { lockVideoServerToggle(it) },
         )
-        setupOneLock(
-            R.id.limitBatteryLock, KEY_BATTERY_LOCKED, batteryLockedFields,
+        ConfigLock.install(
+            this, R.id.limitBatteryLock, KEY_BATTERY_LOCKED, batteryLockedFields,
             "Unlock battery levels?",
             "These are the levels at which the aircraft returns and lands on its own. " +
                 "A wrong value can force a landing away from the pilot.",
         )
     }
 
-    private fun setupOneLock(
-        checkBoxId: Int,
-        prefKey: String,
-        fieldIds: List<Int>,
-        confirmTitle: String,
-        confirmBody: String,
-        /** Run after the lock state settles, for controls that applyLock cannot reach by id. */
-        afterChange: (Boolean) -> Unit = {},
-    ) {
-        val box = findViewById<android.widget.CheckBox>(checkBoxId)
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        // Default LOCKED once a config exists, unlocked on a fresh install — a first-run pilot
-        // must not have to discover a lock before they can type anything.
-        val locked = prefs.getBoolean(prefKey, false)
-        box.isChecked = locked
-        applyLock(fieldIds, locked)
-        afterChange(locked)
-
-        box.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                prefs.edit().putBoolean(prefKey, true).apply()
-                applyLock(fieldIds, true)
-                afterChange(true)
-                AppLog.v(TAG, "config locked: $prefKey")
-                return@setOnCheckedChangeListener
-            }
-            // Unlocking: ask for the password, and put the box BACK unless it is right. Using
-            // setOnCheckedChangeListener means our own revert would re-enter this listener,
-            // so the listener is detached around it (inside revert()).
-            //
-            // A wrong password and Cancel take the same path on purpose: the only way OUT of
-            // this dialog with the fields editable is the correct password.
-            val revert = {
-                box.setOnCheckedChangeListener(null)
-                box.isChecked = true
-                setupConfigLocks()
-            }
-            // Built in code rather than a layout: one field, three call sites, and a layout
-            // file would imply this dialog can grow. It must not — it is a speed bump.
-            // Styled to match the section fields (takFieldStyle), plus a bordered background —
-            // see bg_dialog_field for why the flat fill was not enough here. A programmatic
-            // EditText takes the PLATFORM's colours, not the app theme's, so every colour is
-            // set explicitly.
-            val pw = android.widget.EditText(this).apply {
-                inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-                hint = "Password"
-                textSize = 15f
-                setTextColor(androidx.core.content.ContextCompat.getColor(
-                    this@TakConnectActivity, R.color.tp_text_primary))
-                setHintTextColor(androidx.core.content.ContextCompat.getColor(
-                    this@TakConnectActivity, R.color.tp_text_hint))
-                setBackgroundResource(R.drawable.bg_dialog_field)
-                val pad = (12 * resources.displayMetrics.density).toInt()
-                setPadding(pad, pad, pad, pad)
-            }
-            val wrap = android.widget.FrameLayout(this).apply {
-                val padH = (16 * resources.displayMetrics.density).toInt()
-                val padV = (8 * resources.displayMetrics.density).toInt()
-                setPadding(padH, padV, padH, padV)
-                addView(pw)
-            }
-            android.app.AlertDialog.Builder(this, R.style.TakDialogTheme_Destructive)
-                .setTitle(confirmTitle)
-                .setMessage(confirmBody)
-                .setView(wrap)
-                .setPositiveButton("Unlock") { _, _ ->
-                    if (pw.text.toString() == UNLOCK_PASSWORD) {
-                        prefs.edit().putBoolean(prefKey, false).apply()
-                        applyLock(fieldIds, false)
-                        afterChange(false)
-                        // The entered text is never logged, right or wrong — same rule as
-                        // every other credential in this app (security review 2026-08-03).
-                        AppLog.i(TAG, "config UNLOCKED: $prefKey")
-                    } else {
-                        android.widget.Toast.makeText(this, "Wrong password",
-                            android.widget.Toast.LENGTH_SHORT).show()
-                        AppLog.i(TAG, "unlock refused (wrong password): $prefKey")
-                        revert()
-                    }
-                }
-                .setNegativeButton("Cancel") { _, _ -> revert() }
-                .setOnCancelListener { revert() }
-                .show()
-        }
-    }
-
     /**
-     * Greys out and disables a set of views. `isEnabled = false` also makes them unfocusable, so
-     * the keyboard cannot be raised on a locked field — read-only in the way a pilot means it —
-     * and a disabled Button stops responding to taps.
-     *
-     * Typed as View, not EditText: the TAK lock covers the Log Out button as well as fields.
+     * ⚠ **ONE IMPLEMENTATION, IN [ConfigLock], SINCE 2026-10-09.** The two private methods that
+     * used to live here — `setupOneLock` and `applyLock` — moved there when [TakServerActivity]
+     * took the TAK configuration and needed the same lock. Copying them was the obvious move
+     * and the wrong one: both of their rules — locked is not hidden, and a control whose state
+     * IS its tick must not be dimmed — came from real faults, and a copy is how one screen
+     * keeps a safety rule while the other quietly stops.
      */
-    private fun applyLock(fieldIds: List<Int>, locked: Boolean) {
-        for (id in fieldIds) {
-            findViewById<android.view.View>(id)?.apply {
-                isEnabled = !locked
-                alpha = if (locked) 0.45f else 1.0f
-            }
-        }
-    }
+
 
     // ---- 4. Elevation Data (DTED) ----
 
@@ -2022,28 +1375,16 @@ class TakConnectActivity : AppCompatActivity() {
          */
         internal const val UNLOCK_PASSWORD = "takpilot"
 
-        private const val KEY_HOST = "host"
-        private const val KEY_ENROLL_PORT = "enroll_port"
-        private const val KEY_COT_PORT = "cot_port"
+        // ⚠ ONLY WHAT THE SUMMARY READS. The rest of the TAK keys went to
+        // [TakServerActivity] with the fields that write them (operator, 2026-10-09), and two
+        // copies of one key is the trap this file already names elsewhere. The preference FILE
+        // is still the same one — nothing migrated.
         private const val KEY_USERNAME = "username"
         private const val KEY_CALLSIGN = "callsign"
-        private const val KEY_CAMERA_POINT = "camera_point"
-        private const val KEY_CHANNELS = "channels"          // CSV of selected channel names
-        private const val KEY_LOGGED_OUT = "logged_out"      // true = user logged out; block auto-reconnect
-        private const val KEY_UID = "uid"
-        private const val KEY_TRUSTSTORE = "truststore_path"
-        private const val KEY_CLIENTCERT = "clientcert_path"
-
-        // ---- Video channel (cert B) — v2.4.0. "CHB" = "channel B", distinct from the KEY_V_*
-        // family above, which means "video STREAM config" (RTSP/SRT host/port/codec), a
-        // completely different concept. Cert B reuses KEY_HOST/KEY_ENROLL_PORT/KEY_COT_PORT/
-        // KEY_CALLSIGN from cert A above — one aircraft, one controller, two certificates. ----
+        /** Read by the summary, which says what happens with no Elevated account at all.
+         *  "CHB" = "channel B", distinct from the KEY_V_* family below, which means "video
+         *  STREAM config" (RTSP/SRT host/port/codec) — a completely different concept. */
         internal const val KEY_CHB_ENABLED = "chb_enabled"
-        private const val KEY_CHB_USERNAME = "chb_username"
-        private const val KEY_CHB_UID = "chb_uid"
-        private const val KEY_CHB_TRUSTSTORE = "chb_truststore_path"
-        private const val KEY_CHB_CLIENTCERT = "chb_clientcert_path"
-        private const val KEY_CHB_LOGGED_OUT = "chb_logged_out"
 
         private const val KEY_V_HOST = "video_host"
         private const val KEY_V_PORT = "video_port"
@@ -2086,6 +1427,11 @@ class TakConnectActivity : AppCompatActivity() {
         private const val KEY_V_ADV_PORT = "video_adv_port"
         private const val KEY_V_ADV_USER = "video_adv_user"
         private const val KEY_V_ADV_PASS = "video_adv_pass"
+        /** How the TEAM reads the stream, which is a different leg from the push (operator,
+         *  2026-10-09). ⚠ Must match the literals read in AutelVideoStreamer.startFromPrefs. */
+        private const val KEY_V_ADV_TRANSPORT = "video_adv_transport"
+        private const val KEY_V_ADV_SRT_PORT = "video_adv_srt_port"
+        private const val KEY_V_ADV_SRT_PHRASE = "video_adv_srt_phrase"
         /** Set once the single-server configuration has been copied into slot 1. See
          *  migrateVideoSlots for why this must never run twice. */
         private const val KEY_V_SLOTS_MIGRATED = "video_slots_migrated"

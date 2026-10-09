@@ -51,6 +51,35 @@ object TakAutoConnect {
     }
 
     /**
+     * Reconnect if TAK is down and we have what we need.
+     *
+     * ⚠ **THIS EXISTS BECAUSE MOVING THE TAK CONFIGURATION OFF PRE-FLIGHT TOOK A RETRY WITH IT
+     * (2026-10-09).** [tryReconnect] fires from the HOME screen's `onCreate`, and that screen
+     * is `singleTask` — so coming back to it does not run again. The other retry that actually
+     * covered a pilot was Pre-Flight's own `onCreate`, which reconnected from saved certs on
+     * the way past, and that went to [TakServerActivity] with the fields. What was left was an
+     * application that would not reconnect unless the pilot opened a screen they have no other
+     * reason to open, or tapped the flight screen's TAK badge. The DJIv5 sibling hit exactly
+     * this and named it.
+     *
+     * ⚠ **A LIVE PROCESS IS THE CASE THAT MATTERS.** The foreground service keeps this process
+     * alive across a swipe-away, so "launching the application again" is often not a new
+     * process at all and no `onCreate` runs. Tie the retry to a SCREEN BEING SHOWN, not to a
+     * process starting.
+     *
+     * Safe to call as often as you like: [reconnect] refuses while an attempt is already in
+     * flight, so this cannot spawn parallel connects.
+     */
+    fun retryIfDown(context: Context) {
+        if (TakManager.getInstance().isConnected) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_LOGGED_OUT, false)) return
+        if (!hasSavedCerts(prefs)) return
+        Log.i(TAG, "TAK is down and an enrollment is saved — retrying the connection")
+        reconnect(context.applicationContext)
+    }
+
+    /**
      * Arms the telemetry side of the bridge with no TAK connection (v1.5.9). The flight path
      * logger feeds from the bridge's fly-controller callback. Before this function existed,
      * the two paths above left the bridge stopped, so a controller with no enrollment (or a
@@ -123,9 +152,20 @@ object TakAutoConnect {
             File(ts).exists() && File(cc).exists()
     }
 
-    /** The actual connect, on a background thread. Shared by [tryReconnect] and [toggle] so
-     *  the two paths can't drift — the channel routing and bridge startup below are easy to
-     *  forget in a second copy. */
+    /**
+     * True while a connect attempt is on its worker thread.
+     *
+     * ⚠ Without this a second trigger spawns a PARALLEL connect, and `TakManager.connect()` is
+     * not reentrant — it disconnects and reassigns its client field with no lock, so two racing
+     * calls can orphan a live TakClient socket thread that keeps publishing PLI for the same
+     * uid with nothing left holding a reference to stop it. It became load-bearing when
+     * [retryIfDown] started firing on every resume of two screens.
+     */
+    @Volatile private var connecting = false
+
+    /** The actual connect, on a background thread. Shared by [tryReconnect], [retryIfDown] and
+     *  [toggle] so the paths can't drift — the channel routing and bridge startup below are
+     *  easy to forget in a second copy. */
     private fun reconnect(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val host = prefs.getString(KEY_HOST, "") ?: ""
@@ -141,9 +181,20 @@ object TakAutoConnect {
             prefs.edit().putString(KEY_UID, uid).apply()
         }
 
+        if (connecting) {
+            Log.i(TAG, "reconnect already in flight — ignoring this request")
+            return
+        }
+        connecting = true
+
         Thread {
+          // An exception on a plain Thread reaches Android's default uncaught handler, which
+          // KILLS THE PROCESS — so a bad cert file or an unreachable host could take the whole
+          // flight screen down, from a background thread, for a failure that only ever needed a
+          // log line. It matters more now that a screen resume can start this.
+          try {
             // 2nd arg is the CALLSIGN, not the username — see the same fix in
-            // TakConnectActivity.connectWithCerts. Both connect paths had it wrong, so the
+            // TakServerActivity.connectWithCerts. Both connect paths had it wrong, so the
             // aircraft reported the operator's login name to the whole team either way.
             TakManager.getInstance().connect(
                 uid, callsign, "Cyan", "Team Member",
@@ -160,6 +211,13 @@ object TakAutoConnect {
                 val videoCc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: ""
                 TakManager.getInstance().connectVideoChannel(
                     host, cotPort, videoTs, "atakatak", videoCc, "atakatak",
+                    // acceptInbound = true (operator, 2026-10-09, with the writable Elevated
+                    // channel rows). The Elevated account's channels are the pilot's to choose
+                    // now, so what arrives on them is traffic they asked for — and a tick is
+                    // the ONLY "ignore incoming" control that can exist, because inbound CoT
+                    // carries no channel label. The shared core still DEFAULTS to discarding;
+                    // this is the deliberate call site that opts in.
+                    true,
                 )
                 Log.i(TAG, "Auto-connected video channel")
             }
@@ -171,6 +229,11 @@ object TakAutoConnect {
             TakBridgeHolder.setCameraPointEnabled(prefs.getBoolean(KEY_CAMERA_POINT, false))
             TakForegroundService.start(context.applicationContext, callsign)
             Log.i(TAG, "Auto-connected to $host:$cotPort as $callsign")
+          } catch (t: Throwable) {
+            Log.e(TAG, "TAK reconnect failed: ${t.message}", t)
+          } finally {
+            connecting = false
+          }
         }.start()
     }
 }
