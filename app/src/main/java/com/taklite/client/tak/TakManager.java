@@ -42,14 +42,34 @@ public class TakManager implements TakClient.TakClientListener {
     // ---- Video-channel split (cert B) ----
     // A second, independent TAK connection, enrolled under its own TAK Server username so it
     // lands in a different channel/group than `client` above. Everything this class sends goes
-    // out on BOTH connections identically, except the __video element — see videoFor(). B's
-    // inbound traffic is discarded: it exists only to advertise video to a smaller audience, not
-    // to feed this controller's own contact map (that stays A's job, see connectVideoChannel's
-    // no-op TakClientListener).
+    // out on BOTH connections identically, except the __video element — see videoFor().
+    //
+    // WHAT B DOES WITH WHAT IT RECEIVES IS THE CALLER'S CHOICE — see videoChannelAcceptsInbound
+    // and the acceptInbound parameter on connectVideoChannel. It defaults to DISCARD, which is
+    // the behaviour this connection shipped with.
     // Written on the enroll/auto-connect thread, read on the bridge's callback thread — volatile
     // like the flags beside it (review, 2026-10-08).
     private volatile TakClient videoClient;
     private volatile boolean videoConnected = false;
+    /**
+     * Whether the Elevated connection's INBOUND traffic reaches this controller's contact map
+     * and marker layer, or is thrown away.
+     *
+     * FALSE is the original behaviour and stays the default: B existed only to advertise video
+     * to a smaller audience, never to feed the contact map, and a caller that has not thought
+     * about the question gets the connection it already had.
+     *
+     * ⚠ TRUE MEANS EVERY INBOUND MESSAGE IS HANDLED TWICE when the two accounts can both
+     * receive from the same people — the server has no idea these two sockets are one
+     * controller. That is not the disaster it sounds like: everything downstream is keyed by
+     * UID (the contact map is a ConcurrentHashMap on uid, the marker layer replaces by uid), so
+     * the second copy lands on the same entry rather than making a second one. The cost is
+     * parsing work, not duplicate icons. It becomes a real problem only if something downstream
+     * ever starts APPENDING per message instead of replacing per uid.
+     *
+     * Set with the connection, read on the socket thread — volatile like the flags beside it.
+     */
+    private volatile boolean videoChannelAcceptsInbound = false;
     /** True once connectVideoChannel() has been CALLED this session — on the attempt, not on a
      *  handshake. That is the rule from the scope document: with a video channel configured, cert
      *  A never carries video, whether B is up or not. A cert B the server refuses therefore
@@ -287,19 +307,40 @@ public class TakManager implements TakClient.TakClientListener {
      *
      * Uses the SAME {@code uid} as cert A (both represent this one aircraft/controller) so a
      * server-side admin can tell at a glance that A and B are the same airframe under two
-     * certificates. Inbound traffic on this connection is discarded — a no-op listener — per the
-     * design: B exists only to advertise video to a smaller audience, never to feed this
-     * controller's own contact map (that stays A's job).
+     * certificates. What this connection does with INBOUND traffic is the caller's choice: the
+     * six-argument form throws it away, which is what B did until 2026-10-09 and is still the
+     * default; the seven-argument form below takes a flag.
      */
     public void connectVideoChannel(String address, int port, String trustStorePath,
                                     String trustStorePassword, String clientCertPath,
                                     String clientCertPassword) {
+        connectVideoChannel(address, port, trustStorePath, trustStorePassword, clientCertPath,
+                clientCertPassword, false);
+    }
+
+    /**
+     * As above, and says what to do with what cert B RECEIVES.
+     *
+     * @param acceptInbound true to feed B's inbound into this controller's contact map and
+     *                      marker layer exactly as cert A's is fed; false to throw it away,
+     *                      which is what this connection did before the parameter existed.
+     *                      See {@link #videoChannelAcceptsInbound} for the cost of true.
+     */
+    public void connectVideoChannel(String address, int port, String trustStorePath,
+                                    String trustStorePassword, String clientCertPath,
+                                    String clientCertPassword, boolean acceptInbound) {
         // Deliberately NOT endEmergencyBroadcast() here (review, 2026-10-08): a re-dial of the
         // Elevated socket is not an app-level reconnect, and it must not end a running
         // override. disconnect() — which connect() calls first — is where the reset lives.
         disconnectVideoChannel();
+        videoChannelAcceptsInbound = acceptInbound;
         videoClient = new TakClient(address, port, trustStorePath, trustStorePassword,
                 clientCertPath, clientCertPassword, new TakClient.TakClientListener() {
+                    // ⚠ onConnected/onDisconnected are B's OWN, deliberately not the manager's.
+                    // TakManager.onConnected() sets `connected`, which is cert A's flag and
+                    // drives the whole application's "TAK is up" state; routing B's socket
+                    // events there would make the Standard connection look alive because the
+                    // Elevated one is.
                     @Override public void onConnected() {
                         videoConnected = true;
                         AppLog.d(TAG, "Video channel connected");
@@ -309,9 +350,14 @@ public class TakManager implements TakClient.TakClientListener {
                         AppLog.d(TAG, "Video channel disconnected");
                     }
                     @Override public void onCotReceived(String xml) {
-                        // Discarded by design — see the class doc above. Not even logged at
-                        // info level: this connection can carry the same traffic volume as A,
-                        // and there is nothing useful to do with it here.
+                        // Inbound is the caller's choice (operator, 2026-10-09). Discarding is
+                        // the default and was the only behaviour until that date: B existed to
+                        // advertise video, not to feed this controller's contact map. Accepting
+                        // routes it through the SAME handler cert A's traffic uses, so the two
+                        // connections cannot drift in how they read a message.
+                        if (videoChannelAcceptsInbound) {
+                            TakManager.this.onCotReceived(xml);
+                        }
                     }
                 });
         videoClient.start();
@@ -343,6 +389,7 @@ public class TakManager implements TakClient.TakClientListener {
     public void clearVideoChannel() {
         disconnectVideoChannel();
         splitConfigured = false;
+        videoChannelAcceptsInbound = false;
         AppLog.i(TAG, "Video channel removed — single-connection behaviour restored");
     }
 

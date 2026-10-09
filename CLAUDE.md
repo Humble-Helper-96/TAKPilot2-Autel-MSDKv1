@@ -25,7 +25,10 @@ three applications. It outranks any UI note in this file or in the documents in 
 Read it before you change a screen, a layout, a colour or a readout format. This tree's
 gap list is in `../../../TAKPILOT2-UI-CONFORMANCE.md`.
 
-A UI change lands in all three applications, or it lands in none.
+A UI change lands in BOTH LIVE applications — Autel and MSDKv5 — or it lands in neither.
+MSDKv4 is FROZEN (operator, 2026-10-09) and is owed nothing. One tree may LEAD, which is
+how a change gets tested on hardware first; what is not allowed is a change that lands in
+one tree and is not WRITTEN DOWN as owed by the other. See specification §8 rule 1.
 
 ## Safety rules — these come from real incidents
 
@@ -832,3 +835,31 @@ were a second thing to keep in step with it.
 **`FieldGuideActivity.kt` IS THE FIELD GUIDE.** It is the screen in the application and it stays.
 Only the exported copies went. An edit to the guide is now finished when the Kotlin is correct;
 there is nothing left to regenerate.
+
+**2026-10-09: THIS TREE OWES THE DJIv5 TREE TWO CHANGES, and MSDKv4 is frozen.**
+
+The DJI MSDKv5 tree took the video split from here on 2026-10-09 and then led on two changes of
+its own, with the operator's agreement. Specification §8 rule 1 allows one live tree to lead;
+what it requires is that the debt is written down when it is incurred. This is that record. ⚠ It
+is NOT a list of things that happened here — nothing below is in this tree yet.
+
+1. **The Elevated account's channels are WRITABLE there, and its connection ACCEPTS inbound.**
+   Writable on Pre-Flight and in the flight screen's channel dialog, behind the same lock as the
+   Standard rows. ⚠ A tick is also the only "ignore incoming" control that can exist: inbound
+   CoT carries no channel label (§1-3 of `CHANNELS-FINDINGS.md`), so unticking is what stops
+   traffic arriving, at the server. ⚠ It changes the WHOLE FLEET — activebits belongs to the
+   shared account, not to one controller.
+2. **The TAK server configuration moved off Pre-Flight into its own screen** (`TakServerActivity`
+   there), the same move `VideoServersActivity` made for video on 2026-08-30. Pre-Flight keeps a
+   generated summary — which user, which channels are active, where the video link goes — and a
+   button. Their `setupOneLock`/`applyLock` became a shared `ConfigLock` in the same change.
+
+⚠ **THE SHARED CORE ALREADY CARRIES PART 1 AND THIS TREE'S BEHAVIOUR IS UNCHANGED.**
+`TakManager.connectVideoChannel` now takes an `acceptInbound` flag, and the six-argument form
+this tree calls still DISCARDS, which is what it has always done. That default exists precisely
+so a decision taken on the DJI bench could not change the wire behaviour of a tree that is
+bench-tested and awaiting release. Taking change 1 here means passing true at the call site —
+deliberately, not by accident.
+
+⚠ **MSDKv4 IS FROZEN** (operator). The specification now covers the two live applications, this
+one and MSDKv5. `check-taklite.sh` reports that tree's drift and never fails on it.
