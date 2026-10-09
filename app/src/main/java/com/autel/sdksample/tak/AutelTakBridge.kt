@@ -82,6 +82,25 @@ class AutelTakBridge(
     @Volatile private var lastTelemetryMs = 0L
     @Volatile private var liveGimbalPitch: Double? = null
     @Volatile private var liveGimbalYaw: Double? = null
+
+    /**
+     * Gimbal ROLL, degrees, EXACTLY AS THE CAMERA REPORTS IT — fault 9 of the 2026-09-14 AR
+     * audit, which recorded roll as "unread". It is read now, and that is ALL it does.
+     *
+     * ⚠ **OBSERVATION ONLY. NOTHING PROJECTS WITH THIS, AND IT IS DELIBERATELY NOT PART OF
+     * [CameraPose]** (operator, 2026-10-09). Roll is a rotation about the camera's FORWARD axis,
+     * so feeding it to [cameraFrameAngles] is a 2D rotation in the (right, up) plane and exact
+     * — but only if the SIGN is right, and Autel's sign is not knowable from the SDK. This
+     * firmware already reports gimbal PITCH with down positive, the opposite of DJI (see the
+     * angle listener below), so assuming roll matches DJI would be a coin toss that rotates
+     * every marker the wrong way. Not normalised and not negated here for the same reason:
+     * the log must show what the camera said, not what this app guessed it meant.
+     *
+     * What it is for right now: the AR diag line prints it, so one bench session with the
+     * gimbal rolled answers both the sign and the typical magnitude. Wire it into the
+     * projection after that, not before.
+     */
+    @Volatile private var liveGimbalRoll: Double? = null
     /** Erratic-pitch detector, fed from the gimbal angle listener. Single-threaded use:
      *  only that callback touches it. */
     private val gimbalPitchMonitor = GimbalPitchMonitor()
@@ -364,6 +383,10 @@ class AutelTakBridge(
                 val pitchN = -info.pitch.toDouble()
                 liveGimbalPitch = pitchN
                 liveGimbalYaw = info.yaw.toDouble()
+                // RAW, unlike pitch above — see liveGimbalRoll for why nothing is normalised
+                // until the sign is measured. getRoll() was on this same interface all along;
+                // the audit's "roll unread" was an app gap, not an SDK one.
+                liveGimbalRoll = info.roll.toDouble()
                 // Erratic-pitch watch (2026-08-13 incident: full-range oscillation ran 39 s
                 // before the pilot reacted). Fed here, at the single pitch ingest point —
                 // the monitor owns no listener. Uses the normalised value so the detector
@@ -758,6 +781,10 @@ class AutelTakBridge(
         val yaw = liveGimbalYaw ?: return null
         return CameraPose(cameraBearing(yaw, headingDeg), pitch * PITCH_SIGN + TakBridgeHolder.currentPitchOffset)
     }
+
+    /** Gimbal roll as reported, or null until gimbal state has arrived. Observation only —
+     *  see [liveGimbalRoll]. */
+    fun gimbalRollDeg(): Double? = liveGimbalRoll
 
     /**
      * True if [candidate] is a uid THIS app publishes — our own aircraft PLI or its sensor
@@ -1219,5 +1246,10 @@ object TakBridgeHolder {
     fun lookRangeMeters(): Double? = bridge?.lookRangeMeters()
     fun hud(): AutelTakBridge.Hud? = bridge?.hud()
     fun cameraPose(): AutelTakBridge.CameraPose? = bridge?.cameraPose()
+
+    /** Gimbal roll as the camera reports it, or null before gimbal state arrives. Read by the
+     *  AR diag line only — see [AutelTakBridge.liveGimbalRoll] for why nothing projects with
+     *  it yet. */
+    fun gimbalRollDeg(): Double? = bridge?.gimbalRollDeg()
     fun isOwnPublishedUid(uid: String?): Boolean = bridge?.isOwnPublishedUid(uid) ?: false
 }

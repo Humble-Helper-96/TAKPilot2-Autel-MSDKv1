@@ -340,9 +340,19 @@ correcting those notes.
 **THE AR OVERLAY WAS AUDITED ON 2026-09-14 AND SEVEN OF TEN FAULTS ARE FIXED AND FLOWN
 (2026-09-15).** The ranked list and the measurements are in `app/build.gradle` under v2.2.0.
 Fixed: the FOV pairing in thermal and PIP, the pitched-camera projection (`CameraProjection.kt`),
-the sea-level pin, the flat-plane fallback, and the geoid (`ElevationPolicy.kt`). Open, in order:
-magnetometer bias by heading, telemetry-to-video latency with DTED seeks on the UI thread, and
-gimbal roll. ADS-B heights are PRESSURE altitude from the gateway and draw high or low by the
+the sea-level pin, the flat-plane fallback, and the geoid (`ElevationPolicy.kt`). **Fixed
+2026-10-09, carried in v2.4.0 with the video split (operator's call, rather than a second
+branch): the DTED seeks on the UI thread** — `DtedTile` caches the posts and keeps its handle
+open, which changes no answer because a post is a fixed grid sample and the interpolation still
+runs on the caller's exact lat/lon (`DtedTileCacheTest`; ⚠ do NOT "simplify" it by quantising the
+QUERY — that reintroduces the terrain error, 1 m becoming 2.6 m of horizontal miss at 21°).
+**Gimbal roll is READ and LOGGED but NOT APPLIED** — `getRoll()` was on the interface the bridge
+already used, so that gap was the app's; `liveGimbalRoll` holds it raw and is deliberately not in
+`CameraPose`, because this firmware reports pitch down-positive against DJI and the roll sign is
+therefore unknown until it is bench-measured. Open, in order: magnetometer bias by heading (**NO
+APP CORRECTION — the operator's standing decision; do not propose a per-airframe table again**),
+telemetry-to-video latency (needs the lag measured on this hardware first), and the roll sign.
+ADS-B heights are PRESSURE altitude from the gateway and draw high or low by the
 day's altimeter setting; not attempted. The switch time between views is the camera's 1.8 s and
 matching the record format does not change it — measured, do not retry.
 

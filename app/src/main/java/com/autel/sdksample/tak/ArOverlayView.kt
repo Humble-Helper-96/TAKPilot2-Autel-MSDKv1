@@ -491,18 +491,31 @@ class ArOverlayView @JvmOverloads constructor(
                 detailed++
                 val elevRep = dzReported?.let { Math.toDegrees(atan2(it, groundDist)) }
                 val elevTer = Math.toDegrees(atan2(dzTerrain, groundDist))
+                // TWO LINES PER CONTACT, ON PURPOSE. The `height` line is the contact-only
+                // question — reported and terrain disagree by the geoid offset, and which one
+                // lands on the actual person is a field observation. The `geom` line is the
+                // SAME format a pin gets, so a contact's placement can be read straight against
+                // a dropped pin's. One line carrying both ran past 300 characters and wrapped
+                // in the log, which is where a number gets misread.
+                val who = "contact='${u.callsign ?: u.uid}'"
                 AppLog.d(
                     TAG,
-                    "contact='${u.callsign ?: u.uid}' type=${u.type} gDist=%.0fm | ".format(groundDist) +
-                        "dzReported=%s dzTerrain=%.1fm | elevReported=%s elevTerrain=%.1f | using=%s | %s".format(
+                    "$who type=${u.type} height: " +
+                        "dzReported=%s dzTerrain=%.1fm | elevReported=%s elevTerrain=%.1f | using=%s".format(
                             dzReported?.let { "%.1fm".format(it) } ?: "none",
                             dzTerrain,
                             elevRep?.let { "%.1f".format(it) } ?: "none",
                             elevTer,
                             if (preferTerrain) "terrain(ground)"
                             else if (dzReported != null) "reported" else "terrain",
-                            if (xy == null) "OFF-FRAME" else "drawn at %.0f,%.0f".format(xy.first, xy.second),
                         ),
+                )
+                AppLog.d(
+                    TAG,
+                    "$who geom: " + geometryTrace(
+                        pose, groundDist, dz, bearing, dBearing,
+                        Math.toDegrees(atan2(dz, groundDist)), azCam, elCam, xy,
+                    ),
                 )
             }
 
@@ -841,6 +854,55 @@ class ArOverlayView @JvmOverloads constructor(
      * apart: if `dBrg` is near zero the camera really is pointed at the pin, so an off-frame
      * result means the FOV or the projection is at fault, not the pose.
      */
+    /**
+     * The placement geometry of ONE target, in the one format both traces use.
+     *
+     * ⚠ **PINS AND CONTACTS NOW PRINT THE SAME FIELDS, SO THE TWO LINES CAN BE READ AGAINST
+     * EACH OTHER** (operator, 2026-10-09). Before this, only dropped pins got the geometry and
+     * contacts got their two height methods and nothing else — so the one question a pilot
+     * actually has in the air, "is a marker somebody ELSE placed landing where one of mine
+     * would," could not be answered from the log at all. A pin is the ground truth (it is
+     * placed at [TakBridgeHolder.lookPoint], derived from this same pose, so it must render
+     * under the crosshair); a contact at the same spot must produce the same camera-frame
+     * angles. Differing fields made that comparison impossible to eyeball.
+     *
+     * `tgtBrg`/`tgtElev` are deliberately named for the TARGET rather than `pinBrg`/`pinElev`,
+     * because one name across both lines is the entire point.
+     *
+     * `roll` is the gimbal's reported roll, printed raw — fault 9 of the 2026-09-14 audit. It
+     * is here to be READ, not acted on: nothing projects with it, and a bench session with the
+     * gimbal rolled is what settles its sign. See [AutelTakBridge.liveGimbalRoll].
+     */
+    private fun geometryTrace(
+        pose: AutelTakBridge.CameraPose,
+        groundDist: Double,
+        dz: Double,
+        bearing: Double,
+        dBearing: Double,
+        elevDeg: Double,
+        azCam: Double,
+        elCam: Double,
+        xy: Pair<Float, Float>?,
+    ): String {
+        val roll = TakBridgeHolder.gimbalRollDeg()
+        return "gDist=%.1fm dz=%.1fm | camBrg=%.1f tgtBrg=%.1f dBrg=%.1f | ".format(
+            groundDist, dz, pose.bearingDeg, bearing, dBearing,
+        ) + "camPitch=%.1f roll=%s tgtElev=%.1f | cam az=%.1f el=%.1f | fov=%.0fx%.0f | %s".format(
+            pose.pitchDeg,
+            roll?.let { "%.1f".format(it) } ?: "n/a",
+            elevDeg, azCam, elCam,
+            // EFFECTIVE fov, zoom included — printing the 1x base while zoomed is
+            // actively misleading during calibration, which is when this gets read.
+            AutelTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
+            AutelTakBridge.vFovDeg(TakBridgeHolder.currentZoomFactor),
+            if (xy == null) "OFF-FRAME (not drawn)"
+            else "drawn at %.0f,%.0f in rect %.0f,%.0f-%.0f,%.0f".format(
+                xy.first, xy.second,
+                videoRect.left, videoRect.top, videoRect.right, videoRect.bottom,
+            ),
+        )
+    }
+
     private fun diag(
         pin: TakDropMarkers.PinInfo,
         pose: AutelTakBridge.CameraPose,
@@ -855,20 +917,8 @@ class ArOverlayView @JvmOverloads constructor(
     ) {
         AppLog.d(
             TAG,
-            "pin='${pin.name}' gDist=%.1fm dz=%.1fm | camBrg=%.1f pinBrg=%.1f dBrg=%.1f | " .format(
-                groundDist, dz, pose.bearingDeg, bearing, dBearing,
-            ) + "camPitch=%.1f pinElev=%.1f | cam az=%.1f el=%.1f | fov=%.0fx%.0f | %s".format(
-                pose.pitchDeg, elevDeg, azCam, elCam,
-                // EFFECTIVE fov, zoom included — printing the 1x base while zoomed is
-                // actively misleading during calibration, which is when this gets read.
-                AutelTakBridge.hFovDeg(TakBridgeHolder.currentZoomFactor),
-                AutelTakBridge.vFovDeg(TakBridgeHolder.currentZoomFactor),
-                if (xy == null) "OFF-FRAME (not drawn)"
-                else "drawn at %.0f,%.0f in rect %.0f,%.0f-%.0f,%.0f".format(
-                    xy.first, xy.second,
-                    videoRect.left, videoRect.top, videoRect.right, videoRect.bottom,
-                ),
-            ),
+            "pin='${pin.name}' " +
+                geometryTrace(pose, groundDist, dz, bearing, dBearing, elevDeg, azCam, elCam, xy),
         )
     }
 

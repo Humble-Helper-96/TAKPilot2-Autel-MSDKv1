@@ -1621,6 +1621,48 @@ android {
         //        a dot, while the stream is up. The aircraft marker alone advertises the stream.
         //        Bench 2026-10-08: both connections held by the server under one aircraft uid;
         //        the video-feed reader gets the copy with the link and no other. NOT FLOWN.
+        //
+        //        ALSO IN v2.4.0, AND NOT PART OF THE SPLIT — THE AR OVERLAY (operator, 2026-10-09,
+        //        who chose to carry it in this release rather than open a second branch):
+        //        ⚠ FAULT 8 OF THE 2026-09-14 AR AUDIT, SECOND HALF — FIXED. DtedIndex.elevationAt
+        //        opened a RandomAccessFile, seeked four times, read eight single bytes and closed
+        //        it again on EVERY call, and ArOverlayView calls it once per contact
+        //        unconditionally plus once per elevation-less pin, on a 100 ms redraw. Ten
+        //        contacts in range was ~100 file opens, 400 seeks and 800 byte-reads a second on
+        //        the thread compositing the overlay over live video. TerrainAgl had had a 15 m
+        //        resample gate against exactly this since it was ported; the overlay had none.
+        //        DtedTile now caches the POSTS and keeps its handle open. A post is a fixed grid
+        //        sample, so a hit returns the identical byte pair and the bilinear interpolation
+        //        still runs on the caller's exact lat/lon — NO ANSWER MOVES. Quantising the QUERY
+        //        instead would have been easier and wrong: the audit measured 1 m of terrain
+        //        error becoming 2.6 m of horizontal miss at a 21° look angle, and snapping the
+        //        query to a grid IS that error. DtedTileCacheTest (7) pins it, including a walk
+        //        across sub-post distances that FAILS on a quantising fix. DtedIndex.invalidate
+        //        closes the handles, so import and delete still take effect.
+        //        FAULT 9, GIMBAL ROLL — READ AND LOGGED, NOT APPLIED (operator's call). The audit
+        //        recorded roll as unread; EvoAngleInfo.getRoll() was on the interface the bridge
+        //        already subscribed to all along, so the gap was the app's, not the SDK's.
+        //        liveGimbalRoll holds it RAW — not negated, not normalised, deliberately NOT part
+        //        of CameraPose. Roll is a rotation about the camera's forward axis, so it is a
+        //        2D rotation in the (right, up) plane after cameraFrameAngles and exact — IF the
+        //        sign is right, and this firmware already reports PITCH down-positive against
+        //        DJI's convention, so assuming roll matches DJI is a coin toss that rotates every
+        //        marker the wrong way. The diag line prints it; one bench session with the gimbal
+        //        rolled settles the sign and the magnitude. Wire it in after that, not before.
+        //        THE PIN AND CONTACT TRACES NOW PRINT THE SAME GEOMETRY (geometryTrace). Only
+        //        dropped pins carried it before and contacts carried their two height methods
+        //        alone, so "is a marker someone ELSE placed landing where one of mine would"
+        //        could not be answered from the log at all — and a pin is the ground truth, being
+        //        placed at the same lookPoint the overlay projects with. A contact gets two lines
+        //        now, `height:` and `geom:`; one line carrying both ran past 300 characters and
+        //        wrapped, which is where a number gets misread. tgtBrg/tgtElev replace
+        //        pinBrg/pinElev — one name across both lines is the point.
+        //        STILL OPEN from that audit: (6) magnetometer bias — NO APP CORRECTION, operator's
+        //        standing decision, do not propose a table. (8, FIRST HALF) telemetry leads video;
+        //        needs the lag MEASURED on this hardware before any compensation is written, and
+        //        it is the same mechanism as the ADS-B dead-reckoning measured at 3.3° on
+        //        2026-09-15 and deliberately stored. (9) the roll sign, above.
+        //        AR: NOT FLOWN. The DTED cache is unit-tested only.
         versionCode 105
         versionName "2.4.0"
         multiDexEnabled true

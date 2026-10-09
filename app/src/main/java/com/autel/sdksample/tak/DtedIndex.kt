@@ -13,8 +13,15 @@ object DtedIndex {
     private const val TAG = "DtedIndex"
     @Volatile private var tiles: List<DtedTile>? = null
 
+    /**
+     * Drops the index AND releases each tile's kept file handle and post cache — see
+     * [DtedTile.close]. The handle is what makes a redraw cheap, so it must be let go when the
+     * pilot imports or deletes terrain: a stale handle on a deleted file would answer every
+     * lookup from a cache of a file that is no longer there.
+     */
     @Synchronized
     fun invalidate() {
+        tiles?.forEach { runCatching { it.close() } }
         tiles = null
     }
 
