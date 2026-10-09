@@ -115,6 +115,47 @@ class CotBuilderTest {
         assertTrue("url=\"rtsp://tak:pw@anchortak.link:8554/Feed-B-Low?tcp\"" in xml)
     }
 
+    /**
+     * ⚠ Confirmed 2026-10-09 against a real ATAK client: for `srt://`, ConnectionEntry's
+     * `path` must carry the WHOLE query string — `?streamid=...&passphrase=...` — not a path
+     * segment. ATAK builds its SRT connection from `path` alone and never reads `url`'s query
+     * string; a bare path sends it an empty streamid and its native SRT call fails immediately.
+     * TAK Aware is unaffected either way — it reads `url` verbatim and ignores `ConnectionEntry`
+     * when the two disagree (logged on-device as "identity mismatch ... using baseUrl url"), so
+     * this one CoT shape is correct for both clients. See srt-cot-video-advertising.md.
+     */
+    @Test
+    fun srtAdvertisementPutsTheWholeQueryStringInConnectionEntryPath() {
+        val url = "srt://anchortak.link:8890?streamid=read:TestFeed-Low:tak:tak&passphrase=TentCity-1914"
+        val xml = CotBuilder.buildPLI(
+            "PILOT-1", "EVO2-B2-Pilot", "Cyan", "Team Member",
+            61.1, -149.9, 35.0, 180.0, 0.0, 77,
+            "TAKPilot2", "SmartController", "Android", "1.5.9", url)
+
+        assertTrue("protocol=\"srt\"" in xml)
+        assertTrue(
+            "path=\"?streamid=read:TestFeed-Low:tak:tak&amp;passphrase=TentCity-1914\"" in xml)
+        assertTrue("address=\"anchortak.link\"" in xml)
+        assertTrue("port=\"8890\"" in xml)
+        // The full url still rides the element too, for TAK Aware (and any future client that
+        // reads it instead of ConnectionEntry).
+        assertTrue("url=\"$url\"".replace("&", "&amp;") in xml)
+    }
+
+    /** An srt:// url with no query string at all must not crash — path falls back empty,
+     *  same as it always has, rather than appending a bare "?". */
+    @Test
+    fun srtAdvertisementWithNoQueryStringLeavesPathEmpty() {
+        val url = "srt://anchortak.link:8890"
+        val xml = CotBuilder.buildPLI(
+            "PILOT-1", "EVO2-B2-Pilot", "Cyan", "Team Member",
+            61.1, -149.9, 35.0, 180.0, 0.0, 77,
+            "TAKPilot2", "SmartController", "Android", "1.5.9", url)
+
+        assertTrue("protocol=\"srt\"" in xml)
+        assertTrue("path=\"\"" in xml)
+    }
+
     /** One stream, one uid: the aircraft and the operator must not advertise it as two feeds. */
     @Test
     fun aircraftAndOperatorAdvertiseTheSameVideoUid() {

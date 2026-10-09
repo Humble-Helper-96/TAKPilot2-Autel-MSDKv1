@@ -590,6 +590,19 @@ public class CotBuilder {
      * gets a clean address. If a feed needs auth and a client uses ConnectionEntry alone, this is
      * where that shows up.
      *
+     * <p>⚠ <b>For {@code srt://}, {@code ConnectionEntry.path} carries the whole query string,
+     * not a path segment.</b> Confirmed 2026-10-09 against a real ATAK client: ATAK's SRT
+     * handling does not read the streamid or passphrase from {@code url}'s query string, or from
+     * any other {@code ConnectionEntry} field — it builds the SRT connection entirely from
+     * {@code path}, and expects that one attribute to hold the literal {@code ?streamid=...}
+     * string, exactly as a pilot would type it into ATAK's own Add/Edit Alias screen. A bare
+     * path (or just the stream name) sends ATAK's native SRT call an empty streamid and it
+     * fails immediately — {@code MediaProcessor.createFromSrtNative} throws before a socket ever
+     * opens. Do not "simplify" this back to a plain path. TAK Aware is unaffected either way: it
+     * reads {@code url} verbatim and does not consult {@code ConnectionEntry} for playback (and
+     * logs exactly that — "CoT video URL/ConnectionEntry identity mismatch ... using baseUrl
+     * url" — when the two disagree), so one CoT built this way is safe for both clients.
+     *
      * @param alias human-readable name for the feed; shown in a client's video manager.
      */
     private static void appendVideo(StringBuilder sb, String videoUrl, String alias, String spiUid) {
@@ -606,6 +619,9 @@ public class CotBuilder {
             if (u.getHost() != null) host = u.getHost();
             port = u.getPort();
             if (u.getPath() != null) path = u.getPath();
+            if ("srt".equals(protocol) && u.getQuery() != null) {
+                path = "?" + u.getQuery();
+            }
         } catch (IllegalArgumentException e) {
             // An unparseable url is still worth advertising: `url` carries the whole thing, and
             // `address` falling back to it matches how ATAK advertises non-host feeds.
