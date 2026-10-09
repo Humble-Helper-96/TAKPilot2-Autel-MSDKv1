@@ -21,6 +21,13 @@ build the application again.
 obstacle radar logs* to OFF. The radar logs fill the log file. Set them to ON only when you examine
 the avoidance function.
 
+**Set the controller clock to network time.** Settings, Date & time, *Use network-provided time*
+ON. The aircraft report expires 60 s after the controller's clock says it was sent. On
+8 October 2026 the controller was 63 s slow: every aircraft report arrived already expired, the
+aircraft was grey on TAK Aware and absent on CloudTAK, and the pilot marker (5 minutes) looked
+normal. The Autel SDK tries to set the clock from the aircraft and Android refuses it, thus the
+clock drifts when this setting is off.
+
 **You must have two items in operation:**
 
 1. The aircraft on the Smart Controller.
@@ -455,6 +462,7 @@ growth, a listener that was lost, and state that drifts.
 | A METAR weather station is on the map | It must not arrive. Examine the uid prefix test. | `CotParser` | Yes |
 | A marker does not arrive, and nothing says so | A channel you cannot SEND to. Look for `- Rx Only`. | Pre-Flight, My Channels | No |
 | The aircraft is not on the team map | Every channel is off. | Pre-Flight or touch and hold the TAK icon | No |
+| The aircraft is grey (stale) while the pilot marker is normal, and the SPI still shows | The controller clock is slow. The aircraft report expires in 60 s, the pilot's in 5 minutes. | Controller Settings, Date & time, network time ON | No |
 | Each channel shows `- Rx Only` | The request lost its parameters. | `TakMissionClient.listChannels` | Yes |
 | A channel change does not reach the server | Another controller shares this certificate, or an administrator stopped the change. | TAK Portal | No |
 | The video goes to the wrong media server | The wrong Active server. | Pre-Flight, section 2 | No |
