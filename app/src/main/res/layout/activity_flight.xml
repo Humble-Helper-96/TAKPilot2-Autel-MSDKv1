@@ -476,16 +476,22 @@
          (that auto-hides after NOTICE_MS; this stays up for the whole window, so it is its own
          view, toggled by TakManager.EmergencyBroadcastListener). It is also the CONTROL while a
          broadcast runs: tap renews for 15 minutes, touch-and-hold stops (operator, 2026-10-08).
-         Top-centre, below fpvNotice's position so the two never overlap if both show at once.
-         A later child than flightCrosshair, thus it takes the touch — a tap on it cannot fall
-         through and drop a marker (the same z-order rule the warning banner follows). -->
+         AT THE TOP, in the gap between the toolbar capsule and the EV slider (operator,
+         2026-10-08: top-centre at 96dp sat "right in the middle of the screen"). Anchored to the
+         START of that gap, 16dp right of the capsule's edge, and vertically centred on the
+         capsule; its width changes with the countdown, so it grows toward the EV slider and at
+         13sp never reaches it on this 1024dp screen. The two margins are measured against THIS
+         controller's toolbar and HUD column — PER-DEVICE for the DJI port, like the warning
+         banner's size. A later child than flightCrosshair, thus it takes the touch — a tap on it
+         cannot fall through and drop a marker (the same z-order rule the warning banner follows). -->
     <TextView
         android:id="@+id/flightEmergencyBroadcastBanner"
         android:contentDescription="Emergency Broadcast is running — tap to add 15 minutes, touch and hold to stop"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="96dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="384dp"
+        android:layout_marginTop="20dp"
         android:background="@drawable/bg_hud_capsule"
         android:paddingHorizontal="12dp"
         android:paddingVertical="6dp"
