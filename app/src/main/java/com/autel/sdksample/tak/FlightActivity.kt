@@ -3140,6 +3140,37 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         lockedNote.visibility = if (locked) View.VISIBLE else View.GONE
         reload()
 
+        // The ELEVATED account's channels under the Standard's (operator, 2026-10-08): the whole
+        // scope of this aircraft, in flight, on one screen. Read-only rows — see the layout note.
+        // Read once at open: the server's t-x-g-c change notice arrives on the Standard
+        // connection only, and the Elevated set is the administrator's to change.
+        val elevatedLabel = view.findViewById<TextView>(R.id.takChanElevatedLabel)
+        val elevatedList = view.findViewById<android.widget.LinearLayout>(R.id.takChanElevatedList)
+        if (TakManager.getInstance().isVideoChannelConfigured()) {
+            TakMissionManager.listElevatedChannels(this) { chans ->
+                if (chans == null) return@listElevatedChannels
+                elevatedList.removeAllViews()
+                if (chans.isEmpty()) {
+                    elevatedList.addView(TextView(themed).apply {
+                        text = "The server returned no channels for the Elevated account."
+                        setTextColor(androidx.core.content.ContextCompat.getColor(
+                            applicationContext, R.color.tp_text_secondary))
+                    })
+                } else for (ch in chans) {
+                    elevatedList.addView(TextView(themed).apply {
+                        text = TakMissionManager.channelLabel(ch) + if (ch.active) "" else " (off)"
+                        setTextColor(androidx.core.content.ContextCompat.getColor(
+                            applicationContext, R.color.tp_text_primary))
+                        textSize = 16f
+                        val pad = (6 * resources.displayMetrics.density).toInt()
+                        setPadding(0, pad, 0, pad)
+                    })
+                }
+                elevatedLabel.visibility = View.VISIBLE
+                elevatedList.visibility = View.VISIBLE
+            }
+        }
+
         // Follow the server while the dialog is open, and stop when it closes.
         val onGroups = TakManager.GroupChangeListener {
             AppLog.i(TAG, "channels changed on the server — re-reading (flight screen)")

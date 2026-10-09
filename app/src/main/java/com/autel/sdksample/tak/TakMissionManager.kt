@@ -108,6 +108,44 @@ object TakMissionManager {
     }
 
     /**
+     * The ELEVATED account's channels (v2.4.0), read with that account's own certificate, for the
+     * read-only lists on Pre-Flight and in the flight screen's TAK Channels dialog. Never
+     * written: the application does not change what the Elevated account is a member of.
+     *
+     * [cb] gets null when no Elevated enrollment is saved, else the list (empty when the server
+     * returned none). Posted on the main thread.
+     *
+     * ⚠ The preference keys are literals here for the same reason as in AutelVideoStreamer:
+     * they are private constants of TakConnectActivity. If one moves there, move it here.
+     */
+    fun listElevatedChannels(context: Context, cb: (List<TakMissionClient.Channel>?) -> Unit) {
+        val p = context.getSharedPreferences(TakConnectActivity.PREFS, Context.MODE_PRIVATE)
+        val host = p.getString("host", "") ?: ""
+        val ts = p.getString("chb_truststore_path", "") ?: ""
+        val cc = p.getString("chb_clientcert_path", "") ?: ""
+        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) { cb(null); return }
+        io.execute {
+            val chans = TakMissionClient.fromCert(host, API_PORT, ts, P12_PASSWORD, cc, P12_PASSWORD)
+                ?.listChannels() ?: emptyList()
+            handler.post { cb(chans) }
+        }
+    }
+
+    /** The one wording for a channel row, so the three lists on two screens cannot drift:
+     *  two-way gets no label, the exception is what a pilot needs to see (operator, 2026-08-16). */
+    fun channelLabel(ch: TakMissionClient.Channel): String = when {
+        ch.canSend && ch.canReceive -> ch.name
+        ch.canReceive -> "${ch.name} - Rx Only"
+        ch.canSend -> "${ch.name} - Tx Only"
+        else -> "${ch.name} - no direction"
+    }
+
+    /** The enrollment's fixed .p12 password — the value TakCertEnroller writes the files with
+     *  (its DEFAULT_P12_PASSWORD) and TakConnectActivity connects with. Not a secret: the file
+     *  is the credential. */
+    private const val P12_PASSWORD = "atakatak"
+
+    /**
      * Sets the active channels for this certificate.
      *
      * ⚠ ABSOLUTE — pass the COMPLETE set you want active. Anything not in the list is switched

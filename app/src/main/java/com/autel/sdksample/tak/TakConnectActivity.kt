@@ -873,17 +873,8 @@ class TakConnectActivity : AppCompatActivity() {
     /** Read-only — cert B never writes activebits. Mirrors [refreshChannels]/[renderChannels]
      *  but with no checkboxes: nothing here can change what B is a member of. */
     private fun refreshVideoChannels() {
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val host = prefs.getString(KEY_HOST, "") ?: return
-        val ts = prefs.getString(KEY_CHB_TRUSTSTORE, "") ?: return
-        val cc = prefs.getString(KEY_CHB_CLIENTCERT, "") ?: return
-        if (host.isEmpty() || ts.isEmpty() || cc.isEmpty()) return
-        Thread {
-            // 8443 matches TakMissionManager.API_PORT — the Mission API port cert A already uses.
-            val mission = TakMissionClient.fromCert(host, 8443, ts, "atakatak", cc, "atakatak")
-            val channels = mission?.listChannels() ?: emptyList()
-            runOnUiThread { renderVideoChannels(channels) }
-        }.start()
+        // One reader for the Elevated list, shared with the flight screen's dialog.
+        TakMissionManager.listElevatedChannels(this) { chans -> renderVideoChannels(chans ?: return@listElevatedChannels) }
     }
 
     /**
@@ -964,12 +955,7 @@ class TakConnectActivity : AppCompatActivity() {
         checkChannelOverlap()
         for (ch in channels) {
             val row = TextView(this).apply {
-                text = when {
-                    ch.canSend && ch.canReceive -> ch.name
-                    ch.canReceive -> "${ch.name} - Rx Only"
-                    ch.canSend -> "${ch.name} - Tx Only"
-                    else -> "${ch.name} - no direction"
-                } + if (ch.active) "" else " (off)"
+                text = TakMissionManager.channelLabel(ch) + if (ch.active) "" else " (off)"
                 setTextColor(androidx.core.content.ContextCompat.getColor(
                     applicationContext, R.color.tp_text_primary))
             }
