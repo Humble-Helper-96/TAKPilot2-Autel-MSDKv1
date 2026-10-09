@@ -751,7 +751,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="The fleet's second TAK account, shared by every controller. Only the channel it belongs to gets the live-video link. Every other channel still gets the position and the markers, with no video. The account above is the Standard account."
+            android:text="Only the channel this account belongs to gets the live-video link. Every other channel still gets the position and the markers, with no video."
             android:textColor="@color/tp_text_tertiary"
             android:textSize="12sp" />
 
