@@ -816,8 +816,10 @@ class TakConnectActivity : AppCompatActivity() {
         val certPw = "atakatak"
         TakManager.getInstance().connectVideoChannel(host, cotPort, trustStorePath, certPw, clientCertPath, certPw)
         runOnUiThread {
-            setVideoChannelStatus("Video channel connected.",
-                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_go))
+            // "Connecting", not "connected": the socket is being dialled on its own thread and
+            // nothing has answered yet. The channel list that follows is the proof it works.
+            setVideoChannelStatus("Elevated account: connecting …",
+                androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             refreshVideoChannels()
         }
     }
@@ -904,8 +906,13 @@ class TakConnectActivity : AppCompatActivity() {
         val enabled = prefs.getBoolean(KEY_CHB_ENABLED, false)
         enabledSwitch.isChecked = enabled
         paintEnabled(enabled)
-        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)) {
-            setVideoChannelStatus("Reconnecting video channel …",
+        // ⚠ NOT when it is already connected (review, 2026-10-08). This runs on every onCreate,
+        // and a reconnect tears the Elevated socket down and re-dials it — and until that
+        // review it also ended a running Emergency Broadcast. A pilot opening this screen to
+        // read a channel must change nothing on the wire.
+        if (enabled && hasSavedVideoCerts(prefs) && !prefs.getBoolean(KEY_CHB_LOGGED_OUT, false)
+            && !TakManager.getInstance().isVideoChannelConnected()) {
+            setVideoChannelStatus("Reconnecting the Elevated account …",
                 androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_text_secondary))
             reconnectVideoFromSaved(prefs)
         }
@@ -1068,12 +1075,26 @@ class TakConnectActivity : AppCompatActivity() {
         val standard = latestChannels.filter { it.active }.map { it.name }.toSet()
         val elevated = latestVideoChannels.filter { it.active }.map { it.name }.toSet()
         val shared = standard.intersect(elevated)
-        if (shared.isEmpty()) return
+        if (shared.isEmpty()) {
+            // Clear ONLY our own line, so a connect or enrollment status is not wiped — and
+            // clear it the moment the server is corrected (review, 2026-10-08).
+            if (overlapWarningShown) {
+                overlapWarningShown = false
+                setVideoChannelStatus("", androidx.core.content.ContextCompat.getColor(
+                    applicationContext, R.color.tp_text_secondary))
+            }
+            return
+        }
+        overlapWarningShown = true
         AppLog.w(TAG, "Standard and Elevated accounts share active channel(s): $shared")
         setVideoChannelStatus("Standard and Elevated share channel ${shared.joinToString()} — " +
             "everyone in it will get video. Fix this on the server.",
             androidx.core.content.ContextCompat.getColor(applicationContext, R.color.tp_state_danger))
     }
+
+    /** True while takVideoChannelStatus holds the overlap warning, so checkChannelOverlap can
+     *  retract its own line and nothing else's. */
+    private var overlapWarningShown = false
 
     /**
      * Sends the COMPLETE set of active channels to the server.
@@ -1461,6 +1482,11 @@ class TakConnectActivity : AppCompatActivity() {
         R.id.takHost, R.id.takEnrollPort, R.id.takCotPort,
         R.id.takUsername, R.id.takPassword, R.id.takCallsign,
         R.id.takDisconnectButton,
+        // The Elevated account (v2.4.0) locks with the server fields — it is the MORE privileged
+        // account, and a stray tap on its switch would put video on every channel (review,
+        // 2026-10-08).
+        R.id.takVideoChannelEnabled, R.id.takVideoUsername, R.id.takVideoPassword,
+        R.id.takVideoConnectButton,
     )
     /** Codec and transport are part of WHAT the stream is — the wrong codec breaks playback
      *  outright (CloudTAK cannot play H.265), so they lock with the server fields (operator,

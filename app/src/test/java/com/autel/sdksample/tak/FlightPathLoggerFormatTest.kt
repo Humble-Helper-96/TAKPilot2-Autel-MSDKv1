@@ -84,7 +84,7 @@ class FlightPathLoggerFormatTest {
     @Test
     fun eventLineHoldsExactlyOneNewlineAtTheEnd() {
         // The file is read one event per line; a break inside the text would split one event.
-        val line = FlightPathLogger.eventLine(1_754_580_000_000L, "stream path rotated")
+        val line = FlightPathLogger.eventLine(1_754_580_000_000L, "emergency-broadcast cancelled")
         assertEquals(1, line.count { it == '\n' })
         assertTrue(line.endsWith("\n"))
     }

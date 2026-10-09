@@ -130,7 +130,7 @@ object FlightPathLogger {
 
     /**
      * Records one discrete event in the ACTIVE flight's record (v2.4.0) — the Emergency
-     * Broadcast start / renew / stop / expiry, and the stream-path rotation that follows one.
+     * Broadcast start / renew / stop / expiry.
      * No "who": that is recorded outside the application (operator, 2026-10-08).
      *
      * Cheap by contract, like [onTelemetry]: a timestamp and a post; the file work runs on the

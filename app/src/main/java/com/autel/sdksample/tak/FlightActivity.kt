@@ -3445,7 +3445,7 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
 
     /**
      * Told by [TakManager] whenever the Emergency Broadcast override starts, renews or ends.
-     * This screen only PAINTS. The flight-record line and the stream-path rotation belong to
+     * This screen only PAINTS. The flight-record line belongs to
      * [EmergencyBroadcastPolicy], installed at application start so they run whichever screen
      * is open, or none.
      */
@@ -3490,7 +3490,8 @@ class FlightActivity : AppCompatActivity(), TakDropMarkers.Ui {
         caption.text = if (active) {
             "Emergency Broadcast is running — ${remainingText(tm.emergencyBroadcastExpiresAtEpochMs())} left."
         } else {
-            "Emergency Broadcast: every channel gets the video link for 15 minutes."
+            "Emergency Broadcast: every channel gets the aircraft's video link for 15 minutes. " +
+                "The aircraft marker carries it, so the aircraft must be reporting its position."
         }
         start.text = if (active) "Renew for 15 min" else "Start Emergency Broadcast (15 min)"
         caption.visibility = View.VISIBLE

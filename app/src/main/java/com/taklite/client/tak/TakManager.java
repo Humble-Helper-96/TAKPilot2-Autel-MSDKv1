@@ -41,12 +41,16 @@ public class TakManager implements TakClient.TakClientListener {
     // inbound traffic is discarded: it exists only to advertise video to a smaller audience, not
     // to feed this controller's own contact map (that stays A's job, see connectVideoChannel's
     // no-op TakClientListener).
-    private TakClient videoClient;
+    // Written on the enroll/auto-connect thread, read on the bridge's callback thread — volatile
+    // like the flags beside it (review, 2026-10-08).
+    private volatile TakClient videoClient;
     private volatile boolean videoConnected = false;
-    /** True once connectVideoChannel() has ever been called successfully this session. Stays
-     *  true across a later disconnectVideoChannel() — fail closed: cert A must never regain
-     *  video just because B dropped. Only clearVideoChannel() — a removal on purpose — sets it
-     *  false again. */
+    /** True once connectVideoChannel() has been CALLED this session — on the attempt, not on a
+     *  handshake. That is the rule from the scope document: with a video channel configured, cert
+     *  A never carries video, whether B is up or not. A cert B the server refuses therefore
+     *  advertises video to nobody, and the flight screen's amber "Video link down" notice is
+     *  the signal. Stays true across disconnectVideoChannel() (a drop); only clearVideoChannel()
+     *  — a removal on purpose — sets it false again. */
     private volatile boolean splitConfigured = false;
 
     // ---- Emergency Broadcast override ----
@@ -57,7 +61,7 @@ public class TakManager implements TakClient.TakClientListener {
     private static final long EMERGENCY_BROADCAST_MS = 15 * 60 * 1000L; // 15 minutes
     private volatile boolean emergencyBroadcastActive = false;
     private volatile long emergencyExpiresAtEpochMs = 0L;
-    private Runnable emergencyExpireRunnable;
+    private volatile Runnable emergencyExpireRunnable;
 
     // Client identity for CoT's <takv> block — what a TAK server's "Connected Users" panel shows
     // as this client's type/device/version. Defaults are deliberately generic (never a specific
@@ -285,7 +289,9 @@ public class TakManager implements TakClient.TakClientListener {
     public void connectVideoChannel(String address, int port, String trustStorePath,
                                     String trustStorePassword, String clientCertPath,
                                     String clientCertPassword) {
-        endEmergencyBroadcast("reset-on-reconnect");
+        // Deliberately NOT endEmergencyBroadcast() here (review, 2026-10-08): a re-dial of the
+        // Elevated socket is not an app-level reconnect, and it must not end a running
+        // override. disconnect() — which connect() calls first — is where the reset lives.
         disconnectVideoChannel();
         videoClient = new TakClient(address, port, trustStorePath, trustStorePassword,
                 clientCertPath, clientCertPassword, new TakClient.TakClientListener() {
@@ -397,7 +403,22 @@ public class TakManager implements TakClient.TakClientListener {
     }
 
     public boolean isEmergencyBroadcastActive() {
-        return emergencyBroadcastActive;
+        return emergencyActiveNow();
+    }
+
+    /**
+     * The override's state by the WALL CLOCK, which is the bound the notice shows. The Handler
+     * timer that normally ends it is uptime-based and does not run in deep sleep (review,
+     * 2026-10-08), so a send that finds the expiry in the past ends the override itself, with
+     * the same "expired" record the timer would have written.
+     */
+    private boolean emergencyActiveNow() {
+        if (!emergencyBroadcastActive) return false;
+        if (System.currentTimeMillis() >= emergencyExpiresAtEpochMs) {
+            endEmergencyBroadcast("expired");
+            return false;
+        }
+        return true;
     }
 
     /** 0 when inactive. */
@@ -460,8 +481,7 @@ public class TakManager implements TakClient.TakClientListener {
      * send every outbound message goes through, generalized from what used to be {@code sendCot}
      * so it can run against either cert A's {@code client} or cert B's {@code videoClient}.
      */
-    private void sendOn(TakClient target, String xml) {
-        boolean targetConnected = target == client ? connected : videoConnected;
+    private void sendOn(TakClient target, boolean targetConnected, String xml) {
         if (target == null || !targetConnected) {
             AppLog.w(TAG, "CoT NOT SENT — client=" + (target == null ? "null" : "present")
                     + " connected=" + targetConnected);
@@ -493,10 +513,11 @@ public class TakManager implements TakClient.TakClientListener {
      * let a pilot who restricted an aircraft's audience still broadcast its position to everyone.
      */
     private void sendCotToBoth(String xmlForA, String xmlForB) {
-        sendOn(client, xmlForA);
-        if (videoClient != null && videoConnected) {
-            sendOn(videoClient, xmlForB);
-        }
+        sendOn(client, connected, xmlForA);
+        // Read the field ONCE, and ask THAT socket — not the manager's flag, which could belong
+        // to a replacement client dialled between this read and the send (review, 2026-10-08).
+        TakClient b = videoClient;
+        if (b != null) sendOn(b, videoConnected && b.isConnected(), xmlForB);
     }
 
     /**
@@ -556,8 +577,9 @@ public class TakManager implements TakClient.TakClientListener {
     public void sendPilotPLI(Location location, String callsign, String role,
                              int battery, String videoUrl) {
         if (client == null || !connected) return;
-        String urlA = videoFor("A", splitConfigured, emergencyBroadcastActive, videoUrl);
-        String urlB = videoFor("B", splitConfigured, emergencyBroadcastActive, videoUrl);
+        boolean emergency = emergencyActiveNow();
+        String urlA = videoFor("A", splitConfigured, emergency, videoUrl);
+        String urlB = videoFor("B", splitConfigured, emergency, videoUrl);
         String xmlA, xmlB;
         String where;
         if (location != null) {
@@ -634,8 +656,9 @@ public class TakManager implements TakClient.TakClientListener {
                              boolean isFlying, int flightTimeSec,
                              int batteryMaxMah, int batteryRemainMah, double voltage) {
         if (client != null && connected) {
-            String urlA = videoFor("A", splitConfigured, emergencyBroadcastActive, videoUrl);
-            String urlB = videoFor("B", splitConfigured, emergencyBroadcastActive, videoUrl);
+            boolean emergency = emergencyActiveNow();
+            String urlA = videoFor("A", splitConfigured, emergency, videoUrl);
+            String urlB = videoFor("B", splitConfigured, emergency, videoUrl);
             String xmlA = CotBuilder.buildDronePLI(droneUid, droneCallsign,
                     lat, lon, hae, heading, speed, battery,
                     urlA, spiUid,

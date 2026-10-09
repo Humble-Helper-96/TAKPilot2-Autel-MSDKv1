@@ -184,9 +184,11 @@ class FieldGuideActivity : AppCompatActivity() {
             "connection icon.")
         body("Elevated account (optional): the fleet's second TAK account. Only the channel it " +
             "belongs to gets the live-video link. Every other channel still gets the position " +
-            "and the markers. Its channel list here is read-only.")
+            "and the markers. Its channel list here is read-only. After Log Out, enroll the " +
+            "Elevated account again, or the video link goes to every channel.")
         body("Emergency Broadcast: touch and hold LIVE, then touch Start Emergency Broadcast. " +
-            "Every channel gets the live-video link for 15 minutes. A notice with a timer shows " +
+            "Every channel gets the live-video link for 15 minutes. The aircraft marker carries " +
+            "the link, thus the aircraft must have a GPS position. A notice with a timer shows " +
             "at the top of the flight screen. Touch the notice to add 15 minutes. Touch and " +
             "hold it to stop. Each start, renew and stop goes in the flight record.")
 
