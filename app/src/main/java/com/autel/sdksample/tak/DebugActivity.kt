@@ -268,14 +268,15 @@ class DebugActivity : AppCompatActivity() {
      * The SRT latency override, in MILLISECONDS.
      *
      * Here rather than on Pre-Flight because it is a property of the network, not a flight
-     * decision — and on a screen at all rather than a constant because 500 ms comes from one
-     * ground test, and the fleet must be able to act on field evidence without a new build
-     * reaching an aircraft that is flying. See [VideoTransport.SRT_LATENCY_DEFAULT_MS] for the
+     * decision — and on a screen at all rather than a constant because the default comes from
+     * a small number of measurements, and the fleet must be able to act on field evidence
+     * without a new build reaching an aircraft that is flying. That is exactly what happened
+     * on 2026-10-09: the box carried the fleet at 1 s for an evening before the default moved. See [VideoTransport.SRT_LATENCY_DEFAULT_MS] for the
      * measurements and for how to tell whether the value is right.
      *
      * ⚠ **The status line under the box states what was SAVED, never what was typed.** A value
      * outside the sane range is refused and the default is stored, thus a pilot who types the
-     * microsecond form (500000) is told that the value is 500 and not left believing the box.
+     * microsecond form (500000) is told the stored value and not left believing the box.
      *
      * The value is read at every stream start, so a change here takes effect at the next LIVE.
      *

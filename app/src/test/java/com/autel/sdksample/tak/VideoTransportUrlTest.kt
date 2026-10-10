@@ -268,11 +268,13 @@ class VideoTransportUrlTest {
     }
 
     @Test
-    fun theDefaultIsFiveHundredMilliseconds() {
-        // Three to four times the 116 ms RTT measured on the ground path, conservative end.
-        // A change here is a change to what every pilot flies — see the class doc on the
-        // constant for the evidence and for how to tell whether it is still right.
-        assertEquals(500, VideoTransport.SRT_LATENCY_DEFAULT_MS)
+    fun theDefaultIsOneThousandMilliseconds() {
+        // Raised from 500 by the operator on 2026-10-09, after the first H.265 flight tore at
+        // the far end on repairs that arrived too late. A change here is a change to what
+        // every pilot flies AND to how far behind the aircraft the team watches — see the
+        // class doc on the constant for the evidence, for what is judgement rather than
+        // measurement, and for how to tell whether it is still right.
+        assertEquals(1_000, VideoTransport.SRT_LATENCY_DEFAULT_MS)
     }
 
     @Test

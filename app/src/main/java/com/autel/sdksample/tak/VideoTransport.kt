@@ -93,7 +93,30 @@ enum class VideoTransport(val label: String, val scheme: String, val defaultPort
          * it is the whole time budget the repair has to complete in. A packet repaired after
          * the deadline is thrown away, and the bandwidth spent repairing it is wasted.
          *
-         * ## Why 500 and not 250 (ground test, MediaMTX v1.20.0, 2026-08-29)
+         * ## Why 1000 (operator, 2026-10-09) — and read the 500 history below it
+         *
+         * **1000 ms since v2.4.1.** The first H.265 flight tore at the far end, and the cause
+         * was uplink loss that SRT could not repair inside the 500 ms budget: 24 missing
+         * reference frames in a 126 s recording, with the controller's own send queue clean
+         * (`drops=0`) through that clip — the signature of a LATE REPAIR, not of congestion.
+         * `SRT-UPLINK-FINDING-2026-10-09.md` has the measurements. The operator then ran the
+         * uplink at 1 s and at a HIGHER rate (1440x1080, 1800 kbps) with no tearing and no
+         * loss reported by the server, and chose 1 s as the fleet default.
+         *
+         * ⚠ **THE FOLLOW-UP RUN IS NOT A PROOF AND THIS IS A JUDGEMENT.** That run was 3.3
+         * minutes, static, on the ground, and its `wire/payload` ratio (1.10x mean) is
+         * statistically identical to the FIRST TEN MINUTES of the flight that tore (1.13x),
+         * which were also clean. It had not met the condition that broke the flight. Three
+         * variables moved together — the budget, the bitrate and the radio conditions. The
+         * decision is defensible on the 2026-08-29 reasoning alone (3-4x RTT, and an aircraft
+         * at range sees a worse RTT than any ground test), but do not record it as measured.
+         *
+         * ⚠ **THE TEST THAT SAYS WHETHER IT IS ENOUGH IS UNCHANGED**, and it is in the flight
+         * records already: `packetsReceivedDrop` from `GET /v3/srtconns/list`, or `wire` above
+         * about 3x `payload` in this application's own `link [...]` line. If the drops persist
+         * with the RTT low, the fault is bandwidth and MORE LATENCY WILL NOT FIX IT.
+         *
+         * ## Why it was 500 and not 250 (ground test, MediaMTX v1.20.0, 2026-08-29)
          *
          * Over laptop → WiFi → CradlePoint → LTE → WireGuard → server, RTT 116 ms, with 250 ms
          * negotiated, the server counted:
@@ -122,19 +145,21 @@ enum class VideoTransport(val label: String, val scheme: String, val defaultPort
          * aircraft on a congested tower or at range sees a WORSE RTT than a ground test, never
          * a better one.
          *
-         * ⚠ **STILL TO BE FLOWN.** The number that says whether this is right is
-         * `packetsReceivedDrop` from `GET /v3/srtconns/list` on the server: near zero means the
-         * buffer is doing its job, still climbing means go higher. If RTT stays low and the
-         * drops persist, the fault is bandwidth or the encoder outrunning the uplink, and MORE
-         * LATENCY WILL NOT FIX IT — the video quality control will.
+         * It was flown on 2026-10-09 and 500 was not enough on that link — see the section
+         * above, which supersedes this one as the reason for the current value.
          *
          * ## The cost
          *
-         * The team watches half a second behind the aircraft. That is acceptable for situation
-         * awareness and it is stated in the Field Guide, because it is better read than
-         * discovered.
+         * The team watches ONE SECOND behind the aircraft. That is acceptable for situation
+         * awareness, and it is the price of a picture that does not tear.
+         *
+         * ⚠ The 500 ms version of this note claimed the figure was "stated in the Field Guide".
+         * It was not, and it is not now: the guide says only that SRT gives a low delay on a
+         * less reliable network. Do not restate a number in the guide that lives here — the
+         * guide is a quick review and a second copy of this figure is a second thing to keep
+         * true.
          */
-        const val SRT_LATENCY_DEFAULT_MS = 500
+        const val SRT_LATENCY_DEFAULT_MS = 1_000
 
         /**
          * ⚠ **The wire field is 16 bits of milliseconds**, and the writer keeps the low 16 bits

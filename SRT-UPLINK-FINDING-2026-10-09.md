@@ -137,7 +137,7 @@ Nothing in this document is corrected in code. Three levers exist and each has a
 
 | Lever | Helps | Costs |
 |---|---|---|
-| SRT latency, now 500 ms (`VideoTransport.SRT_LATENCY_DEFAULT_MS`; Debug screen has a field override) | The clip in §3.2 — more time to repair a loss | Delay, on every frame |
+| SRT latency (`VideoTransport.SRT_LATENCY_DEFAULT_MS`; Debug screen has a field override) — **was 500 ms here, and is 1000 ms from v2.4.1** | The clip in §3.2 — more time to repair a loss | Delay, on every frame |
 | A lower video quality | The queue overflow in §3.3 — less video than the link must carry | Picture quality for the whole flight |
 | A longer SRT latency AND a lower quality | Both | Both |
 
@@ -232,3 +232,24 @@ is `textPassword` and the preview masks it to `***` — correct for a secret tha
 pilot's shoulder and screenshotted into training material, and it cost an evening here. If it
 recurs, the fix is a show/hide control on that ONE field. Do not unmask the preview: that is the
 line `urlSafe` exists to hold.
+
+---
+
+## 11. What the operator decided, 2026-10-09
+
+**The SRT publish latency default moved from 500 ms to 1000 ms in v2.4.1.** The reasoning is on
+`VideoTransport.SRT_LATENCY_DEFAULT_MS`, which now carries both the 2026-08-29 ground test that
+chose 500 and this flight that found it short.
+
+⚠ **IT IS A JUDGEMENT AND THE DOCUMENT SAYS SO.** §9 above stands: the 1 s run was 3.3 minutes,
+static, and had not met the condition that broke the flight. What makes the change defensible is
+not that run but the ORIGINAL reasoning — 3 to 4 times the RTT, and an aircraft at range sees a
+worse RTT than any ground test ever will — plus a flight that showed 500 ms was not enough on a
+real link. Record it as a decision, not as a measurement.
+
+⚠ **A CONTROLLER WITH A DEBUG-SCREEN OVERRIDE DOES NOT MOVE.** `srtLatencyMs` reads
+`KEY_SRT_LATENCY_MS` and falls back to the default only when the key is absent or out of range.
+A controller that was set to 1 s by hand already holds 1 s; one that was never touched moves
+from 500 to 1000 on upgrade. To put a controller back on the default, clear the box.
+
+**The cost is stated plainly: the team now watches one second behind the aircraft, not half.**

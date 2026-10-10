@@ -1817,8 +1817,31 @@ android {
         //        wrong `path` plays on nothing, so both halves are tested.
         //        ⚠ NOT FLOWN, AND THE SRT READ IS NOT BENCH-TESTED FROM THIS APPLICATION. The
         //        recipe is proved; this tree's build of it is not.
-        versionCode 108
-        versionName "2.4.0"
+        //
+        // 2.4.1: ⚠ THE SRT PUBLISH LATENCY DEFAULT IS 1000 ms, WAS 500 (operator, 2026-10-09).
+        //        The first H.265 flight tore at the far end on repairs that arrived too late —
+        //        24 missing reference frames in a 126 s recording with the send queue clean
+        //        (drops=0), which is a LATE REPAIR and not congestion. See
+        //        SRT-UPLINK-FINDING-2026-10-09.md and the evidence on
+        //        VideoTransport.SRT_LATENCY_DEFAULT_MS, which now carries both the 2026-08-29
+        //        ground test that chose 500 and the flight that found it short.
+        //        ⚠ IT IS A JUDGEMENT, NOT A MEASUREMENT, AND THE DOCUMENTS SAY SO. The 1 s
+        //        follow-up run was 3.3 minutes, static, and had not met the condition that
+        //        broke the flight; its wire/payload ratio is identical to the first ten clean
+        //        minutes of that flight. What makes the change defensible is the ORIGINAL
+        //        reasoning — 3 to 4x RTT, and an aircraft at range sees a worse RTT than any
+        //        ground test — plus a flight that showed 500 was not enough on a real link.
+        //        ⚠ A CONTROLLER WITH A DEBUG-SCREEN OVERRIDE DOES NOT MOVE. srtLatencyMs falls
+        //        back to the default only when KEY_SRT_LATENCY_MS is absent or out of range.
+        //        Clear the box to put a controller back on the default.
+        //        ⚠ THE COST IS A SECOND: the team watches one second behind the aircraft, not
+        //        half. That is the trade and it is stated on the constant.
+        //        Also corrected: the constant's own note claimed the figure was "stated in the
+        //        Field Guide". It was not, and it is not now — the guide says only that SRT
+        //        gives a low delay on a less reliable network, and a second copy of the number
+        //        is a second thing to keep true.
+        versionCode 109
+        versionName "2.4.1"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

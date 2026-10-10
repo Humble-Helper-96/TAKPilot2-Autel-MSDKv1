@@ -978,8 +978,11 @@ line in `app.log` or by the far end, never by the picture in front of the pilot.
 1.10x mean, is statistically identical to the FIRST TEN MINUTES of the flight that tore, which
 ran at 1.13x before the storm. Three variables moved together (latency, bitrate, radio
 conditions) and none is controlled. Do not record this as fixed; fly the same route and watch
-`wire` against `payload`. **The fleet default is still 500 ms** — the 1 s is a Debug-screen field
-override on one controller.
+`wire` against `payload`. ⚠ **THE FLEET DEFAULT MOVED TO 1000 ms IN v2.4.1** on the operator's
+decision — see `VideoTransport.SRT_LATENCY_DEFAULT_MS`, which carries both the 2026-08-29 ground
+test that chose 500 and this flight that found it short, and says which part is judgement. A
+controller with a Debug-screen override does NOT move; the default applies only when that box is
+empty or out of range.
 
 ⚠ **DO NOT QUOTE THE 85 Mbps `wire` FIGURE.** It is not physically possible on this uplink. The
 counter is the library's own and double-counts a requeued packet; the SHAPE tracks `drops`
