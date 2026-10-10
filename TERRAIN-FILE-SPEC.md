@@ -152,10 +152,15 @@ trying to buy.
 
 | Source | Native vertical datum | Conversion needed |
 |---|---|---|
-| SRTM, Copernicus DEM (GLO-30) | EGM96 / EGM2008 geoid | **none to little** — EGM96 is what DTED uses |
+| Copernicus DEM (GLO-30) | EGM2008 geoid | little — close to EGM96 |
+| ALOS AW3D30 | EGM96 | none |
 | USGS 3DEP (US) | NAVD88 | NAVD88 → EGM96 |
 | LiDAR products, generally | often the ellipsoid, sometimes a local datum | **check, and convert** |
-| ALOS AW3D30 | EGM96 | none |
+
+⚠ **SRTM DOES NOT COVER THIS FLEET'S AREA.** SRTM flew at 57° inclination and its coverage ends
+at **60°N**; Anchorage is at about **61.3°N**. It is the first source most guides name and it is
+useless here. Check the latitude limit of any candidate before anything else — several global
+products stop between 60° and 83°N.
 
 **GDAL is the practical tool**, and the vertical shift is the part to get right rather than the
 reprojection.
