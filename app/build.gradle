@@ -1888,7 +1888,24 @@ android {
         //        a filter; naming a DTED2 tile .dt5 does not make it finer.
         //        Both live trees took it (Autel and MSDKv5); MSDKv4 is frozen. The contract is
         //        ../../../TERRAIN-FILE-SPEC.md, which is shared by all three.
-        versionCode 111
+        //
+        //        ⚠ THIRD RE-CUT OF v2.4.0 (2026-10-10): THE TERRAIN IMPORT IS OFF THE MAIN
+        //        THREAD. It ran synchronously in onActivityResult and always had. The operator
+        //        imported 39 IFSAR tiles — a 1.1 GB zip, 3.16 GB extracted — and the window
+        //        went BLACK for minutes while the main thread decompressed and wrote every
+        //        one. ⚠ The CONTROLLER stayed responsive, which is how this differs from the
+        //        2026-10-09 compositor freeze: only this application's UI thread was blocked,
+        //        and Android filed no ANR because nobody touched the blank screen.
+        //        ⚠ THE SIZE IS WHAT MADE IT VISIBLE, NOT A REGRESSION. A handful of 26 MB
+        //        DTED2 tiles blocked for a second or two and nobody ever reported it.
+        //        DtedStore.importAsync runs it on a worker and posts both callbacks to the
+        //        main thread; the status line now counts tiles as they land, because the
+        //        screen previously showed its PREVIOUS text throughout — a working import and
+        //        a dead screen looked identical. The Import button is held down meanwhile: a
+        //        second import into the same shared pool has no defined outcome.
+        //        ⚠ PORTED FROM MSDKv5, WHICH FIXED IT FIRST (its R25) — this tree was the one
+        //        carrying the fault. Same shape in both, deliberately, so they converge.
+        versionCode 112
         versionName "2.4.0"
         multiDexEnabled true
         signingConfig signingConfigs.config

@@ -1092,16 +1092,32 @@ class TakConnectActivity : AppCompatActivity() {
         val uri: Uri = data?.data ?: return
         val name = queryDisplayName(uri) ?: "Region-${System.currentTimeMillis()}"
         val dtedStatus = findViewById<TextView>(R.id.dtedStatus)
-        val result = DtedStore.import(this, uri, name)
-        dtedStatus.text = when {
-            result.error != null && result.importedCount == 0 ->
-                "The app cannot import $name. ${result.error}"
-            result.error != null ->
-                "Imported ${result.importedCount} tile(s) from $name. ${result.error}"
-            else -> "Imported ${result.importedCount} tile(s) from $name."
+        val importButton = findViewById<Button>(R.id.dtedUploadButton)
+        // ⚠ OFF THE MAIN THREAD. This ran synchronously here until 2026-10-10, and a 1.1 GB
+        // region (39 IFSAR tiles, 3.16 GB extracted) blacked the window out for minutes —
+        // see DtedStore.importAsync. The button is held down for the duration: a second
+        // import into the same shared pool while one is running has no defined outcome.
+        importButton?.isEnabled = false
+        dtedStatus.text = "Importing $name…"
+        DtedStore.importAsync(
+            applicationContext, uri, name,
+            // The count climbs as tiles land, so a working import cannot be mistaken for a
+            // dead screen — which is exactly how the fault presented.
+            onProgress = { tiles -> dtedStatus.text = "Importing $name… $tiles tile(s)" },
+        ) { result ->
+            importButton?.isEnabled = true
+            dtedStatus.text = when {
+                result.error != null && result.importedCount == 0 ->
+                    "The app cannot import $name. ${result.error}"
+                result.error != null ->
+                    "Imported ${result.importedCount} tile(s) from $name. ${result.error}"
+                else -> "Imported ${result.importedCount} tile(s) from $name."
+            }
+            if (result.importedCount == 0) {
+                Toast.makeText(this, dtedStatus.text, Toast.LENGTH_SHORT).show()
+            }
+            renderDtedRegions()
         }
-        if (result.importedCount == 0) Toast.makeText(this, dtedStatus.text, Toast.LENGTH_SHORT).show()
-        renderDtedRegions()
     }
 
     private fun queryDisplayName(uri: Uri): String? {

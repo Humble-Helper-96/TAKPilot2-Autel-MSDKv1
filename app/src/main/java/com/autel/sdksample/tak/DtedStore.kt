@@ -111,7 +111,50 @@ object DtedStore {
      *  confirmation needed, per spec); anything else is imported as a lone-tile region.
      *  Crash-safe: the import row is inserted `pending` before any file I/O and only flipped
      *  to `complete` after every tile is on disk — see [TerrainDatabase]. */
-    fun import(context: Context, uri: Uri, displayName: String): ImportResult {
+    /**
+     * [import] on a worker thread, with both callbacks delivered on the MAIN thread.
+     *
+     * ⚠ **THE IMPORT RAN SYNCHRONOUSLY IN `onActivityResult` UNTIL 2026-10-10, AND A REAL
+     * REGION PROVED IT.** The operator imported 39 IFSAR tiles — a 1.1 GB zip, 3.16 GB
+     * extracted — and the flight application's window went BLACK for minutes while the main
+     * thread decompressed and wrote every one. The controller itself stayed responsive, which
+     * is how it differs from the 2026-10-09 compositor freeze: only this application's UI
+     * thread was blocked.
+     *
+     * It was always wrong and the size is what made it visible. A handful of 26 MB DTED2 tiles
+     * blocked for a second or two and nobody reported it.
+     *
+     * ⚠ The progress callback exists because the screen showed its PREVIOUS text for the whole
+     * operation — the status line was only written after the call returned, so a working
+     * import and a dead screen looked identical.
+     *
+     * Ported from the MSDKv5 sibling, which fixed this first (its R25). Keep the two the same.
+     */
+    fun importAsync(
+        context: Context,
+        uri: Uri,
+        displayName: String,
+        onProgress: (Int) -> Unit = {},
+        onDone: (ImportResult) -> Unit,
+    ) {
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        Thread {
+            val r = try {
+                import(context, uri, displayName) { tiles -> main.post { onProgress(tiles) } }
+            } catch (t: Throwable) {
+                AppLog.w(TAG, "DTED import failed: ${t.message}")
+                ImportResult(0, t.message ?: "Import failed")
+            }
+            main.post { onDone(r) }
+        }.start()
+    }
+
+    fun import(
+        context: Context,
+        uri: Uri,
+        displayName: String,
+        onProgress: (Int) -> Unit = {},
+    ): ImportResult {
         val regionName = sanitizeRegionName(displayName.substringBeforeLast('.'))
         val dao = TerrainDatabase.get(context).terrainDao()
         val importId = dao.insertImport(
@@ -125,7 +168,7 @@ object DtedStore {
         )
         val pool = dir(context)
         val result = if (displayName.lowercase().endsWith(".zip")) {
-            importZip(context, uri, pool)
+            importZip(context, uri, pool, onProgress)
         } else {
             importSingleFile(context, uri, displayName, pool)
         }
@@ -167,7 +210,12 @@ object DtedStore {
      *  longitude folders don't collide with each other WITHIN this zip. Across zips, an
      *  identical flattened name is treated as the same physical tile and overwritten (the
      *  intended "duplicate imports are fine, newest wins" behavior). */
-    private fun importZip(context: Context, uri: Uri, pool: File): ExtractResult {
+    private fun importZip(
+        context: Context,
+        uri: Uri,
+        pool: File,
+        onProgress: (Int) -> Unit = {},
+    ): ExtractResult {
         val tileNames = mutableListOf<String>()
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -181,6 +229,7 @@ object DtedStore {
                                 val dest = File(pool, flatName)
                                 dest.outputStream().use { out -> zip.copyTo(out) }
                                 tileNames.add(flatName)
+                                onProgress(tileNames.size)
                             }
                         }
                         zip.closeEntry()
