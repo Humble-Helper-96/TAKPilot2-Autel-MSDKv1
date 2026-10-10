@@ -204,3 +204,31 @@ continued to encode and push correctly with no aircraft video in it. A downlink 
 uplink loss look nothing alike in the log, and nothing alike on the far end: one gives a held or
 empty picture, the other gives green blocks. See the 2026-10-09 RF investigation for the
 downlink.
+
+---
+
+## 10. The SRT advertisement, bench-proved the same evening
+
+The operator tried the advertised SRT url in a real ATAK and it did not connect. MediaMTX
+answered `closed: invalid passphrase` on every attempt. ATAK's own log named the cause:
+
+```
+[VideoDropDownReceiver]: ConnectionEntry [address=anchortak.link, alias=ANC-EVO2-B2, port=8890,
+ path=?streamid=read:ANC-EVO2-B2-3cab5c2f-Low:anc:red-house-three&passphrase=TentCoty-1914,
+ protocol=srt, networkTimeout=12000, bufferTime=-1]
+```
+
+The server holds `srtReadPassphrase = TentCity-1914`. The CoT carried `TentCoty-1914`. The
+operator had mistyped the read passphrase on the Video Servers card.
+
+✅ **THE CoT IS CORRECT AND THIS IS THE PROOF THE RELEASE DID NOT HAVE.** ATAK read the address,
+the port, the protocol and the WHOLE `?streamid=…&passphrase=…` string out of
+`ConnectionEntry.path`, exactly as `srt-cot-video-advertising.md` specifies, and then appended
+its own `&timeout=12000000` from `networkTimeout`. It reached the SRT handshake. Everything this
+application builds is downstream-clean; only the key was wrong.
+
+⚠ **A MASKED FIELD HIDES A TYPO, AND ONLY A FAILED CONNECTION REVEALS IT.** The read passphrase
+is `textPassword` and the preview masks it to `***` — correct for a secret that is read over a
+pilot's shoulder and screenshotted into training material, and it cost an evening here. If it
+recurs, the fix is a show/hide control on that ONE field. Do not unmask the preview: that is the
+line `urlSafe` exists to hold.

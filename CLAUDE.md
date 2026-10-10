@@ -135,8 +135,8 @@ WOULD move a marker, and `DtedTileCacheTest` fails on that. Do not look there fi
 2026-10-09; it was numbered 2.3.9 until master released that number for Random Path).
 ⚠ **BENCH TESTED AND ONE LOCAL FLIGHT on 2026-10-09.** The menus, the split across the two
 accounts and the live streaming were confirmed by the operator. The reconnect-on-resume and both
-retraction paths were proved from the log. ⚠ **The SRT READ advertisement is NOT bench-tested
-from this application**, and the AR accuracy is NOT to the operator's satisfaction — see the open
+retraction paths were proved from the log. ⚠ The AR accuracy is NOT to the operator's
+satisfaction — see the open
 items in the 2026-09-14 AR audit, of which the gimbal roll sign is the cheapest. The video split, plus Emergency Broadcast. **Two shared TAK accounts for the
 fleet, Standard and Elevated**; every controller enrolls on both. The Elevated connection (cert
 B in `TakManager`) carries the live-video link to the one channel that account is in; the
@@ -942,8 +942,18 @@ debt list that follows is PAID — read it for the reasoning, not as work owed. 
    `&passphrase=`, and no trailing colons on a path with no authentication.
    The Video Servers screen took the sibling's terminology and ordering: TAK Advertisement Server,
    Video Publish Protocol, TAK Advertisement Protocol, CoT Advertisement Address, Publish Address.
-   ⚠ **NOT FLOWN, and the SRT read is not bench-tested from this application.** The recipe is
-   proved; this tree's build of it is not.
+   ✅ **BENCH-PROVED FROM THIS APPLICATION, 2026-10-09 evening.** A real ATAK on a Pixel 10a
+   parsed the CoT and reached the SRT handshake. Its own log shows every field arriving intact:
+   `ConnectionEntry [address=anchortak.link, port=8890, protocol=srt,
+   path=?streamid=read:<path>:<user>:<pass>&passphrase=<secret>, networkTimeout=12000]`, and
+   ATAK then appends its own `&timeout=12000000` from `networkTimeout`. The one failure was the
+   operator mistyping the read passphrase into the field (`TentCoty` for `TentCity`), which
+   MediaMTX refused with `closed: invalid passphrase` — downstream of everything this
+   application builds.
+   ⚠ **A MASKED FIELD HIDES A TYPO AND ONLY A FAILED CONNECTION REVEALS IT.** The read
+   passphrase is `inputType="textPassword"` and the preview masks it to `***` by the rule in
+   `urlSafe` — correct for a secret read over a pilot's shoulder, and it cost an evening here.
+   If this recurs, the fix is a show/hide control on that one field, not unmasking the preview.
 
 **2026-10-09, FLOWN on vc106 — THE FIRST H.265 FLIGHT, and a torn picture at the far end.**
 The finding is `SRT-UPLINK-FINDING-2026-10-09.md`; read it before tuning anything about video.
