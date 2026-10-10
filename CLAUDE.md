@@ -18,6 +18,15 @@ MSDKv5 siblings:
 > A pilot changes airframe and finds the same screens, the same controls in the same places,
 > and the same words.
 
+## Terrain data
+
+`TERRAIN-FILE-SPEC.md` specifies what the DTED parser in this tree actually accepts, written
+from `DtedTile.open` and `DtedStore.import` rather than from MIL-PRF-89020B — the two differ,
+and the document is what the code does. Read it before sourcing or building elevation data.
+⚠ The two traps it exists for: posts are **sign-magnitude**, not two's complement, and the
+vertical datum is **MSL (EGM96)**, so an ellipsoid-referenced source is about 12 m high in
+Anchorage and nothing in the application will say so.
+
 ## The UI specification
 
 `../../../TAKPILOT2-UI-SPEC.md` is the single source of truth for the user interface of all
