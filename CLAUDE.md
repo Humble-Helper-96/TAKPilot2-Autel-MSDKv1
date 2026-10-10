@@ -96,6 +96,16 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+⚠ **DO NOT READ THIS CONTROLLER'S LOAD AVERAGE AS CPU PRESSURE** (measured 2026-10-09). It sits
+near 7-8 on an 8-core device and looks saturated. It is not: measured from `/proc/stat` while
+streaming, the device was **28.8 % busy and 71.2 % idle**, with only 3 runnable processes. Linux
+load counts UNINTERRUPTIBLE-SLEEP tasks too, and the Autel SDK keeps 61 `SDK 2.0 udp-receive`
+threads queued on ONE `DatagramSocket` monitor — blocked threads inflate the load and use no CPU.
+The whole application draws about 0.9 of ONE core while streaming: RenderThread 24.9 %, main
+15.4 %, the SRT coroutines 12.9 %, and `ScreenCaptureEncoder`'s drain loop just 1.3 %. ⚠ There is
+no CPU problem to fix here, and the 2026-10-09 freeze was a fence deadlock, not starvation — the
+encoder was the CHEAPEST thread in the process when it stalled.
+
 ⚠ **A STALLED ENCODER CAN KILL THE CONTROLLER, AND ONLY A REBOOT RECOVERS IT** (2026-10-09).
 `SURFACEFLINGER-FREEZE-2026-10-09.md` has the stacks. In one line: the encoder stopped releasing
 buffers, the release fence on our MediaProjection VirtualDisplay never signalled, and
