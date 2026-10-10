@@ -20,7 +20,10 @@ MSDKv5 siblings:
 
 ## Terrain data
 
-`TERRAIN-FILE-SPEC.md` specifies what the DTED parser in this tree actually accepts, written
+`../../../TERRAIN-FILE-SPEC.md` — beside the UI specification, because it is shared by ALL
+THREE trees and that was verified rather than assumed (every format-bearing constant in
+`DtedTile`/`DtedStore` is identical in the three copies). It specifies what the DTED parser
+accepts, written
 from `DtedTile.open` and `DtedStore.import` rather than from MIL-PRF-89020B — the two differ,
 and the document is what the code does. Read it before sourcing or building elevation data.
 ⚠ The two traps it exists for: posts are **sign-magnitude**, not two's complement, and the
