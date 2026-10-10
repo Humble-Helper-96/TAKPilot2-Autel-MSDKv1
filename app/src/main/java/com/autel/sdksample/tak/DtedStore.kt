@@ -7,7 +7,7 @@ import java.io.File
 import java.util.zip.ZipInputStream
 
 /**
- * Stores pilot-uploaded DTED (Digital Terrain Elevation Data, e.g. .dt0/.dt1/.dt2) files in a
+ * Stores pilot-uploaded DTED (Digital Terrain Elevation Data, .dt0 to .dt5) files in a
  * single shared `terrain/` directory (no per-region subfolders — see [TerrainDatabase]'s doc
  * for why), while [TerrainDao] tracks which imported "region" (one row per uploaded .zip, e.g.
  * "Anchorage") references which tile filenames. Users manage regions, not individual tiles;
@@ -22,7 +22,21 @@ object DtedStore {
     private const val TAG = "DtedStore"
     private const val DIR_NAME = "terrain"
     private const val LEGACY_DIR_NAME = "dted" // pre-Room per-region-folder layout, discarded
-    private val TILE_EXTENSIONS = setOf("dt0", "dt1", "dt2")
+    /**
+     * The tile extensions an import accepts.
+     *
+     * ⚠ **`dt3`-`dt5` WERE ADDED 2026-10-10 (operator), AND NOTHING ELSE HAD TO CHANGE.**
+     * `DtedTile.open` takes the post spacing, the grid size and the origin from the UHL HEADER
+     * and never looks at the filename, so a finer tile was always readable — the importer was
+     * the only thing refusing it. NGA defines levels past 2 and the operator now builds them.
+     *
+     * ⚠ **THE FAULT THIS FIXES WAS SILENT, AND THAT IS WHY IT MATTERED.** A zip holding ONLY
+     * unaccepted tiles fails loudly ("No DTED tiles found"). A MIXED zip did not: the accepted
+     * entries imported, the region appeared with a tile count, and the rest were dropped with
+     * no mention anywhere. `DtedIndex`'s `loaded N/M` line could not reveal it either — `M`
+     * counts files already in the pool, and a refused tile never reaches the pool.
+     */
+    private val TILE_EXTENSIONS = setOf("dt0", "dt1", "dt2", "dt3", "dt4", "dt5")
 
     data class ImportResult(val importedCount: Int, val error: String? = null)
     data class Region(
@@ -92,7 +106,7 @@ object DtedStore {
     }
 
     /** Imports the picked document as a new region named after [displayName] (extension
-     *  stripped): a .zip has every .dt0/.dt1/.dt2 entry extracted into the shared pool
+     *  stripped): a .zip has every .dt0-.dt5 entry extracted into the shared pool
      *  (overwriting any same-named tile in place — the newest import always wins, no
      *  confirmation needed, per spec); anything else is imported as a lone-tile region.
      *  Crash-safe: the import row is inserted `pending` before any file I/O and only flipped
@@ -117,7 +131,7 @@ object DtedStore {
         }
         if (result.tileNames.isEmpty()) {
             dao.deleteImportRow(importId) // don't leave an empty/failed region behind
-            return ImportResult(0, result.error ?: "No .dt0/.dt1/.dt2 tiles found")
+            return ImportResult(0, result.error ?: "No DTED tiles found (.dt0 to .dt5)")
         }
         val totalBytes = result.tileNames.sumOf { File(pool, it).length() }
         dao.finishImport(importId, result.tileNames, totalBytes)
@@ -148,7 +162,7 @@ object DtedStore {
         }
     }
 
-    /** Extracts every .dt0/.dt1/.dt2 entry from the zip into the shared pool, flattening each
+    /** Extracts every .dt0-.dt5 entry from the zip into the shared pool, flattening each
      *  entry's path ("w150/n61.dt2" -> "w150_n61.dt2") so same-named tiles from different
      *  longitude folders don't collide with each other WITHIN this zip. Across zips, an
      *  identical flattened name is treated as the same physical tile and overwritten (the

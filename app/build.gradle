@@ -1872,7 +1872,23 @@ android {
         //        ⚠ 500 ms IS NOT A KNOWN-GOOD BASELINE. The freeze happened AT 1000 ms. Nothing
         //        has tested 500 against this failure, and two clean runs cannot be compared.
         //        ⚠ NOT FLOWN, and the watchdog has never fired on hardware — only in tests.
-        versionCode 110
+        //
+        //        ⚠ SECOND RE-CUT OF v2.4.0 (operator, 2026-10-10): THE IMPORTER TAKES .dt3 TO
+        //        .dt5. The operator built terrain finer than DTED2 and the importer would have
+        //        refused it. Nothing else changed — DtedTile.open takes the post spacing, the
+        //        grid size and the origin from the UHL HEADER and never looks at the filename,
+        //        so a finer tile was always readable and DtedIndex already sorts finest-first.
+        //        The importer was the only thing in the way. NGA defines levels past 2.
+        //        ⚠ THE FAULT THIS FIXES WAS SILENT. A zip of ONLY unaccepted tiles fails loudly
+        //        ("No DTED tiles found"); a MIXED zip did not — the accepted entries imported,
+        //        the region appeared with a tile count, and the rest were dropped with no
+        //        mention. DtedIndex's "loaded N/M" line could not reveal it either: M counts
+        //        files already in the pool and a refused tile never reaches the pool.
+        //        ⚠ A FINER TILE IS STILL UNTESTED — nobody has flown one. The extension is only
+        //        a filter; naming a DTED2 tile .dt5 does not make it finer.
+        //        Both live trees took it (Autel and MSDKv5); MSDKv4 is frozen. The contract is
+        //        ../../../TERRAIN-FILE-SPEC.md, which is shared by all three.
+        versionCode 111
         versionName "2.4.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
