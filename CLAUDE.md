@@ -129,7 +129,11 @@ baseline — nothing has tested it against this failure.
 session: "I am still not happy with AR accuracy but I dont know how to fix it"). Nothing else is
 outstanding — v2.4.0 is released and on the controller. This is the next piece of work.
 
-**Start by MEASURING, because nothing can be aimed at an opinion.** The instrument already
+**Start by MEASURING, because nothing can be aimed at an opinion.** ⚠ And note that offsets are
+ALREADY DIALLED IN — the CoT of 2026-10-09 carried `aim=[pitch-1.25 brg+4.00]`, so the error you
+see is already being compensated by 1.25 deg of pitch and 4 deg of bearing. **Record the offsets
+in force with any measurement, or zero both first**, or the number measures the compensation
+rather than the error. The instrument already
 exists and needs no new code: `AutelTakBridge.pushCameraPoint` logs the solved ground point to 7
 decimals for exactly this purpose, and its own comment gives the method — aim the crosshair at a
 feature whose true coordinates are known, and the offset between the logged point and those
@@ -139,12 +143,19 @@ fixes, and an undecomposed "it is off by 12 m" cannot be acted on.
 
 The three candidates, from the 2026-09-14 AR audit, in the order to attack them:
 
-1. **THE GIMBAL ROLL SIGN — the cheapest, and it is one bench session.** `liveGimbalRoll` holds
-   the roll RAW and is deliberately NOT in `CameraPose`: roll is a rotation about the camera's
-   forward axis and is exact IF the sign is right, but this firmware reports PITCH down-positive
-   against DJI's convention, so assuming roll matches DJI is a coin toss that rotates every
-   marker the wrong way. Aircraft static, gimbal at a few known rolls, read the diag line. Wire
-   it in AFTER that, not before.
+1. ⚠ **THE GIMBAL ROLL IS ALMOST CERTAINLY A NON-ISSUE. DO NOT START HERE** (operator,
+   2026-10-09: "I can't control its roll. I can only control pitch"). An earlier version of this
+   list called the roll sign "the cheapest, one bench session" — **that advice was wrong and the
+   session cannot be run**, because roll is not a pilot input on this airframe.
+   Measured instead, from the 49-minute log of 2026-10-09: the AR geometry trace recorded
+   `roll=0.0` on **8421 of 8421 samples**, one distinct value, while `camPitch` moved across 21
+   — so the trace reads a real field and roll simply never moves. `liveGimbalRoll` stays RAW and
+   out of `CameraPose`, which now costs nothing.
+   ⚠ **NOT PROVABLE FROM THE BENCH, which is why the item is not deleted.** That run was
+   stationary on the ground, and a three-axis gimbal holding level on a motionless aircraft
+   reads zero whether or not it lags in a banking turn. **To close it, grep a FLIGHT log for a
+   non-zero `roll=` in the `geom:` trace.** If there is none, delete this item; do not schedule
+   a bench session for it.
 2. **TELEMETRY LEADS VIDEO.** The overlay projects from telemetry that is current while the
    video under it is some milliseconds old. ⚠ Needs the lag MEASURED on this hardware before any
    compensation is written. Same mechanism as the ADS-B dead-reckoning measured at 3.3° on
