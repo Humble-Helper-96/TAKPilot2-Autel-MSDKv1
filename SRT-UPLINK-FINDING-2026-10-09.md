@@ -137,7 +137,7 @@ Nothing in this document is corrected in code. Three levers exist and each has a
 
 | Lever | Helps | Costs |
 |---|---|---|
-| SRT latency (`VideoTransport.SRT_LATENCY_DEFAULT_MS`; Debug screen has a field override) — **was 500 ms here, and is 1000 ms from v2.4.1** | The clip in §3.2 — more time to repair a loss | Delay, on every frame |
+| SRT latency (`VideoTransport.SRT_LATENCY_DEFAULT_MS`; Debug screen has a field override) — **was 500 ms here, and is 1000 ms from the v2.4.0 re-cut (versionCode 110)** | The clip in §3.2 — more time to repair a loss | Delay, on every frame |
 | A lower video quality | The queue overflow in §3.3 — less video than the link must carry | Picture quality for the whole flight |
 | A longer SRT latency AND a lower quality | Both | Both |
 
@@ -237,7 +237,7 @@ line `urlSafe` exists to hold.
 
 ## 11. What the operator decided, 2026-10-09
 
-**The SRT publish latency default moved from 500 ms to 1000 ms in v2.4.1.** The reasoning is on
+**The SRT publish latency default moved from 500 ms to 1000 ms.** It was folded into a RE-CUT of v2.4.0 (versionCode 110). The one controller already on v2.4.0 had been set to 1 s by hand, so the change only moves what a device gets by DEFAULT. The reasoning is on
 `VideoTransport.SRT_LATENCY_DEFAULT_MS`, which now carries both the 2026-08-29 ground test that
 chose 500 and this flight that found it short.
 

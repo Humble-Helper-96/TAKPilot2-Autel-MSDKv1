@@ -45,6 +45,12 @@ class ScreenCaptureEncoder(
     private val codec: VideoCodec,
     private val onEncoded: (ByteBuffer, MediaCodec.BufferInfo) -> Unit,
     private val onParamsReady: (sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) -> Unit,
+    /**
+     * The encoder has STOPPED, not merely slowed — see [ScreenCaptureStallPolicy]. The capture
+     * has already been torn down by the time this runs; the caller's job is to stop the push
+     * and tell the pilot. ⚠ Called from the drain thread, once, never on the main thread.
+     */
+    private val onStalled: (ageMs: Long) -> Unit = {},
 ) {
     private val outMime: String get() = codec.mime
     private var encoder: MediaCodec? = null
@@ -52,6 +58,12 @@ class ScreenCaptureEncoder(
     private var virtualDisplay: VirtualDisplay? = null
     private var drainThread: Thread? = null
     @Volatile private var running = false
+    /**
+     * Monotonic mark of the last REAL encoded buffer, for [ScreenCaptureStallPolicy]. Set at
+     * start so a codec that never produces anything at all is still caught; -1 only before
+     * [start] has run.
+     */
+    @Volatile private var lastOutputMs = -1L
     private var encFrameCount = 0
     private var encBytesSinceLog = 0L
     /** Monotonic mark for the achieved-rate line. -1 until the first 150-frame boundary. */
@@ -416,6 +428,10 @@ class ScreenCaptureEncoder(
     }
 
     private fun drainLoop() {
+        // Armed here rather than at the first frame, so an encoder that produces NOTHING from
+        // the moment it starts is caught by the same watchdog as one that stops later.
+        lastOutputMs = android.os.SystemClock.elapsedRealtime()
+
         // The drain loop was at DEFAULT thread priority until 2026-08-30, which put it level
         // with ordinary background work. It must not be: while it waits to be scheduled, the
         // output buffers it has not released are buffers the encoder cannot reuse, thus the
@@ -433,6 +449,26 @@ class ScreenCaptureEncoder(
         try {
             while (running) {
                 val idx = enc.dequeueOutputBuffer(info, 100_000)
+                // ⚠ THE WATCHDOG. Checked on the poll that came back empty, which is the only
+                // place that can see "nothing is coming out". A stalled encoder stops the
+                // release fence on our VirtualDisplay from signalling, and SurfaceFlinger waits
+                // on that fence FOR EVER — see ScreenCaptureStallPolicy and
+                // SURFACEFLINGER-FREEZE-2026-10-09.md. Tearing the capture down is how this
+                // application stops being the thing that wedges the compositor.
+                if (ScreenCaptureStallPolicy.isStalled(
+                        running, lastOutputMs, android.os.SystemClock.elapsedRealtime())) {
+                    val age = android.os.SystemClock.elapsedRealtime() - lastOutputMs
+                    AppLog.e(TAG, "ENCODER STALLED — no output for ${age}ms. Tearing the screen " +
+                        "capture down so the VirtualDisplay stops being fed. See " +
+                        "SURFACEFLINGER-FREEZE-2026-10-09.md.")
+                    running = false
+                    // release() joins THIS thread, so it must not be called from here. The
+                    // VirtualDisplay is the one thing that has to go, and it has to go first:
+                    // it is the producer SurfaceFlinger is composing for.
+                    runCatching { virtualDisplay?.release() }; virtualDisplay = null
+                    runCatching { onStalled(age) }
+                    break
+                }
                 when {
                     idx == MediaCodec.INFO_TRY_AGAIN_LATER -> continue
                     idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -452,6 +488,7 @@ class ScreenCaptureEncoder(
                                 handleCodecConfig(outBuf, info)
                             } else {
                                 onEncoded(outBuf, info)
+                                lastOutputMs = android.os.SystemClock.elapsedRealtime()
                                 encFrameCount++
                                 encBytesSinceLog += info.size
                                 if (info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0) {

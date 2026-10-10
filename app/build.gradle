@@ -1818,7 +1818,11 @@ android {
         //        ⚠ NOT FLOWN, AND THE SRT READ IS NOT BENCH-TESTED FROM THIS APPLICATION. The
         //        recipe is proved; this tree's build of it is not.
         //
-        // 2.4.1: ⚠ THE SRT PUBLISH LATENCY DEFAULT IS 1000 ms, WAS 500 (operator, 2026-10-09).
+        //        RE-CUT OF v2.4.0, not a new version (operator, 2026-10-09). The one
+        //        controller already on v2.4.0 was set to 1 s by hand, so every controller ends
+        //        at the same place: this build only changes what a device gets by DEFAULT.
+        //        versionCode moves 108 -> 110 (109 was the withdrawn 2.4.1 build).
+        //        ⚠ THE SRT PUBLISH LATENCY DEFAULT IS 1000 ms, WAS 500 (operator, 2026-10-09).
         //        The first H.265 flight tore at the far end on repairs that arrived too late —
         //        24 missing reference frames in a 126 s recording with the send queue clean
         //        (drops=0), which is a LATE REPAIR and not congestion. See
@@ -1840,8 +1844,36 @@ android {
         //        Field Guide". It was not, and it is not now — the guide says only that SRT
         //        gives a low delay on a less reliable network, and a second copy of the number
         //        is a second thing to keep true.
-        versionCode 109
-        versionName "2.4.1"
+        //
+        //        ⚠ ALSO IN THE RE-CUT: AN ENCODER STALL WATCHDOG, because a stalled encoder
+        //        killed a controller the same evening. The encoder stopped releasing buffers,
+        //        the release fence on our MediaProjection VirtualDisplay never signalled, and
+        //        SurfaceFlinger's MAIN THREAD sat in Fence::waitForever — a wait with NO
+        //        TIMEOUT. The whole display died. ⚠ force-stop did NOT recover it; killing and
+        //        respawning SurfaceFlinger did NOT recover it; only a reboot did. The stacks
+        //        and the recovery table are in SURFACEFLINGER-FREEZE-2026-10-09.md.
+        //        ScreenCaptureEncoder.drainLoop now tears the capture down — the VirtualDisplay
+        //        first, because it is the producer SurfaceFlinger is composing for — when the
+        //        encoder produces NOTHING for ScreenCaptureStallPolicy.STALL_MS (10 s), and
+        //        AutelVideoStreamer stops the push and tells the pilot.
+        //        ⚠ THE TEST IS "NO OUTPUT AT ALL" AND NEVER "BELOW PROFILE". The 49-minute
+        //        reproduction run dipped to 10.9-11.8 fps SIX times and every dip recovered on
+        //        its own; a watchdog on a slow encoder would have killed a working stream six
+        //        times on a link with drops=0 throughout. ScreenCaptureStallPolicyTest (7) pins
+        //        that line, including the worst dip actually measured.
+        //        ⚠ IT IS NOT A CURE FOR THE FREEZE AND MUST NOT BE SOLD AS ONE. The encoder
+        //        stalls first and the compositor wedges seconds later; if the fence is already
+        //        dead the teardown may block too. What it reliably converts is the survivable
+        //        case — a dropped stream the pilot can restart instead of a silent dead feed.
+        //        ⚠ THE FREEZE IS INTERMITTENT AND WAS NOT REPRODUCED. Same build, codec,
+        //        profile, budget and bench, run 49 minutes against the ~34 the frozen session
+        //        managed: no freeze, drops=0, one unbroken publish connection of 335 MB. One
+        //        occurrence in two sessions is not a rate and the trigger is unknown.
+        //        ⚠ 500 ms IS NOT A KNOWN-GOOD BASELINE. The freeze happened AT 1000 ms. Nothing
+        //        has tested 500 against this failure, and two clean runs cannot be compared.
+        //        ⚠ NOT FLOWN, and the watchdog has never fired on hardware — only in tests.
+        versionCode 110
+        versionName "2.4.0"
         multiDexEnabled true
         signingConfig signingConfigs.config
         ndkVersion '21.4.7075529' // ���� NDK �汾

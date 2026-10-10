@@ -485,6 +485,15 @@ class AutelVideoStreamer(
                 countFrame(size)
             },
             onParamsReady = { spsB, ppsB, vpsB -> push.setVideoInfo(spsB, ppsB, vpsB) },
+            // ⚠ THE ENCODER STOPPED AND THE CAPTURE IS ALREADY DOWN. Stop the push too and say
+            // so: a stream whose encoder died sends nothing, and the pilot must not be left
+            // with a LIVE pill over a feed the team stopped receiving. See
+            // ScreenCaptureStallPolicy for why this is not the same as a slow encoder.
+            onStalled = { ageMs ->
+                AppLog.e(TAG, "screen capture stalled for ${ageMs}ms — stopping the stream")
+                runCatching { stop() }
+                onStatus(false, "Video stopped: the encoder stalled. Touch LIVE to start again.")
+            },
         )
         if (!enc.start()) {
             onStatus(false, "Screen capture failed to start")

@@ -96,6 +96,25 @@ notes file, which is where the fleet takes it from.
 
 ## Current work
 
+⚠ **A STALLED ENCODER CAN KILL THE CONTROLLER, AND ONLY A REBOOT RECOVERS IT** (2026-10-09).
+`SURFACEFLINGER-FREEZE-2026-10-09.md` has the stacks. In one line: the encoder stopped releasing
+buffers, the release fence on our MediaProjection VirtualDisplay never signalled, and
+SurfaceFlinger's main thread sat in `Fence::waitForever` — a wait with NO TIMEOUT — so the whole
+display died. ⚠ **Force-stop does not recover it. Killing and respawning SurfaceFlinger does not
+recover it. Reboot the controller; do not spend time on the soft options.**
+
+`ScreenCaptureStallPolicy` + the watchdog in `ScreenCaptureEncoder.drainLoop` are the defence:
+the capture is torn down when the encoder produces NOTHING for 10 s. ⚠ **The test is "no output
+at all" and never "below profile"** — the 49-minute reproduction run dipped to 10.9-11.8 fps six
+times and every dip recovered, so a watchdog on a slow encoder would have killed a working
+stream six times. ⚠ **It is not a cure**: the encoder stalls first and the compositor wedges
+seconds later, and if the fence is already dead the teardown may block too. It converts the
+survivable case only.
+
+⚠ **THE FREEZE IS INTERMITTENT, WAS NOT REPRODUCED IN 49 MINUTES, AND ITS TRIGGER IS UNKNOWN.**
+Do not attribute it to the SRT latency: it happened AT 1000 ms, and 500 ms is NOT a known-good
+baseline — nothing has tested it against this failure.
+
 ⚠ **PICK UP HERE: THE AR OVERLAY IS NOT ACCURATE ENOUGH** (operator, 2026-10-09, closing the
 session: "I am still not happy with AR accuracy but I dont know how to fix it"). Nothing else is
 outstanding — v2.4.0 is released and on the controller. This is the next piece of work.
@@ -129,7 +148,8 @@ WOULD move a marker, and `DtedTileCacheTest` fails on that. Do not look there fi
 
 ---
 
-**v2.4.0 IS RELEASED** — tag `v2.4.0`, versionCode 108, 2026-10-09, signed APK and notes in
+**v2.4.0 IS RELEASED** — tag `v2.4.0`, versionCode 110 (re-cut the same evening to carry the
+1000 ms SRT latency default; vc108 was the first cut and 109 a withdrawn 2.4.1), 2026-10-09, signed APK and notes in
 `../../../signedReleases/Autel-MSDKv1/`, GitHub release without the APK. Developed on the
 `uasvideo-split` branch and merged to master on release (2026-10-05, refined 2026-10-08 and
 2026-10-09; it was numbered 2.3.9 until master released that number for Random Path).
@@ -978,7 +998,7 @@ line in `app.log` or by the far end, never by the picture in front of the pilot.
 1.10x mean, is statistically identical to the FIRST TEN MINUTES of the flight that tore, which
 ran at 1.13x before the storm. Three variables moved together (latency, bitrate, radio
 conditions) and none is controlled. Do not record this as fixed; fly the same route and watch
-`wire` against `payload`. ⚠ **THE FLEET DEFAULT MOVED TO 1000 ms IN v2.4.1** on the operator's
+`wire` against `payload`. ⚠ **THE FLEET DEFAULT MOVED TO 1000 ms** (v2.4.0, re-cut as versionCode 110) on the operator's
 decision — see `VideoTransport.SRT_LATENCY_DEFAULT_MS`, which carries both the 2026-08-29 ground
 test that chose 500 and this flight that found it short, and says which part is judgement. A
 controller with a Debug-screen override does NOT move; the default applies only when that box is

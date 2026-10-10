@@ -1,0 +1,87 @@
+Evidence for SURFACEFLINGER-FREEZE-2026-10-09.md — extracted from artefacts that are
+NOT in this repository (flight-logs/ is gitignored). Captured live from the wedged
+controller before it was rebooted, 2026-10-09.
+Build v2.4.0 vc108. SRT publish latency 1000 ms (Debug override). H.264 High 1024x768.
+
+################ 1. The app's main thread — waiting on its own RenderThread ################
+"main" prio=5 tid=1 Native
+  | group="main" sCount=1 dsCount=0 flags=1 obj=0x72804228 self=0xb4000077bdc53380
+  | sysTid=5403 nice=-10 cgrp=default sched=0/0 handle=0x7944a334f8
+  | state=S schedstat=( 173482469873 69852845855 455748 ) utm=14125 stm=3222 core=4 HZ=100
+  | stack=0x7fcd2c3000-0x7fcd2c5000 stackSize=8192KB
+  | held mutexes=
+  native: #00 pc 000000000004abcc  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+28)
+  native: #01 pc 000000000004e868  /apex/com.android.runtime/lib64/bionic/libc.so (__futex_wait_ex(void volatile*, bool, int, bool, timespec const*)+144)
+  native: #02 pc 00000000000b436c  /apex/com.android.runtime/lib64/bionic/libc.so (pthread_cond_wait+60)
+  native: #03 pc 0000000000224330  /system/lib64/libhwui.so (android::uirenderer::renderthread::DrawFrameTask::postAndWait()+256)
+  native: #04 pc 0000000000207db8  /system/lib64/libhwui.so (android::android_view_ThreadedRenderer_syncAndDrawFrame(_JNIEnv*, _jobject*, long, _jlongArray*, int)+84)
+  at android.graphics.HardwareRenderer.nSyncAndDrawFrame(Native method)
+  at android.graphics.HardwareRenderer.syncAndDrawFrame(HardwareRenderer.java:433)
+  at android.view.ThreadedRenderer.draw(ThreadedRenderer.java:658)
+  at android.view.ViewRootImpl.draw(ViewRootImpl.java:4108)
+  at android.view.ViewRootImpl.performDraw(ViewRootImpl.java:3835)
+  at android.view.ViewRootImpl.performTraversals(ViewRootImpl.java:3106)
+  at android.view.ViewRootImpl.doTraversal(ViewRootImpl.java:1950)
+  at android.view.ViewRootImpl$TraversalRunnable.run(ViewRootImpl.java:8186)
+  at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1056)
+  at android.view.Choreographer.doCallbacks(Choreographer.java:878)
+  at android.view.Choreographer.doFrame(Choreographer.java:811)
+  at android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:1041)
+  at android.os.Handler.handleCallback(Handler.java:938)
+
+################ 2. The app's RenderThread — blocked queueing a buffer ################
+"RenderThread" daemon prio=7 tid=35 Native
+  | group="main" sCount=1 dsCount=0 flags=1 obj=0x13c84258 self=0x77bdc8e520
+  | sysTid=5531 nice=-10 cgrp=default sched=0/0 handle=0x759f9b9cc0
+  | state=S schedstat=( 312356179437 69222941035 463019 ) utm=27259 stm=3976 core=4 HZ=100
+  | stack=0x759f8c2000-0x759f8c4000 stackSize=995KB
+  | held mutexes=
+  native: #00 pc 000000000009e9a4  /apex/com.android.runtime/lib64/bionic/libc.so (__ioctl+4)
+  native: #01 pc 0000000000057e88  /apex/com.android.runtime/lib64/bionic/libc.so (ioctl+156)
+  native: #02 pc 0000000000051520  /system/lib64/libbinder.so (android::IPCThreadState::talkWithDriver(bool)+248)
+  native: #03 pc 0000000000052524  /system/lib64/libbinder.so (android::IPCThreadState::waitForResponse(android::Parcel*, int*)+60)
+  native: #04 pc 000000000005229c  /system/lib64/libbinder.so (android::IPCThreadState::transact(int, unsigned int, android::Parcel const&, android::Parcel*, unsigned int)+184)
+  native: #05 pc 000000000004a144  /system/lib64/libbinder.so (android::BpBinder::transact(unsigned int, android::Parcel const&, android::Parcel*, unsigned int)+152)
+  native: #06 pc 00000000000999dc  /system/lib64/libgui.so (android::BpGraphicBufferProducer::queueBuffer(int, android::IGraphicBufferProducer::QueueBufferInput const&, android::IGraphicBufferProducer::QueueBufferOutput*)+200)
+  native: #07 pc 00000000000baacc  /system/lib64/libgui.so (android::Surface::queueBuffer(ANativeWindowBuffer*, int)+1140)
+  native: #08 pc 00000000000b8334  /system/lib64/libgui.so (android::Surface::hook_queueBuffer(ANativeWindow*, ANativeWindowBuffer*, int)+92)
+  native: #09 pc 000000000000eb44  /vendor/lib64/egl/eglSubDriverAndroid.so (???)
+  native: #10 pc 00000000001fc2e8  /vendor/lib64/egl/libGLESv2_adreno.so (!!!0000!10f39af3d5dda97a64124dee6a3783!85e3412!+288)
+  native: #11 pc 00000000001e57e8  /vendor/lib64/egl/libGLESv2_adreno.so (!!!0000!04fe7c7713a0660472688458ecb7a2!85e3412!+144)
+  native: #12 pc 000000000001f508  /system/lib64/libEGL.so (android::eglSwapBuffersWithDamageKHRImpl(void*, void*, int*, int)+568)
+  native: #13 pc 000000000001bcbc  /system/lib64/libEGL.so (eglSwapBuffersWithDamageKHR+72)
+
+################ 3. SurfaceFlinger's MAIN THREAD — the root ################
+# Captured with: debuggerd -b <surfaceflinger pid>, 10 minutes after the ANR.
+"surfaceflinger" sysTid=1162
+    #00 pc 000000000009fa68  /apex/com.android.runtime/lib64/bionic/libc.so (__ppoll+8) (BuildId: 4ff51f97b1c8cae26296986b4df0914a)
+    #01 pc 000000000005a4b8  /apex/com.android.runtime/lib64/bionic/libc.so (poll+92) (BuildId: 4ff51f97b1c8cae26296986b4df0914a)
+    #02 pc 0000000000001054  /system/lib64/libsync.so (sync_wait+64) (BuildId: a67facdd396440d824788cbd87b5c308)
+    #03 pc 0000000000027504  /system/lib64/libui.so (android::Fence::waitForever(char const*)+356) (BuildId: 5c4158a793112c21699f286a1ccd124e)
+    #04 pc 000000000007218c  /system/lib64/libgui.so (android::BufferQueueProducer::queueBuffer(int, android::IGraphicBufferProducer::QueueBufferInput const&, android::IGraphicBufferProducer::QueueBufferOutput*)+2560) (BuildId: 06c4001eaa96a7eb34350ff119d9ebb0)
+    #05 pc 00000000000baacc  /system/lib64/libgui.so (android::Surface::queueBuffer(ANativeWindowBuffer*, int)+1140) (BuildId: 06c4001eaa96a7eb34350ff119d9ebb0)
+    #06 pc 00000000001618c4  /system/lib64/libsurfaceflinger.so (android::compositionengine::impl::RenderSurface::queueBuffer(android::base::unique_fd_impl<android::base::DefaultCloser>)+364) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+    #07 pc 00000000001554bc  /system/lib64/libsurfaceflinger.so (android::compositionengine::impl::Output::finishFrame(android::compositionengine::CompositionRefreshArgs const&)+236) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+    #08 pc 000000000014d6e0  /system/lib64/libsurfaceflinger.so (android::compositionengine::impl::Display::finishFrame(android::compositionengine::CompositionRefreshArgs const&)+124) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+    #09 pc 0000000000153bd8  /system/lib64/libsurfaceflinger.so (android::compositionengine::impl::Output::present(android::compositionengine::CompositionRefreshArgs const&)+156) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+    #10 pc 000000000014b688  /system/lib64/libsurfaceflinger.so (android::compositionengine::impl::CompositionEngine::present(android::compositionengine::CompositionRefreshArgs&)+224) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+    #11 pc 0000000000118910  /system/lib64/libsurfaceflinger.so (android::SurfaceFlinger::onMessageRefresh()+1808) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+    #12 pc 00000000001156ec  /system/lib64/libsurfaceflinger.so (android::SurfaceFlinger::onMessageReceived(int, long)+128) (BuildId: 021d3da05e42b9122e5f22a6294c3e1c)
+
+################ 4. The VirtualDisplay, still ON at the time of capture ################
+DisplayDeviceInfo{"TAKPilot2Stream": uniqueId="virtual:com.tak.uastoollite,10047,TAKPilot2Stream,0",
+  1024 x 768, ... type VIRTUAL, ... state ON, owner com.tak.uastoollite (uid 10047),
+  FLAG_PRIVATE, FLAG_PRESENTATION}
+
+################ 5. Recovery attempts, in order, with results ################
+  am force-stop com.tak.uastoollite   -> app gone;  screencap STILL timed out
+  killall surfaceflinger              -> respawned as pid 20633;  screencap STILL timed out
+                                         (no display for 60 s of polling)
+  adb reboot                          -> RECOVERED (screencap 688916 bytes)
+
+################ 6. Thread census of the app at the freeze ################
+  total threads: 185
+  Autel SDK 'SDK 2.0 udp-receive Thread': 61
+  of those, waiting on ONE DatagramSocket monitor: 60
+  (the holder, tid 101, was in a blocking recvfrom. See the finding: this is the
+   Autel SDK's own design and was NOT established as part of the deadlock.)
